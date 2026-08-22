@@ -1,0 +1,17 @@
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.tmp
+*.swp
+
+app/backend/bin/
+app/backend/coverage.out
+app/frontend/node_modules/
+app/frontend/dist/
+checkers/**/target/
+checkers/python/__pycache__/
+checkers/python/.pytest_cache/
+
+# .env 是本项目唯一的实际部署配置，必须提交。
+!.env

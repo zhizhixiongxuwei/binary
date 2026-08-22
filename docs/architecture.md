@@ -1,0 +1,46 @@
+# 架构边界
+
+## 部署目标
+
+第一版是单单位、单服务器节点、多用户网络访问系统。它不是 localhost-only 桌面程序，也不宣称支持多服务器高可用。
+
+本地 bind mount 数据根和 Compose 内 MySQL 是明确的单节点边界。未来若扩展到多节点，需要把 MySQL 和文件存储替换为外部共享服务。
+
+## 产品流
+
+上传完成后只自动创建基础扫描任务。反编译、源码检查和报告必须由用户分别触发：
+
+    上传 -> 自动扫描/文件树/Trivy
+         -> 用户选择文件并手动反编译
+         -> 用户选择源码项目并手动检查
+         -> 用户选择运行结果并手动生成报告
+
+不存在自动反编译全部文件的后台链路。
+
+## 服务职责
+
+- app：Gin API、Vue 静态资源、认证、RBAC、上传、查询、审计和报告。
+- scanner：内容识别、归档、Trivy，以及三个 checker 的唯一编排入口。
+- native-decompiler：只领取 `native_decompile`，最终镜像包含 Ghidra。
+- jvm-decompiler：只领取 `jvm_decompile`，最终镜像包含 Vineflower、CFR 和 JADX。
+- pyc-decompiler：只领取 `pyc_decompile`，最终镜像包含 pycdc，不依赖 JVM 工具。
+- 三个 checker：内部 HTTP、无数据库、无业务卷、无宿主机端口。
+
+PYC 与 JVM 只是可以共享 Go worker runtime，不能共享工具 capability。`bytecode_only` PYC 项目不能进入 Python checker。
+
+## 任务一致性
+
+所有异步服务共用 MySQL 队列。claim、资源槽和 lease 在同一事务中完成；worker 启动执行后记录 attempt，并通过数据库时间 heartbeat。
+
+每次 claim 增加 fencing token。heartbeat、发布和 finish 都必须同时匹配 job ID、owner、token 和有效租约。旧 worker 的迟到写入必须影响零行。
+
+文件发布使用 run ID 决定的 staging 目录和同文件系统原子 rename。数据库事务和 fencing 决定唯一有效结果，不使用重复哈希代替并发控制。
+
+## 哈希边界
+
+- blob 完成持久化时计算一次 SHA-256。
+- 离线运行镜像总包在加载前校验一次 SHA-256。
+- Docker 镜像使用 OCI digest。
+- 密码和 session token 使用安全哈希，这是认证安全，不属于制品重复校验。
+
+项目源码、checker 请求、finding、报告、迁移和 `.env` 不增加应用级摘要字段。

@@ -1,0 +1,89 @@
+openapi: 3.1.0
+info:
+  title: BinaryScan internal checker API
+  version: 1.0.0
+paths:
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: Checker is ready to accept bounded requests.
+  /v1/check:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckRequest"
+      responses:
+        "200":
+          description: Completed or partial analysis result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckResponse"
+components:
+  schemas:
+    SourceFile:
+      type: object
+      additionalProperties: false
+      required: [path, content]
+      properties:
+        path:
+          type: string
+          maxLength: 1024
+        content:
+          type: string
+          maxLength: 4194304
+    CheckRequest:
+      type: object
+      additionalProperties: false
+      required: [version, projectId, language, files]
+      properties:
+        version:
+          const: checker-v1
+        projectId:
+          type: string
+          maxLength: 64
+        language:
+          enum: [c, java, python]
+        files:
+          type: array
+          maxItems: 3000
+          items:
+            $ref: "#/components/schemas/SourceFile"
+    Finding:
+      type: object
+      additionalProperties: false
+      required: [ruleId, severity, path, line, title, message]
+      properties:
+        ruleId: { type: string }
+        severity: { enum: [critical, high, medium, low, info] }
+        cwe: { type: string }
+        path: { type: string }
+        line: { type: integer, minimum: 1 }
+        column: { type: integer, minimum: 1 }
+        title: { type: string }
+        message: { type: string }
+        evidence: { type: object }
+    CheckResponse:
+      type: object
+      additionalProperties: false
+      required: [version, projectId, status, findings, diagnostics]
+      properties:
+        version:
+          const: checker-v1
+        projectId:
+          type: string
+        status:
+          enum: [complete, partial]
+        findings:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/Finding"
+        diagnostics:
+          type: array
+          maxItems: 1000
+          items: { type: string }

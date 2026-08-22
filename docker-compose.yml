@@ -1,0 +1,302 @@
+name: ${COMPOSE_PROJECT_NAME:?required}
+
+x-db-client: &db-client
+  BINARY_DB_HOST: mysql
+  BINARY_DB_PORT: "3306"
+  BINARY_DB_NAME: ${MYSQL_DATABASE:?required}
+  BINARY_DB_USER: ${MYSQL_USER:?required}
+  BINARY_DB_PASSWORD: ${MYSQL_PASSWORD:?required}
+
+x-product-service: &product-service
+  platform: ${BINARY_PLATFORM:?required}
+  restart: unless-stopped
+  init: true
+  read_only: true
+  user: "${PRODUCT_UID:?required}:${PRODUCT_GID:?required}"
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+
+x-checker-service: &checker-service
+  <<: *product-service
+  networks:
+    - checker-net
+  expose:
+    - "8080"
+  pids_limit: 256
+
+services:
+  mysql:
+    platform: ${BINARY_PLATFORM:?required}
+    image: ${MYSQL_IMAGE:?required}
+    pull_policy: never
+    restart: unless-stopped
+    networks:
+      - database-net
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/mysql:/var/lib/mysql
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?required}
+      MYSQL_USER: ${MYSQL_USER:?required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+  app:
+    <<: *product-service
+    image: ${APP_IMAGE:?required}
+    pull_policy: never
+    networks:
+      - database-net
+      - edge-net
+    ports:
+      - "${APP_BIND_IP:?required}:${APP_HTTPS_PORT:?required}:8443"
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/storage:/data/storage
+      - ${BINARY_DATA_ROOT:?required}/tls:/run/binary/tls:ro
+    environment:
+      <<: *db-client
+      BINARY_VERSION: ${BINARY_VERSION:?required}
+      BINARY_ROLE: app
+      BINARY_LISTEN_ADDR: ${APP_LISTEN_ADDR:?required}
+      BINARY_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?required}
+      BINARY_TLS_MODE: ${APP_TLS_MODE:?required}
+      BINARY_TLS_CERT_FILE: ${APP_TLS_CERT_FILE:?required}
+      BINARY_TLS_KEY_FILE: ${APP_TLS_KEY_FILE:?required}
+      BINARY_TRUSTED_PROXY_CIDRS: ${APP_TRUSTED_PROXY_CIDRS:-}
+      BINARY_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:?required}
+      BINARY_INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?required}
+      BINARY_INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?required}
+      BINARY_STORAGE_ROOT: /data/storage
+      BINARY_UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:?required}
+    mem_limit: ${APP_MEMORY_LIMIT:?required}
+    pids_limit: 256
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/binary-app", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  scanner:
+    <<: *product-service
+    image: ${SCANNER_IMAGE:?required}
+    pull_policy: never
+    networks:
+      - database-net
+      - checker-net
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/storage/blobs:/data/storage/blobs
+      - ${BINARY_DATA_ROOT:?required}/storage/projects:/data/storage/projects:ro
+      - ${BINARY_DATA_ROOT:?required}/work/scanner:/data/work
+    environment:
+      <<: *db-client
+      BINARY_VERSION: ${BINARY_VERSION:?required}
+      BINARY_ROLE: scanner
+      BINARY_WORK_ROOT: /data/work
+      BINARY_BLOB_ROOT: /data/storage/blobs
+      BINARY_PROJECT_ROOT: /data/storage/projects
+      BINARY_C_CHECKER_URL: http://c-checker:8080
+      BINARY_JAVA_CHECKER_URL: http://java-checker:8080
+      BINARY_PYTHON_CHECKER_URL: http://python-checker:8080
+      BINARY_JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:?required}
+      BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
+      BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
+      BINARY_SLOT_SCANNER: ${SLOT_SCANNER:?required}
+      BINARY_SLOT_TRIVY: ${SLOT_TRIVY:?required}
+      BINARY_SLOT_C_CHECK: ${SLOT_C_CHECK:?required}
+      BINARY_SLOT_JAVA_CHECK: ${SLOT_JAVA_CHECK:?required}
+      BINARY_SLOT_PYTHON_CHECK: ${SLOT_PYTHON_CHECK:?required}
+    mem_limit: ${SCANNER_MEMORY_LIMIT:?required}
+    pids_limit: 512
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/binary-scanner", "healthcheck"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  native-decompiler:
+    <<: *product-service
+    image: ${NATIVE_DECOMPILER_IMAGE:?required}
+    pull_policy: never
+    networks:
+      - database-net
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/storage/blobs:/data/storage/blobs:ro
+      - ${BINARY_DATA_ROOT:?required}/storage/projects/native:/data/storage/projects/native
+      - ${BINARY_DATA_ROOT:?required}/work/native-decompiler:/data/work
+    environment:
+      <<: *db-client
+      BINARY_VERSION: ${BINARY_VERSION:?required}
+      BINARY_ROLE: native-decompiler
+      BINARY_WORK_ROOT: /data/work
+      BINARY_BLOB_ROOT: /data/storage/blobs
+      BINARY_PROJECT_ROOT: /data/storage/projects/native
+      BINARY_JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:?required}
+      BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
+      BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
+      BINARY_SLOT_NATIVE: ${SLOT_NATIVE:?required}
+    mem_limit: ${NATIVE_MEMORY_LIMIT:?required}
+    pids_limit: 1024
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/binary-native-decompiler", "healthcheck"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 60s
+
+  jvm-decompiler:
+    <<: *product-service
+    image: ${JVM_DECOMPILER_IMAGE:?required}
+    pull_policy: never
+    networks:
+      - database-net
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/storage/blobs:/data/storage/blobs:ro
+      - ${BINARY_DATA_ROOT:?required}/storage/projects/jvm:/data/storage/projects/jvm
+      - ${BINARY_DATA_ROOT:?required}/work/jvm-decompiler:/data/work
+    environment:
+      <<: *db-client
+      BINARY_VERSION: ${BINARY_VERSION:?required}
+      BINARY_ROLE: jvm-decompiler
+      BINARY_WORK_ROOT: /data/work
+      BINARY_BLOB_ROOT: /data/storage/blobs
+      BINARY_PROJECT_ROOT: /data/storage/projects/jvm
+      BINARY_JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:?required}
+      BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
+      BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
+      BINARY_SLOT_JVM: ${SLOT_JVM:?required}
+    mem_limit: ${JVM_MEMORY_LIMIT:?required}
+    pids_limit: 512
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/binary-jvm-decompiler", "healthcheck"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 45s
+
+  pyc-decompiler:
+    <<: *product-service
+    image: ${PYC_DECOMPILER_IMAGE:?required}
+    pull_policy: never
+    networks:
+      - database-net
+    volumes:
+      - ${BINARY_DATA_ROOT:?required}/storage/blobs:/data/storage/blobs:ro
+      - ${BINARY_DATA_ROOT:?required}/storage/projects/pyc:/data/storage/projects/pyc
+      - ${BINARY_DATA_ROOT:?required}/work/pyc-decompiler:/data/work
+    environment:
+      <<: *db-client
+      BINARY_VERSION: ${BINARY_VERSION:?required}
+      BINARY_ROLE: pyc-decompiler
+      BINARY_WORK_ROOT: /data/work
+      BINARY_BLOB_ROOT: /data/storage/blobs
+      BINARY_PROJECT_ROOT: /data/storage/projects/pyc
+      BINARY_JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:?required}
+      BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
+      BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
+      BINARY_SLOT_PYC: ${SLOT_PYC:?required}
+    mem_limit: ${PYC_MEMORY_LIMIT:?required}
+    pids_limit: 256
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/binary-pyc-decompiler", "healthcheck"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 20s
+
+  c-checker:
+    <<: *checker-service
+    image: ${C_CHECKER_IMAGE:?required}
+    pull_policy: never
+    mem_limit: ${C_CHECKER_MEMORY_LIMIT:?required}
+    environment:
+      SERVER_PORT: "8080"
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8080;
+          printf "GET /healthz HTTP/1.0\r\n\r\n" >&3;
+          head -n 1 <&3 | grep -q " 200 "'
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  java-checker:
+    <<: *checker-service
+    image: ${JAVA_CHECKER_IMAGE:?required}
+    pull_policy: never
+    mem_limit: ${JAVA_CHECKER_MEMORY_LIMIT:?required}
+    environment:
+      SERVER_PORT: "8080"
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8080;
+          printf "GET /healthz HTTP/1.0\r\n\r\n" >&3;
+          head -n 1 <&3 | grep -q " 200 "'
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  python-checker:
+    <<: *checker-service
+    image: ${PYTHON_CHECKER_IMAGE:?required}
+    pull_policy: never
+    mem_limit: ${PYTHON_CHECKER_MEMORY_LIMIT:?required}
+    environment:
+      SERVER_PORT: "8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+
+networks:
+  database-net:
+    internal: true
+  checker-net:
+    internal: true
+  edge-net:

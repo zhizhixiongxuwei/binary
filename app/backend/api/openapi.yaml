@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: BinaryScan API
+  version: 0.1.0
+paths:
+  /healthz:
+    get:
+      responses:
+        "200": { description: Process is alive }
+  /readyz:
+    get:
+      responses:
+        "200": { description: Database is ready }
+        "503": { description: A required dependency is unavailable }
+  /api/v1/system/info:
+    get:
+      responses:
+        "200": { description: Product name and version }
+  /api/v1/auth/login:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "200": { description: Session cookie and current user }
+        "401": { description: Invalid credentials }
+        "429": { description: Login rate limited }
+  /api/v1/auth/me:
+    get:
+      responses:
+        "200": { description: Current user and CSRF token }
+        "401": { description: Authentication required }
+  /api/v1/auth/logout:
+    post:
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Session deleted }
+  /api/v1/auth/password:
+    post:
+      parameters:
+        - in: header
+          name: X-CSRF-Token
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Password changed and sessions revoked }
