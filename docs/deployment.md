@@ -20,7 +20,7 @@ Linux 生产机首次创建数据目录时使用 `sudo deploy/scripts/binary.sh 
 
 ## 离线交付
 
-制备机负责构建八个产品镜像并连同 MySQL 镜像打包。生产机只执行：
+制备机负责构建八个产品镜像并连同 MySQL 镜像打包。制备机还必须把 Trivy 离线数据库、Ghidra、Vineflower/CFR/JADX 和 pycdc 固化进相应最终镜像。生产机只执行：
 
     shasum -a 256 -c binary-runtime.tar.sha256
     docker load -i binary-runtime.tar

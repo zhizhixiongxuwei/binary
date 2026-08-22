@@ -37,6 +37,10 @@ type Workspace struct {
 	written  int64
 }
 
+func (w *Workspace) Stats() (int, int64) {
+	return len(w.files), w.written
+}
+
 func NewWorkspace(workRoot, runID string, maxBytes int64) (*Workspace, error) {
 	runID, err := cleanIdentifier(runID)
 	if err != nil {
@@ -52,9 +56,13 @@ func NewWorkspace(workRoot, runID string, maxBytes int64) (*Workspace, error) {
 	if err := os.MkdirAll(absRoot, 0o700); err != nil {
 		return nil, fmt.Errorf("create staging root: %w", err)
 	}
-	root := filepath.Join(absRoot, runID+".staging")
-	if err := os.Mkdir(root, 0o700); err != nil {
+	root, err := os.MkdirTemp(absRoot, runID+"-")
+	if err != nil {
 		return nil, fmt.Errorf("create workspace: %w", err)
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		os.RemoveAll(root)
+		return nil, fmt.Errorf("secure workspace: %w", err)
 	}
 	return &Workspace{root: root, runID: runID, files: make(map[string]ManifestFile), maxBytes: maxBytes}, nil
 }

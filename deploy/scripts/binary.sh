@@ -39,6 +39,7 @@ init_data() {
     "$BINARY_DATA_ROOT/mysql" \
     "$BINARY_DATA_ROOT/storage/uploads" \
     "$BINARY_DATA_ROOT/storage/blobs" \
+    "$BINARY_DATA_ROOT/storage/artifacts" \
     "$BINARY_DATA_ROOT/storage/projects/native" \
     "$BINARY_DATA_ROOT/storage/projects/jvm" \
     "$BINARY_DATA_ROOT/storage/projects/pyc" \

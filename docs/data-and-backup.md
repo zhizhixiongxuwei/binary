@@ -5,6 +5,7 @@
 - `mysql`：MySQL 数据目录，必须备份。
 - `storage/uploads`：未完成和已接收上传的持久状态。
 - `storage/blobs`：不可变输入内容。
+- `storage/artifacts`：Trivy 原始结果等运行制品。
 - `storage/projects`：三类反编译源码项目。
 - `storage/reports`：生成的报告。
 - `work`：worker 临时目录，不进入备份。

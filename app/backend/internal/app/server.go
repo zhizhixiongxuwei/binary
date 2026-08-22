@@ -34,6 +34,10 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	}
 
 	auth := newAuthService(db, cfg.App.TLSMode != "http")
+	tasks, err := newTaskService(cfg, db)
+	if err != nil {
+		return nil, fmt.Errorf("initialize task service: %w", err)
+	}
 	router.Use(gin.Recovery(), requestID(), originGuard(cfg.App.AllowedOrigins))
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	router.GET("/readyz", func(c *gin.Context) {
@@ -56,6 +60,16 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.GET("/auth/me", auth.me)
 	protected.POST("/auth/logout", auth.requireCSRF(), auth.logout)
 	protected.POST("/auth/password", auth.requireCSRF(), auth.changePassword)
+	protected.GET("/tasks", tasks.list)
+	protected.GET("/tasks/:taskID", tasks.get)
+	protected.GET("/tasks/:taskID/findings", tasks.findings)
+	protected.GET("/tasks/:taskID/reports", tasks.listReports)
+	protected.GET("/reports/:reportID/content", tasks.downloadReport)
+	protected.POST("/tasks", auth.requireCSRF(), requireOperator(), tasks.create)
+	protected.POST("/tasks/:taskID/files/:fileID/archive-import", auth.requireCSRF(), requireOperator(), tasks.queueArchiveImport)
+	protected.POST("/tasks/:taskID/files/:fileID/decompile", auth.requireCSRF(), requireOperator(), tasks.queueDecompile)
+	protected.POST("/tasks/:taskID/projects/:projectID/check", auth.requireCSRF(), requireOperator(), tasks.queueCheck)
+	protected.POST("/tasks/:taskID/reports", auth.requireCSRF(), requireOperator(), tasks.createReport)
 
 	dist, err := fs.Sub(webui.Dist, "dist")
 	if err != nil {

@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
+
+	"binaryscan.local/backend/internal/identity"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -22,7 +22,7 @@ func BootstrapAdministrator(ctx context.Context, db *sql.DB, username, password 
 	if err != nil {
 		return fmt.Errorf("hash initial administrator password: %w", err)
 	}
-	publicID, err := randomUUID()
+	publicID, err := identity.UUID()
 	if err != nil {
 		return err
 	}
@@ -33,16 +33,4 @@ func BootstrapAdministrator(ctx context.Context, db *sql.DB, username, password 
 		return fmt.Errorf("create initial administrator: %w", err)
 	}
 	return nil
-}
-
-func randomUUID() (string, error) {
-	var value [16]byte
-	if _, err := rand.Read(value[:]); err != nil {
-		return "", fmt.Errorf("generate identifier: %w", err)
-	}
-	value[6] = (value[6] & 0x0f) | 0x40
-	value[8] = (value[8] & 0x3f) | 0x80
-	encoded := hex.EncodeToString(value[:])
-	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" +
-		encoded[16:20] + "-" + encoded[20:32], nil
 }

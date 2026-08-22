@@ -34,11 +34,13 @@ paths:
         "429": { description: Login rate limited }
   /api/v1/auth/me:
     get:
+      security: [{ sessionCookie: [] }]
       responses:
         "200": { description: Current user and CSRF token }
         "401": { description: Authentication required }
   /api/v1/auth/logout:
     post:
+      security: [{ sessionCookie: [] }]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -48,6 +50,7 @@ paths:
         "204": { description: Session deleted }
   /api/v1/auth/password:
     post:
+      security: [{ sessionCookie: [] }]
       parameters:
         - in: header
           name: X-CSRF-Token
@@ -55,3 +58,155 @@ paths:
           schema: { type: string }
       responses:
         "204": { description: Password changed and sessions revoked }
+  /api/v1/tasks:
+    get:
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200": { description: Most recent tasks }
+        "401": { description: Authentication required }
+    post:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201": { description: Upload persisted and automatic scan queued }
+        "413": { description: Upload exceeds configured size }
+  /api/v1/tasks/{taskID}:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200": { description: Task, file nodes, runs and source projects }
+        "404": { description: Task not found }
+  /api/v1/tasks/{taskID}/findings:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - in: query
+          name: runId
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Normalized Trivy and source findings }
+  /api/v1/tasks/{taskID}/files/{fileID}/archive-import:
+    post:
+      description: Manually expands a supported archive into bounded file nodes; it never queues decompilation.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/FileID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201": { description: Archive import queued }
+        "200": { description: Existing idempotent run returned }
+        "422": { description: Archive format is not supported }
+  /api/v1/tasks/{taskID}/files/{fileID}/decompile:
+    post:
+      description: Manually routes a file to exactly one Native, JVM/Android or PYC decompiler.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/FileID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201": { description: Decompile run queued }
+        "200": { description: Existing idempotent run returned }
+        "422": { description: File format cannot be decompiled }
+  /api/v1/tasks/{taskID}/projects/{projectID}/check:
+    post:
+      description: Manually queues the language checker through scanner orchestration.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/ProjectID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201": { description: Checker run queued }
+        "200": { description: Existing idempotent run returned }
+        "422": { description: Source project cannot be checked }
+  /api/v1/tasks/{taskID}/reports:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200": { description: Immutable task reports }
+    post:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [format, runIds]
+              properties:
+                format: { enum: [json, html] }
+                runIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+      responses:
+        "201": { description: Report snapshot created }
+        "409": { description: A selected run is not terminal }
+  /api/v1/reports/{reportID}/content:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: reportID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Authenticated report download }
+        "404": { description: Report not found }
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: binary_session
+  parameters:
+    CSRFToken:
+      in: header
+      name: X-CSRF-Token
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    TaskID:
+      in: path
+      name: taskID
+      required: true
+      schema: { type: string, format: uuid }
+    FileID:
+      in: path
+      name: fileID
+      required: true
+      schema: { type: string, format: uuid }
+    ProjectID:
+      in: path
+      name: projectID
+      required: true
+      schema: { type: string, format: uuid }

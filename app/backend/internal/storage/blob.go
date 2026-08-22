@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 )
 
+var ErrBlobTooLarge = errors.New("blob exceeds the configured byte limit")
+
 type Blob struct {
 	SHA256     [32]byte
 	SizeBytes  int64
@@ -54,7 +56,10 @@ func (s *BlobStore) Ingest(source io.Reader, maxBytes int64) (Blob, error) {
 		return Blob{}, fmt.Errorf("close blob: %w", closeErr)
 	}
 	if written > maxBytes {
-		return Blob{}, fmt.Errorf("blob exceeds %d bytes", maxBytes)
+		return Blob{}, fmt.Errorf("%w: %d bytes", ErrBlobTooLarge, maxBytes)
+	}
+	if written == 0 {
+		return Blob{}, fmt.Errorf("blob is empty")
 	}
 
 	var digest [32]byte

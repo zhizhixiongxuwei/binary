@@ -21,15 +21,9 @@ type Executor interface {
 	Execute(context.Context, job.Claim) error
 }
 
-type ExecutorFunc func(context.Context, job.Claim) error
+type Factory func(config.Config, *sql.DB, *job.Repository) (Executor, error)
 
-func (f ExecutorFunc) Execute(ctx context.Context, claim job.Claim) error {
-	return f(ctx, claim)
-}
-
-var ErrCapabilityPending = errors.New("capability implementation is not available yet")
-
-func Run(role string, kinds []job.Kind, executor Executor) error {
+func Run(role string, kinds []job.Kind, factory Factory) error {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		cfg, err := config.Load(role)
 		if err != nil {
@@ -56,6 +50,10 @@ func Run(role string, kinds []job.Kind, executor Executor) error {
 	}
 	defer db.Close()
 	repository := job.NewRepository(db)
+	executor, err := factory(cfg, db, repository)
+	if err != nil {
+		return fmt.Errorf("initialize %s executor: %w", role, err)
+	}
 	for _, kind := range kinds {
 		pool, ok := job.PoolForKind(kind)
 		if !ok {
@@ -177,9 +175,6 @@ func sleepContext(ctx context.Context, delay time.Duration) {
 }
 
 func errorCode(err error) string {
-	if errors.Is(err, ErrCapabilityPending) {
-		return "capability_pending"
-	}
 	if errors.Is(err, job.ErrFenceLost) {
 		return "fence_lost"
 	}

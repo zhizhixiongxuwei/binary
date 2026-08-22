@@ -219,6 +219,9 @@ func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim,
 		completion.RunStatus, completion.ErrorCode, completion.ErrorMessage, claim.RunID); err != nil {
 		return fmt.Errorf("complete run %s: %w", claim.RunID, err)
 	}
+	if err := updateTaskForCompletion(ctx, tx, claim, completion); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE resource_slots
         SET job_id = NULL, fencing_token = NULL, lease_owner = NULL, acquired_at = NULL
         WHERE job_id = ? AND fencing_token = ? AND lease_owner = ?`,
@@ -227,6 +230,54 @@ func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim,
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit job completion: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql.Tx) error) error {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin fenced publication: %w", err)
+	}
+	defer tx.Rollback()
+	var valid int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM jobs
+        WHERE id = ? AND run_id = ? AND status = 'running' AND fencing_token = ?
+          AND lease_until > UTC_TIMESTAMP(6) FOR UPDATE`, claim.ID, claim.RunID, claim.FencingToken).Scan(&valid); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrFenceLost
+		}
+		return fmt.Errorf("validate publication fence: %w", err)
+	}
+	if err := apply(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit fenced publication: %w", err)
+	}
+	return nil
+}
+
+func updateTaskForCompletion(ctx context.Context, tx *sql.Tx, claim Claim, completion Completion) error {
+	var status string
+	switch claim.Kind {
+	case KindScan:
+		if completion.JobStatus == "failed" {
+			status = "failed"
+		}
+	case KindTrivyScan:
+		if completion.JobStatus == "succeeded" {
+			status = "ready"
+		} else {
+			status = "partial"
+		}
+	}
+	if status == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE tasks t JOIN runs r ON r.task_id = t.id
+        SET t.status = ? WHERE r.id = ? AND t.deleted_at IS NULL`, status, claim.RunID); err != nil {
+		return fmt.Errorf("update task after %s completion: %w", claim.Kind, err)
 	}
 	return nil
 }

@@ -1,5 +1,8 @@
 services:
   mysql:
+    networks:
+      - database-net
+      - edge-net
     ports:
       - "127.0.0.1:${DEV_MYSQL_PORT:?required}:3306"
 

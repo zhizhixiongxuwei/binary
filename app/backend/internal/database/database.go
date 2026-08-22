@@ -57,7 +57,7 @@ func Migrate(ctx context.Context, db *sql.DB, migrationFS fs.FS) error {
 
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
         version BIGINT UNSIGNED NOT NULL PRIMARY KEY,
-        applied_at DATETIME(6) NOT NULL DEFAULT UTC_TIMESTAMP(6)
+        applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`); err != nil {
 		return fmt.Errorf("create migration table: %w", err)
 	}

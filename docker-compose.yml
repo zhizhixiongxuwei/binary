@@ -110,6 +110,7 @@ services:
     volumes:
       - ${BINARY_DATA_ROOT:?required}/storage/blobs:/data/storage/blobs
       - ${BINARY_DATA_ROOT:?required}/storage/projects:/data/storage/projects:ro
+      - ${BINARY_DATA_ROOT:?required}/storage/artifacts:/data/storage/artifacts
       - ${BINARY_DATA_ROOT:?required}/work/scanner:/data/work
     environment:
       <<: *db-client
@@ -118,9 +119,14 @@ services:
       BINARY_WORK_ROOT: /data/work
       BINARY_BLOB_ROOT: /data/storage/blobs
       BINARY_PROJECT_ROOT: /data/storage/projects
+      BINARY_ARTIFACT_ROOT: /data/storage/artifacts
       BINARY_C_CHECKER_URL: http://c-checker:8080
       BINARY_JAVA_CHECKER_URL: http://java-checker:8080
       BINARY_PYTHON_CHECKER_URL: http://python-checker:8080
+      BINARY_TRIVY_PATH: /usr/local/bin/trivy
+      BINARY_TRIVY_CACHE_ROOT: /opt/trivy-cache
+      BINARY_ARCHIVE_MAX_EXPANDED_BYTES: ${ARCHIVE_MAX_EXPANDED_BYTES:?required}
+      BINARY_ARCHIVE_MAX_ENTRIES: ${ARCHIVE_MAX_ENTRIES:?required}
       BINARY_JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:?required}
       BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
       BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
@@ -162,6 +168,9 @@ services:
       BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
       BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
       BINARY_SLOT_NATIVE: ${SLOT_NATIVE:?required}
+      BINARY_GHIDRA_PATH: /opt/ghidra/support/analyzeHeadless
+      BINARY_GHIDRA_SCRIPT_ROOT: /opt/binaryscan/ghidra
+      BINARY_TOOL_VERSION: "12.1.2"
     mem_limit: ${NATIVE_MEMORY_LIMIT:?required}
     pids_limit: 1024
     depends_on:
@@ -195,6 +204,11 @@ services:
       BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
       BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
       BINARY_SLOT_JVM: ${SLOT_JVM:?required}
+      BINARY_JAVA_PATH: /opt/java/openjdk/bin/java
+      BINARY_VINEFLOWER_JAR: /opt/bytecode-tools/vineflower/vineflower.jar
+      BINARY_CFR_JAR: /opt/bytecode-tools/cfr/cfr.jar
+      BINARY_JADX_JAR: /opt/bytecode-tools/jadx/lib/jadx-all.jar
+      BINARY_TOOL_VERSION: vineflower-cfr-jadx
     mem_limit: ${JVM_MEMORY_LIMIT:?required}
     pids_limit: 512
     depends_on:
@@ -228,6 +242,8 @@ services:
       BINARY_JOB_HEARTBEAT_SECONDS: ${JOB_HEARTBEAT_SECONDS:?required}
       BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
       BINARY_SLOT_PYC: ${SLOT_PYC:?required}
+      BINARY_PYCDC_PATH: /opt/bytecode-tools/pycdc/pycdc
+      BINARY_TOOL_VERSION: "1.2.0"
     mem_limit: ${PYC_MEMORY_LIMIT:?required}
     pids_limit: 256
     depends_on:
