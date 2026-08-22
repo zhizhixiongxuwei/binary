@@ -24,7 +24,8 @@ die() {
 }
 
 compose() {
-  docker compose --project-directory "$repo_dir" --env-file "$env_file" "$@"
+  docker compose --project-directory "$repo_dir" --env-file "$env_file" \
+    -f "$repo_dir/docker-compose.yml" "$@"
 }
 
 drill_compose() {
@@ -37,7 +38,8 @@ drill_compose() {
     export APP_TLS_MODE=http
     export PUBLIC_BASE_URL="http://127.0.0.1:$drill_port"
     export APP_ALLOWED_ORIGINS="http://127.0.0.1:$drill_port"
-    docker compose --project-directory "$repo_dir" --env-file "$env_file" "$@"
+    docker compose --project-directory "$repo_dir" --env-file "$env_file" \
+      -f "$repo_dir/docker-compose.yml" "$@"
   )
 }
 

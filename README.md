@@ -35,7 +35,7 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 4. 静态检查：`deploy/scripts/binary.sh doctor`。
 5. 在制备机准备并验证工具基础镜像：`deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache`。
 6. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
-7. 启动：`deploy/scripts/binary.sh up`。
+7. 启动：`deploy/scripts/binary.sh up`；该命令会再次执行 `doctor`，不能附加服务名或 Compose 参数，也不能绕过生产检查。
 
 初始管理员只在空数据库中创建一次。首次登录后必须修改密码，修改 `.env` 不会重置数据库中的管理员密码。
 
@@ -58,6 +58,8 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
     npm run dev
 
 开发入口使用 `deploy/docker/compose.dev.yml` 覆盖为本机 HTTP；生产仍使用根 `docker-compose.yml` 的 HTTPS 入口。
+
+发布 smoke 集中在一个脚本中：`deploy/scripts/smoke.sh topology` 检查九服务边界，`contracts` 对运行中的三个 checker 执行真实 `checker-v1` 请求，`live` 完成一条 PYC 上传、自动 scan/Trivy、手动反编译、手动检查和报告下载链路。完整参数和数据保留边界见 `docs/deployment.md`。
 
 ## 数据保证
 

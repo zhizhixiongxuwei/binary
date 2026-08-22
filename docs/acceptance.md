@@ -41,8 +41,9 @@
 - 对一个已发布 C check 注入“run/job/attempt 仍 running 且 lease 已过期”的崩溃状态。回收后 attempt 数仍为 1，run/job 为 `complete/succeeded`，资源槽释放，4 个 finding 和 19 个任务事件均未增加。
 - 对一个未发布、attempt 已耗尽的 scan job 注入过期 lease。回收后 task/run/job 同时变为 `failed`，attempt 变为 `lease_lost`、错误码为 `attempts_exhausted`，资源槽释放。
 - 生成并下载 JSON、HTML 报告，两份报告只包含显式选择的 9 个终态 run；JSON schema 为 `binaryscan-report-v1`。九容器完整停止后使用 `--pull never` 启动，任务与报告仍可读取。最终 `binary-runtime-0.1.0-dev-amd64-phase4-final.tar`（2.8 GB）校验通过，并由该包重新加载全部九镜像。
-- 实际备份位于 `/Users/chenzhe/Documents/binary-backup-phase4`。恢复脚本把 MySQL dump 与 storage 导入全新的数据根 `/Users/chenzhe/Documents/binary-restore-phase4-final8`，11 组 schema/业务计数和 4 个数据库到文件引用一致；最终九镜像健康后自动移除演练容器，`work` 和 `tls` 未被恢复。
+- 实际备份位于 `/Users/chenzhe/Documents/binary-backup-phase4`。恢复脚本把 MySQL dump 与 storage 导入全新的数据根 `/Users/chenzhe/Documents/binary-restore-phase4-final9`，11 组 schema/业务计数和 4 个数据库到文件引用一致；即使调用环境故意设置其他 `COMPOSE_FILE`，脚本仍固定使用正式根 Compose。最终九镜像健康后自动移除演练容器，`work` 和 `tls` 未被恢复。
 - 最终队列静止后，活跃 job/slot、非活跃占槽、running attempt、已发布未完成和孤立 running attempt 五类一致性查询均为零。
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
+- 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `PY001`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
 
 这次验收仍不替代目标单位现场检查。投产门槛剩余：正式 DNS 与单位 CA 证书、授权网段防火墙、按实际并发与大文件进行容量测试、物理断网后的 `--pull never` 再启动，以及 PE/Mach-O/DEX/APK 等单位实际文件矩阵。验收用短期证书和测试账号不得复制到生产环境。

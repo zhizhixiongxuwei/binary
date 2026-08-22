@@ -290,20 +290,27 @@ doctor() {
   reject_placeholder APP_ALLOWED_ORIGINS "$APP_ALLOWED_ORIGINS"
   validate_data_layout
   validate_tls
-  docker compose --project-directory "$repo_dir" --env-file "$env_file" config --quiet
+  docker compose --project-directory "$repo_dir" --env-file "$env_file" \
+    -f "$repo_dir/docker-compose.yml" config --quiet
   validate_images
   echo "configuration is valid"
 }
 
 compose() {
   load_env
-  docker compose --project-directory "$repo_dir" --env-file "$env_file" "$@"
+  docker compose --project-directory "$repo_dir" --env-file "$env_file" \
+    -f "$repo_dir/docker-compose.yml" "$@"
 }
 
 case "${1:-}" in
   init) init_data ;;
   doctor) doctor ;;
-  up) shift; compose up --pull never --wait "$@" ;;
+  up)
+    shift
+    [ "$#" -eq 0 ] || die "up does not accept service names or Compose options"
+    doctor
+    compose up --pull never --remove-orphans --wait
+    ;;
   down) shift; compose down "$@" ;;
   status) shift; compose ps "$@" ;;
   logs) shift; compose logs "$@" ;;

@@ -9,4 +9,4 @@
 7. MySQL 队列保留 lease、heartbeat、fencing、幂等和资源槽。
 8. 三种源码检查共享 runs/findings 生命周期，语言证据使用有界 JSON。
 9. 只在 blob 进入系统和离线包加载边界计算内容摘要。
-10. 测试只覆盖并发、安全、路由、checker 合同和一条完整 smoke。
+10. 测试只覆盖并发、安全、路由、三个 checker 合同和一条完整交互式 smoke；发布 smoke 集中在一个脚本中。
