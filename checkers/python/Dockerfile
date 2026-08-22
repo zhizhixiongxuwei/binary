@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 ARG PYTHON_RUNTIME_IMAGE=python:3.13.7-slim-bookworm
 
 FROM ${PYTHON_RUNTIME_IMAGE}

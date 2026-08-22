@@ -208,7 +208,7 @@ services:
       BINARY_VINEFLOWER_JAR: /opt/bytecode-tools/vineflower/vineflower.jar
       BINARY_CFR_JAR: /opt/bytecode-tools/cfr/cfr.jar
       BINARY_JADX_JAR: /opt/bytecode-tools/jadx/lib/jadx-all.jar
-      BINARY_TOOL_VERSION: vineflower-cfr-jadx
+      BINARY_TOOL_VERSION: vineflower-1.12.0+cfr-0.152+jadx-1.5.6
     mem_limit: ${JVM_MEMORY_LIMIT:?required}
     pids_limit: 512
     depends_on:
@@ -243,7 +243,7 @@ services:
       BINARY_JOB_POLL_MILLISECONDS: ${JOB_POLL_MILLISECONDS:?required}
       BINARY_SLOT_PYC: ${SLOT_PYC:?required}
       BINARY_PYCDC_PATH: /opt/bytecode-tools/pycdc/pycdc
-      BINARY_TOOL_VERSION: "1.2.0"
+      BINARY_TOOL_VERSION: pycdc-b428976
     mem_limit: ${PYC_MEMORY_LIMIT:?required}
     pids_limit: 256
     depends_on:

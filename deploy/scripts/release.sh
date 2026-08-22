@@ -15,23 +15,39 @@ set -a
 set +a
 
 checksum_create() {
+  archive_dir=$(dirname -- "$1")
+  archive_name=$(basename -- "$1")
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" > "$1.sha256"
+    (cd "$archive_dir" && sha256sum "$archive_name" > "$archive_name.sha256")
   else
-    shasum -a 256 "$1" > "$1.sha256"
+    (cd "$archive_dir" && shasum -a 256 "$archive_name" > "$archive_name.sha256")
   fi
 }
 
 checksum_verify() {
+  archive_dir=$(dirname -- "$1")
+  checksum_name=$(basename -- "$1.sha256")
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -c "$1.sha256"
+    (cd "$archive_dir" && sha256sum -c "$checksum_name")
   else
-    shasum -a 256 -c "$1.sha256"
+    (cd "$archive_dir" && shasum -a 256 -c "$checksum_name")
   fi
+}
+
+require_image() {
+  docker image inspect "$1" >/dev/null 2>&1 || {
+    echo "missing required image: $1" >&2
+    echo "run deploy/scripts/prepare-tools.sh all CACHE_DIR or load the prepared image" >&2
+    exit 1
+  }
 }
 
 case "${1:-}" in
   build)
+    require_image "$TRIVY_RUNTIME_DB_IMAGE"
+    require_image "$GHIDRA_RUNTIME_IMAGE"
+    require_image "$JVM_TOOLS_IMAGE"
+    require_image "$PYCDC_TOOLS_IMAGE"
     docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/app/Dockerfile" -t "$APP_IMAGE" \
       --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
       --build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE" \
@@ -40,7 +56,7 @@ case "${1:-}" in
     docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/scanner.Dockerfile" -t "$SCANNER_IMAGE" \
       --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
       --build-arg "TRIVY_RUNTIME_DB_IMAGE=$TRIVY_RUNTIME_DB_IMAGE" \
-      --build-arg "ARCHIVE_TOOLS_IMAGE=$ARCHIVE_TOOLS_IMAGE" \
+      --build-arg "SCANNER_RUNTIME_IMAGE=$SCANNER_RUNTIME_IMAGE" \
       --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
     docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/native-decompiler.Dockerfile" -t "$NATIVE_DECOMPILER_IMAGE" \
       --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
@@ -64,8 +80,19 @@ case "${1:-}" in
       --build-arg "PYTHON_RUNTIME_IMAGE=$PYTHON_RUNTIME_IMAGE" "$repo_dir/checkers/python"
     ;;
   package)
-    output=${2:-"$repo_dir/binary-runtime-${BINARY_VERSION}-${BINARY_PLATFORM##*/}.tar"}
-    docker image inspect "$MYSQL_IMAGE" >/dev/null
+    output=${2:?usage: release.sh package OUTPUT.tar}
+    [ -d "$(dirname -- "$output")" ] || {
+      echo "output directory does not exist: $(dirname -- "$output")" >&2
+      exit 1
+    }
+    for image in "$MYSQL_IMAGE" "$APP_IMAGE" "$SCANNER_IMAGE" \
+      "$NATIVE_DECOMPILER_IMAGE" "$JVM_DECOMPILER_IMAGE" "$PYC_DECOMPILER_IMAGE" \
+      "$C_CHECKER_IMAGE" "$JAVA_CHECKER_IMAGE" "$PYTHON_CHECKER_IMAGE"; do
+      docker image inspect "$image" >/dev/null 2>&1 || {
+        echo "missing product image: $image" >&2
+        exit 1
+      }
+    done
     docker save -o "$output" \
       "$MYSQL_IMAGE" "$APP_IMAGE" "$SCANNER_IMAGE" \
       "$NATIVE_DECOMPILER_IMAGE" "$JVM_DECOMPILER_IMAGE" "$PYC_DECOMPILER_IMAGE" \
@@ -79,7 +106,7 @@ case "${1:-}" in
     docker load -i "$archive"
     ;;
   *)
-    echo "usage: $0 {build|package [FILE]|load FILE}" >&2
+    echo "usage: $0 {build|package OUTPUT.tar|load FILE}" >&2
     exit 2
     ;;
 esac

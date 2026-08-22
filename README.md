@@ -2,7 +2,7 @@
 
 BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环境由九个长期容器组成，支持 Native、JVM/Android 与 Python PYC 三条相互隔离的反编译链路。
 
-当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译工具适配、checker 编排和 JSON/HTML 报告链路已接入；正式投产前仍须在制备机完成工具基础镜像、离线数据库和代表性样本验收。
+当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译、checker 编排和 JSON/HTML 报告链路均已接入。九个最终镜像、四类离线工具输入和代表性样本已完成制备机验收；正式投产前仍须完成目标服务器上的多用户、TLS、备份恢复和断网重启验收。
 
 ## 目录边界
 
@@ -33,10 +33,13 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 2. 把单位 CA 签发的证书放到 `BINARY_DATA_ROOT/tls/server.crt`，私钥放到 `BINARY_DATA_ROOT/tls/server.key`。
 3. 初始化数据根：`deploy/scripts/binary.sh init`。
 4. 静态检查：`deploy/scripts/binary.sh doctor`。
-5. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
-6. 启动：`deploy/scripts/binary.sh up`。
+5. 在制备机准备并验证工具基础镜像：`deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache`。
+6. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
+7. 启动：`deploy/scripts/binary.sh up`。
 
 初始管理员只在空数据库中创建一次。首次登录后必须修改密码，修改 `.env` 不会重置数据库中的管理员密码。
+
+缓存目录不进入 Git，必须随发布证据保存，以便以后用同一批官方资产和 Trivy 数据库重建。详细边界见 `docs/tool-supply-chain.md`。
 
 ## 开发
 

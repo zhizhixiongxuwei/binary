@@ -49,7 +49,7 @@ public final class ExportPseudoC extends GhidraScript {
         }
         try {
             for (Function function : functions) {
-                checkCancelled();
+                monitor.checkCancelled();
                 DecompileResults result = decompiler.decompileFunction(function, 60, monitor);
                 if (!result.decompileCompleted() || result.getDecompiledFunction() == null) {
                     partial = true;

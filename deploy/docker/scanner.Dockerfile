@@ -1,7 +1,6 @@
-# syntax=docker/dockerfile:1.7
 ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
-ARG TRIVY_RUNTIME_DB_IMAGE=binaryscan/trivy-runtime-db:0.72.0-db20260805
-ARG ARCHIVE_TOOLS_IMAGE=binaryscan/archive-tools:alpine3.22-v1
+ARG TRIVY_RUNTIME_DB_IMAGE=binaryscan/trivy-runtime-db:0.72.0-offline20260822
+ARG SCANNER_RUNTIME_IMAGE=alpine:3.22.5
 
 FROM ${GO_BUILD_IMAGE} AS build
 WORKDIR /src/app/backend
@@ -14,7 +13,7 @@ ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 RUN go build -buildvcs=false -trimpath -ldflags="-s -w" -o /out/binary-scanner ./cmd/scanner
 
 FROM ${TRIVY_RUNTIME_DB_IMAGE} AS trivy
-FROM ${ARCHIVE_TOOLS_IMAGE}
+FROM ${SCANNER_RUNTIME_IMAGE}
 ARG BINARY_VERSION=0.1.0-dev
 USER root
 COPY --from=build --chmod=0555 /out/binary-scanner /usr/local/bin/binary-scanner

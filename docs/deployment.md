@@ -20,12 +20,20 @@ Linux 生产机首次创建数据目录时使用 `sudo deploy/scripts/binary.sh 
 
 ## 离线交付
 
-制备机负责构建八个产品镜像并连同 MySQL 镜像打包。制备机还必须把 Trivy 离线数据库、Ghidra、Vineflower/CFR/JADX 和 pycdc 固化进相应最终镜像。生产机只执行：
+制备机负责构建八个产品镜像并连同 MySQL 镜像打包。制备机先执行：
 
-    shasum -a 256 -c binary-runtime.tar.sha256
-    docker load -i binary-runtime.tar
+    deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache
+    deploy/scripts/release.sh build
+    mkdir -p /srv/binaryscan-release
+    deploy/scripts/release.sh package /srv/binaryscan-release/binary-runtime-0.1.0-dev-amd64.tar
+
+第一条命令从官方发布源取得并缓存 Ghidra、Vineflower、CFR、JADX、pycdc 源码，以及 Trivy 主数据库和 Java 数据库。缓存不进入 Git，但必须与本次发布记录一起保存。生产机只执行：
+
+    deploy/scripts/release.sh load /srv/binaryscan-release/binary-runtime-0.1.0-dev-amd64.tar
     docker compose up --pull never --wait
+
+归档和同名 `.sha256` 必须放在同一目录。`release.sh load` 会先在归档所在目录校验，再执行 `docker load`，因此不依赖调用命令时的当前工作目录。
 
 生产机不得执行 build、pull、npm、Maven、pip 或 Trivy 数据库更新。
 
-当前 worker Dockerfile 使用固定的 Ghidra、JVM tools、pycdc、Trivy 和 archive runtime 基础镜像。这些基础镜像必须先在制备机准备，最终不作为单独运行服务。
+worker Dockerfile 使用固定的 Ghidra、JVM tools、pycdc 和 Trivy 离线基础镜像。这四个基础镜像只存在于制备机，不进入生产发布包。归档导入由 scanner 内的 Go 实现负责，不再维护额外的 archive-tools 镜像。

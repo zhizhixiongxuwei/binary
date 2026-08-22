@@ -1,11 +1,9 @@
-# syntax=docker/dockerfile:1.7
 ARG JAVA_BUILD_IMAGE=maven:3.9.11-eclipse-temurin-21
 ARG JAVA_RUNTIME_IMAGE=eclipse-temurin:21-jre-jammy
 
 FROM ${JAVA_BUILD_IMAGE} AS build
 WORKDIR /src
 COPY pom.xml ./
-RUN mvn -B -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -B -DskipTests package
 

@@ -1,6 +1,5 @@
-# syntax=docker/dockerfile:1.7
 ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
-ARG JVM_TOOLS_IMAGE=binaryscan/java-runtime:21-tools20260807
+ARG JVM_TOOLS_IMAGE=binaryscan/java-runtime:21-vf1.12.0-cfr0.152-jadx1.5.6
 
 FROM ${GO_BUILD_IMAGE} AS build
 WORKDIR /src/app/backend

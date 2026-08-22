@@ -1,6 +1,5 @@
-# syntax=docker/dockerfile:1.7
 ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
-ARG PYCDC_TOOLS_IMAGE=binaryscan/pycdc-tools:alpine3.22-v1
+ARG PYCDC_TOOLS_IMAGE=binaryscan/pycdc-tools:git-b428976
 
 FROM ${GO_BUILD_IMAGE} AS build
 WORKDIR /src/app/backend
