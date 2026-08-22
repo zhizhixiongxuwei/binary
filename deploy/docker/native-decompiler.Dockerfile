@@ -1,5 +1,5 @@
-ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
-ARG GHIDRA_RUNTIME_IMAGE=binaryscan/ghidra-runtime:12.1.2-jdk21
+ARG GO_BUILD_IMAGE=golang:1.26.7-bookworm
+ARG GHIDRA_RUNTIME_IMAGE=binaryscan/ghidra-runtime:12.1.3-jdk21
 
 FROM ${GO_BUILD_IMAGE} AS build
 WORKDIR /src/app/backend

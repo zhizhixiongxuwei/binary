@@ -1,4 +1,4 @@
-ARG TRIVY_SOURCE_IMAGE=public.ecr.aws/aquasecurity/trivy:0.72.0
+ARG TRIVY_SOURCE_IMAGE=public.ecr.aws/aquasecurity/trivy:0.74.0
 FROM ${TRIVY_SOURCE_IMAGE} AS trivy
 
 FROM scratch
@@ -15,7 +15,7 @@ ENV HOME=/tmp \
 
 LABEL org.opencontainers.image.title="BinaryScan Trivy offline runtime" \
       com.binaryscan.dependency-role="trivy" \
-      com.binaryscan.trivy-version="0.72.0"
+      com.binaryscan.trivy-version="0.74.0"
 
 USER 10001:10001
 WORKDIR /tmp

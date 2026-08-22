@@ -8,10 +8,12 @@
 
 ## 固定输入
 
-- Ghidra 12.1.2 官方 PUBLIC ZIP，运行于 JDK 21。
+- Ghidra 12.1.3 官方 PUBLIC ZIP，运行于 JDK 21。
 - Vineflower 1.12.0、CFR 0.152、JADX 1.5.6，运行于 JRE 21。
 - pycdc 固定到上游提交 `b4289760970dbc399684f1e155ec6d1ea1cc787e`。上游没有正式 release，因此不得把它标记为不存在的 `1.2.0` 版本。
-- Trivy 0.72.0 官方容器及制备时缓存的主漏洞数据库和 Java 数据库。
+- Trivy 0.74.0 官方容器及制备时缓存的主漏洞数据库和 Java 数据库。
+
+产品运行镜像只保留其能力边界需要的组件。Python checker 只使用标准库，因此不携带 pip/ensurepip；Native worker 只调用 `analyzeHeadless`，构建时会先核对 Ghidra 模块清单，再删除清单明确排除的 GhidraServer YAJSW 服务包装器。两项裁剪都必须通过代表性真实样本和离线漏洞复扫。
 
 精确 URL、基础镜像标签和产品工具镜像标签集中在 `deploy/docker/images.lock.env`。按照本项目的摘要边界，不为每个工具文件新增一套应用级哈希表；官方发布标签、pycdc Git 提交、最终 OCI 镜像身份和离线发布包 SHA-256 共同构成发布记录。
 

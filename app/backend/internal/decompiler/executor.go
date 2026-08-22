@@ -192,6 +192,11 @@ func (e *Executor) runGhidra(ctx context.Context, workRoot, inputPath string) (t
 }
 
 func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format string) (toolResult, error) {
+	stagedInput := filepath.Join(workRoot, "input."+format)
+	if err := os.Symlink(inputPath, stagedInput); err != nil {
+		return toolResult{}, fmt.Errorf("stage JVM input: %w", err)
+	}
+	inputPath = stagedInput
 	if format == "apk" || format == "dex" {
 		outputRoot := filepath.Join(workRoot, "jadx")
 		if err := os.MkdirAll(outputRoot, 0o700); err != nil {

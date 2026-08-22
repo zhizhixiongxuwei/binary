@@ -1,5 +1,5 @@
 ARG NODE_BUILD_IMAGE=node:22.19.0-bookworm-slim
-ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
+ARG GO_BUILD_IMAGE=golang:1.26.7-bookworm
 ARG APP_RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot
 
 FROM ${NODE_BUILD_IMAGE} AS frontend-build

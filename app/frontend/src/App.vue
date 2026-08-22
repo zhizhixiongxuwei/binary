@@ -9,6 +9,8 @@ type Project = { id: string; language: string; resultQuality: string; fileCount:
 type Finding = { id: number; severity: string; ruleId?: string; cwe?: string; path?: string; line?: number; title: string; message: string }
 type Report = { id: string; format: string; status: string; createdAt: string }
 type TaskDetail = { task: Task; files: FileNode[]; runs: Run[]; projects: Project[] }
+type ManagedUser = { id: string; username: string; role: string; active: boolean; mustChangePassword: boolean; createdAt: string; updatedAt: string }
+type AuditEntry = { id: number; actorUsername?: string; action: string; objectType?: string; objectId?: string; outcome: string; details?: unknown; createdAt: string }
 
 const version = ref('')
 const user = ref<User | null>(null)
@@ -22,6 +24,13 @@ const findings = ref<Finding[]>([])
 const reports = ref<Report[]>([])
 const selectedRuns = ref<string[]>([])
 const uploadFile = ref<File | null>(null)
+const view = ref<'workspace' | 'admin'>('workspace')
+const managedUsers = ref<ManagedUser[]>([])
+const auditEntries = ref<AuditEntry[]>([])
+const createUsername = ref('')
+const createPassword = ref('')
+const createRole = ref('operator')
+const resetPasswords = ref<Record<string, string>>({})
 const busy = ref('')
 const error = ref('')
 let pollTimer: number | undefined
@@ -42,6 +51,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 function csrfHeaders(extra: Record<string, string> = {}) {
   return { 'X-CSRF-Token': user.value?.csrfToken ?? '', ...extra }
+}
+
+function validPassword(value: string) {
+  const bytes = new TextEncoder().encode(value).length
+  return bytes >= 12 && bytes <= 72
 }
 
 async function loadInfo() {
@@ -96,6 +110,63 @@ async function logout() {
   await request('/api/v1/auth/logout', { method: 'POST', headers: csrfHeaders() })
   user.value = null
   selected.value = null
+  view.value = 'workspace'
+}
+
+async function openAdmin() {
+  view.value = 'admin'
+  busy.value = 'admin-load'
+  error.value = ''
+  try {
+    await Promise.all([loadManagedUsers(), loadAudit()])
+  } catch (cause) {
+    error.value = messageOf(cause)
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function loadManagedUsers() {
+  managedUsers.value = (await request<{ users: ManagedUser[] }>('/api/v1/admin/users')).users
+}
+
+async function loadAudit() {
+  auditEntries.value = (await request<{ entries: AuditEntry[] }>('/api/v1/admin/audit?limit=100')).entries
+}
+
+async function createManagedUser() {
+  busy.value = 'admin-create'
+  error.value = ''
+  try {
+    await request('/api/v1/admin/users', {
+      method: 'POST', headers: csrfHeaders(),
+      body: JSON.stringify({ username: createUsername.value, password: createPassword.value, role: createRole.value }),
+    })
+    createUsername.value = ''
+    createPassword.value = ''
+    createRole.value = 'operator'
+    await Promise.all([loadManagedUsers(), loadAudit()])
+  } catch (cause) {
+    error.value = messageOf(cause)
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function updateManagedUser(target: ManagedUser, change: { role?: string; active?: boolean; password?: string }) {
+  busy.value = `admin-update-${target.id}`
+  error.value = ''
+  try {
+    await request(`/api/v1/admin/users/${target.id}`, {
+      method: 'PATCH', headers: csrfHeaders(), body: JSON.stringify(change),
+    })
+    resetPasswords.value[target.id] = ''
+    await Promise.all([loadManagedUsers(), loadAudit()])
+  } catch (cause) {
+    error.value = messageOf(cause)
+  } finally {
+    busy.value = ''
+  }
 }
 
 async function loadTasks() {
@@ -237,7 +308,7 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
   <main class="shell">
     <header class="masthead">
       <div><p class="eyebrow">Binary analysis workspace</p><h1>BinaryScan</h1></div>
-      <div class="header-actions"><span class="version">{{ version || 'loading' }}</span><button v-if="user" class="ghost" @click="logout">退出</button></div>
+      <div class="header-actions"><span class="version">{{ version || 'loading' }}</span><button v-if="user && !user.mustChangePassword" class="ghost" :class="{ active: view === 'workspace' }" @click="view = 'workspace'">工作台</button><button v-if="user?.role === 'administrator' && !user.mustChangePassword" class="ghost" :class="{ active: view === 'admin' }" @click="openAdmin">管理</button><button v-if="user" class="ghost" @click="logout">退出</button></div>
     </header>
 
     <section v-if="!user" class="panel login-panel">
@@ -254,15 +325,16 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
       <div><p class="section-label">首次登录</p><h2>修改初始密码</h2><p class="muted">修改后所有现有会话会失效，请使用新密码重新登录。</p></div>
       <form class="login-form" @submit.prevent="changePassword">
         <label>当前密码<input v-model="currentPassword" type="password" required></label>
-        <label>新密码<input v-model="newPassword" type="password" minlength="12" required></label>
+        <label>新密码<input v-model="newPassword" type="password" required></label>
+        <small>UTF-8 编码后须为 12–72 字节。</small>
         <p v-if="error" class="error">{{ error }}</p>
-        <button :disabled="busy === 'password'">保存新密码</button>
+        <button :disabled="busy === 'password' || !validPassword(newPassword)">保存新密码</button>
       </form>
     </section>
 
     <template v-else>
       <p v-if="error" class="error global-error">{{ error }}</p>
-      <section class="workspace-grid">
+      <section v-if="view === 'workspace'" class="workspace-grid">
         <aside class="panel task-sidebar">
           <div><p class="section-label">分析任务</p><h2>文件工作区</h2></div>
           <form class="upload" @submit.prevent="upload">
@@ -289,6 +361,40 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
           <div class="report-links"><a v-for="report in reports" :key="report.id" :href="`/api/v1/reports/${report.id}/content`">{{ report.format.toUpperCase() }} · {{ report.createdAt }}</a></div>
         </section>
         <section v-else class="panel detail empty-state"><h2>选择一个任务</h2><p class="muted">任务详情、手动处理入口和报告选择会显示在这里。</p></section>
+      </section>
+
+      <section v-else class="admin-grid">
+        <section class="panel admin-card">
+          <p class="section-label">访问控制</p><h2>创建用户</h2>
+          <form class="admin-form" @submit.prevent="createManagedUser">
+            <label>用户名<input v-model.trim="createUsername" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9._-]{2,63}" autocomplete="off" required></label>
+            <label>初始密码<input v-model="createPassword" type="password" autocomplete="new-password" required></label>
+            <label>角色<select v-model="createRole"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label>
+            <small>密码须为 12–72 个 UTF-8 字节，新用户首次登录必须修改密码。用户名会统一转为小写。</small>
+            <button :disabled="busy === 'admin-create' || !validPassword(createPassword)">{{ busy === 'admin-create' ? '创建中…' : '创建用户' }}</button>
+          </form>
+        </section>
+
+        <section class="panel admin-card admin-users">
+          <div class="detail-title"><div><p class="section-label">用户管理</p><h2>账号与角色</h2></div><span class="status-pill">{{ managedUsers.length }} 个账号</span></div>
+          <div class="data-list">
+            <div v-for="target in managedUsers" :key="target.id" class="admin-user-row">
+              <div class="admin-user-title"><div><strong>{{ target.username }}</strong><small>{{ target.active ? '已启用' : '已停用' }}<template v-if="target.mustChangePassword"> · 待修改密码</template></small></div><span class="status-pill">{{ target.role }}</span></div>
+              <div class="admin-user-actions">
+                <label>角色<select :value="target.role" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @change="updateManagedUser(target, { role: ($event.target as HTMLSelectElement).value })"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label>
+                <button class="secondary" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { active: !target.active })">{{ target.active ? '停用' : '启用' }}</button>
+                <label>重置密码<input v-model="resetPasswords[target.id]" type="password" autocomplete="new-password" placeholder="12–72 个 UTF-8 字节" :disabled="target.id === user.id"></label>
+                <button class="secondary" :disabled="target.id === user.id || !validPassword(resetPasswords[target.id] ?? '') || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { password: resetPasswords[target.id] })">重置</button>
+              </div>
+            </div>
+            <p v-if="managedUsers.length === 0" class="muted empty">{{ busy === 'admin-load' ? '加载中…' : '暂无用户' }}</p>
+          </div>
+        </section>
+
+        <section class="panel admin-card admin-audit">
+          <div class="detail-title"><div><p class="section-label">不可变记录</p><h2>最近审计事件</h2></div><button class="ghost" @click="loadAudit">刷新</button></div>
+          <div class="data-list"><div v-for="entry in auditEntries" :key="entry.id" class="data-row audit-row"><span class="severity" :class="entry.outcome === 'success' ? 'success' : 'high'">{{ entry.outcome }}</span><div><strong>{{ entry.action }}</strong><small>{{ entry.actorUsername || 'system' }} · {{ entry.objectType || 'system' }}<template v-if="entry.objectId">/{{ entry.objectId }}</template> · {{ entry.createdAt }}</small></div></div><p v-if="auditEntries.length === 0" class="muted empty">暂无审计事件。</p></div>
+        </section>
       </section>
     </template>
     <footer>Native · JVM/Android · Python PYC</footer>

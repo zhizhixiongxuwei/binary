@@ -62,7 +62,7 @@ func (r *Repository) Claim(ctx context.Context, workerID string, kinds []Kind, l
 		placeholders[index] = "?"
 		args[index] = string(kind)
 	}
-	query := `SELECT id, run_id, kind, fencing_token, attempt_count, max_attempts
+	query := `SELECT id, run_id, kind, fencing_token, attempt_count, max_attempts, created_at
         FROM jobs
         WHERE status = 'queued'
           AND available_at <= UTC_TIMESTAMP(6)
@@ -76,7 +76,7 @@ func (r *Repository) Claim(ctx context.Context, workerID string, kinds []Kind, l
 	var kindValue string
 	var oldFence uint64
 	if err := tx.QueryRowContext(ctx, query, args...).Scan(
-		&claim.ID, &claim.RunID, &kindValue, &oldFence, &claim.AttemptCount, &claim.MaxAttempts,
+		&claim.ID, &claim.RunID, &kindValue, &oldFence, &claim.AttemptCount, &claim.MaxAttempts, &claim.CreatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -120,11 +120,15 @@ func (r *Repository) Claim(ctx context.Context, workerID string, kinds []Kind, l
 	if err := requireOneRow(result); err != nil {
 		return nil, ErrFenceLost
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE resource_slots
+	slotResult, err := tx.ExecContext(ctx, `UPDATE resource_slots
         SET job_id = ?, fencing_token = ?, lease_owner = ?, acquired_at = UTC_TIMESTAMP(6)
         WHERE pool = ? AND slot_number = ? AND job_id IS NULL`,
-		claim.ID, claim.FencingToken, workerID, pool, slotNumber); err != nil {
+		claim.ID, claim.FencingToken, workerID, pool, slotNumber)
+	if err != nil {
 		return nil, fmt.Errorf("assign resource slot %s/%d: %w", pool, slotNumber, err)
+	}
+	if err := requireOneRow(slotResult); err != nil {
+		return nil, ErrFenceLost
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit job claim: %w", err)
@@ -157,10 +161,14 @@ func (r *Repository) Start(ctx context.Context, workerID string, claim Claim) (u
 		claim.ID, attemptNumber, workerID, claim.FencingToken); err != nil {
 		return 0, fmt.Errorf("create attempt for job %d: %w", claim.ID, err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE runs
+	runResult, err := tx.ExecContext(ctx, `UPDATE runs
         SET status = 'running', started_at = COALESCE(started_at, UTC_TIMESTAMP(6))
-        WHERE id = ? AND status = 'queued'`, claim.RunID); err != nil {
+		WHERE id = ? AND status = 'queued'`, claim.RunID)
+	if err != nil {
 		return 0, fmt.Errorf("start run %s: %w", claim.RunID, err)
+	}
+	if err := requireOneRow(runResult); err != nil {
+		return 0, ErrFenceLost
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit job start: %w", err)
@@ -206,32 +214,119 @@ func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim,
 	if err := requireOneRow(result); err != nil {
 		return ErrFenceLost
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE job_attempts
+	attemptResult, err := tx.ExecContext(ctx, `UPDATE job_attempts
         SET status = ?, error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), completed_at = UTC_TIMESTAMP(6)
         WHERE job_id = ? AND attempt_number = ? AND fencing_token = ? AND status = 'running'`,
 		completion.AttemptStatus, completion.ErrorCode, completion.ErrorMessage,
-		claim.ID, attempt, claim.FencingToken); err != nil {
+		claim.ID, attempt, claim.FencingToken)
+	if err != nil {
 		return fmt.Errorf("complete attempt for job %d: %w", claim.ID, err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE runs
+	if err := requireOneRow(attemptResult); err != nil {
+		return ErrFenceLost
+	}
+	runResult, err := tx.ExecContext(ctx, `UPDATE runs
         SET status = ?, error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), completed_at = UTC_TIMESTAMP(6)
         WHERE id = ? AND status = 'running'`,
-		completion.RunStatus, completion.ErrorCode, completion.ErrorMessage, claim.RunID); err != nil {
+		completion.RunStatus, completion.ErrorCode, completion.ErrorMessage, claim.RunID)
+	if err != nil {
 		return fmt.Errorf("complete run %s: %w", claim.RunID, err)
+	}
+	if err := requireOneRow(runResult); err != nil {
+		return ErrFenceLost
 	}
 	if err := updateTaskForCompletion(ctx, tx, claim, completion); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE resource_slots
+	slotResult, err := tx.ExecContext(ctx, `UPDATE resource_slots
         SET job_id = NULL, fencing_token = NULL, lease_owner = NULL, acquired_at = NULL
         WHERE job_id = ? AND fencing_token = ? AND lease_owner = ?`,
-		claim.ID, claim.FencingToken, workerID); err != nil {
+		claim.ID, claim.FencingToken, workerID)
+	if err != nil {
 		return fmt.Errorf("release resource slot for job %d: %w", claim.ID, err)
+	}
+	if err := requireOneRow(slotResult); err != nil {
+		return ErrFenceLost
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit job completion: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) Retry(
+	ctx context.Context,
+	workerID string,
+	claim Claim,
+	attempt uint32,
+	delay time.Duration,
+	errorCode string,
+	errorMessage string,
+) error {
+	if delay < time.Second {
+		delay = time.Second
+	}
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin job retry: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `UPDATE jobs
+        SET status = 'queued', available_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL ? SECOND),
+            lease_owner = NULL, lease_until = NULL, heartbeat_at = NULL
+        WHERE id = ? AND status = 'running' AND lease_owner = ?
+          AND fencing_token = ? AND lease_until > UTC_TIMESTAMP(6)`,
+		int64(delay/time.Second), claim.ID, workerID, claim.FencingToken)
+	if err != nil {
+		return fmt.Errorf("requeue job %d: %w", claim.ID, err)
+	}
+	if err := requireOneRow(result); err != nil {
+		return ErrFenceLost
+	}
+	attemptResult, err := tx.ExecContext(ctx, `UPDATE job_attempts
+        SET status = 'failed', error_code = NULLIF(?, ''), error_message = NULLIF(?, ''),
+            completed_at = UTC_TIMESTAMP(6)
+        WHERE job_id = ? AND attempt_number = ? AND fencing_token = ? AND status = 'running'`,
+		errorCode, errorMessage, claim.ID, attempt, claim.FencingToken)
+	if err != nil {
+		return fmt.Errorf("record retry for job %d: %w", claim.ID, err)
+	}
+	if err := requireOneRow(attemptResult); err != nil {
+		return ErrFenceLost
+	}
+	runResult, err := tx.ExecContext(ctx, `UPDATE runs
+        SET status = 'queued', error_code = NULL, error_message = NULL
+		WHERE id = ? AND status = 'running'`, claim.RunID)
+	if err != nil {
+		return fmt.Errorf("requeue run %s: %w", claim.RunID, err)
+	}
+	if err := requireOneRow(runResult); err != nil {
+		return ErrFenceLost
+	}
+	slotResult, err := tx.ExecContext(ctx, `UPDATE resource_slots
+        SET job_id = NULL, fencing_token = NULL, lease_owner = NULL, acquired_at = NULL
+        WHERE job_id = ? AND fencing_token = ? AND lease_owner = ?`,
+		claim.ID, claim.FencingToken, workerID)
+	if err != nil {
+		return fmt.Errorf("release retry slot for job %d: %w", claim.ID, err)
+	}
+	if err := requireOneRow(slotResult); err != nil {
+		return ErrFenceLost
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit retry for job %d: %w", claim.ID, err)
+	}
+	return nil
+}
+
+func (r *Repository) PublicationComplete(ctx context.Context, claim Claim) (bool, error) {
+	var published bool
+	if err := r.db.QueryRowContext(ctx, `SELECT published_at IS NOT NULL
+        FROM runs WHERE id = ?`, claim.RunID).Scan(&published); err != nil {
+		return false, fmt.Errorf("inspect publication state for run %s: %w", claim.RunID, err)
+	}
+	return published, nil
 }
 
 func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql.Tx) error) error {
@@ -251,6 +346,11 @@ func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql
 	}
 	if err := apply(tx); err != nil {
 		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE runs
+        SET published_at = COALESCE(published_at, UTC_TIMESTAMP(6))
+        WHERE id = ?`, claim.RunID); err != nil {
+		return fmt.Errorf("mark run %s publication complete: %w", claim.RunID, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit fenced publication: %w", err)
@@ -292,26 +392,30 @@ func (r *Repository) RequeueExpired(ctx context.Context, limit int) (int, error)
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, `SELECT id, run_id, status, attempt_count, max_attempts, fencing_token
-        FROM jobs
-        WHERE status IN ('leased', 'running') AND lease_until <= UTC_TIMESTAMP(6)
-        ORDER BY lease_until, id
-        LIMIT ? FOR UPDATE SKIP LOCKED`, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT j.id, j.run_id, j.kind, j.status, j.attempt_count,
+		j.max_attempts, j.fencing_token, r.published_at IS NOT NULL
+		FROM jobs j JOIN runs r ON r.id = j.run_id
+		WHERE j.status IN ('leased', 'running') AND j.lease_until <= UTC_TIMESTAMP(6)
+		ORDER BY j.lease_until, j.id
+		LIMIT ? FOR UPDATE SKIP LOCKED`, limit)
 	if err != nil {
 		return 0, fmt.Errorf("select expired jobs: %w", err)
 	}
 	type expiredJob struct {
 		id          uint64
 		runID       string
+		kind        Kind
 		status      string
 		attempts    uint32
 		maxAttempts uint32
 		fence       uint64
+		published   bool
 	}
 	var expired []expiredJob
 	for rows.Next() {
 		var item expiredJob
-		if err := rows.Scan(&item.id, &item.runID, &item.status, &item.attempts, &item.maxAttempts, &item.fence); err != nil {
+		if err := rows.Scan(&item.id, &item.runID, &item.kind, &item.status, &item.attempts,
+			&item.maxAttempts, &item.fence, &item.published); err != nil {
 			rows.Close()
 			return 0, fmt.Errorf("scan expired job: %w", err)
 		}
@@ -322,6 +426,35 @@ func (r *Repository) RequeueExpired(ctx context.Context, limit int) (int, error)
 	}
 
 	for _, item := range expired {
+		if item.published {
+			if _, err := tx.ExecContext(ctx, `UPDATE job_attempts
+				SET status = 'succeeded', error_code = NULL, error_message = NULL,
+					completed_at = UTC_TIMESTAMP(6)
+				WHERE job_id = ? AND fencing_token = ? AND status = 'running'`, item.id, item.fence); err != nil {
+				return 0, fmt.Errorf("finalize published attempt for job %d: %w", item.id, err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE jobs
+				SET status = 'succeeded', lease_owner = NULL, lease_until = NULL, heartbeat_at = NULL
+				WHERE id = ? AND fencing_token = ?`, item.id, item.fence); err != nil {
+				return 0, fmt.Errorf("finalize published job %d: %w", item.id, err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE runs
+				SET status = 'complete', error_code = NULL, error_message = NULL,
+					completed_at = COALESCE(completed_at, UTC_TIMESTAMP(6))
+				WHERE id = ?`, item.runID); err != nil {
+				return 0, fmt.Errorf("finalize published run %s: %w", item.runID, err)
+			}
+			claim := Claim{ID: item.id, RunID: item.runID, Kind: item.kind, FencingToken: item.fence}
+			if err := updateTaskForCompletion(ctx, tx, claim, Completion{JobStatus: "succeeded"}); err != nil {
+				return 0, err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE resource_slots
+				SET job_id = NULL, fencing_token = NULL, lease_owner = NULL, acquired_at = NULL
+				WHERE job_id = ? AND fencing_token = ?`, item.id, item.fence); err != nil {
+				return 0, fmt.Errorf("release published job slot %d: %w", item.id, err)
+			}
+			continue
+		}
 		if item.status == "running" {
 			if _, err := tx.ExecContext(ctx, `UPDATE job_attempts
                 SET status = 'lease_lost', error_code = 'lease_expired', completed_at = UTC_TIMESTAMP(6)
@@ -349,6 +482,10 @@ func (r *Repository) RequeueExpired(ctx context.Context, limit int) (int, error)
                 SET status = 'failed', error_code = 'attempts_exhausted', completed_at = UTC_TIMESTAMP(6)
                 WHERE id = ?`, item.runID); err != nil {
 				return 0, fmt.Errorf("fail run %s: %w", item.runID, err)
+			}
+			claim := Claim{ID: item.id, RunID: item.runID, Kind: item.kind, FencingToken: item.fence}
+			if err := updateTaskForCompletion(ctx, tx, claim, Completion{JobStatus: "failed"}); err != nil {
+				return 0, err
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE resource_slots

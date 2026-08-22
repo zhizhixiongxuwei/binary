@@ -1,5 +1,5 @@
-ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
-ARG TRIVY_RUNTIME_DB_IMAGE=binaryscan/trivy-runtime-db:0.72.0-offline20260822
+ARG GO_BUILD_IMAGE=golang:1.26.7-bookworm
+ARG TRIVY_RUNTIME_DB_IMAGE=binaryscan/trivy-runtime-db:0.74.0-offline20260822
 ARG SCANNER_RUNTIME_IMAGE=alpine:3.22.5
 
 FROM ${GO_BUILD_IMAGE} AS build

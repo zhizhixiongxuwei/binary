@@ -61,21 +61,6 @@ func (a *authService) login(c *gin.Context) {
 		return
 	}
 
-	var user currentUser
-	var passwordHash string
-	var active bool
-	err = a.db.QueryRowContext(c, `SELECT id, public_id, username, password_hash, role, active, must_change_password
-        FROM users WHERE username = ?`, request.Username).Scan(
-		&user.ID, &user.PublicID, &user.Username, &passwordHash, &user.Role, &active, &user.MustChangePassword,
-	)
-	if err != nil || !active || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(request.Password)) != nil {
-		_ = a.recordFailure(c, scope)
-		_ = a.audit(c, nil, "auth.login", "user", request.Username, "denied", nil)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
-		return
-	}
-	_ = a.clearFailures(c, scope)
-
 	token, tokenHash, err := secureToken(32)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_creation_failed"})
@@ -92,7 +77,28 @@ func (a *authService) login(c *gin.Context) {
 		return
 	}
 	expiresAt := time.Now().UTC().Add(12 * time.Hour)
-	_, err = a.db.ExecContext(c, `INSERT INTO sessions
+
+	tx, err := a.db.BeginTx(c, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "authentication_unavailable"})
+		return
+	}
+	defer tx.Rollback()
+	var user currentUser
+	var passwordHash string
+	var active bool
+	err = tx.QueryRowContext(c, `SELECT id, public_id, username, password_hash, role, active, must_change_password
+        FROM users WHERE username = ? FOR UPDATE`, request.Username).Scan(
+		&user.ID, &user.PublicID, &user.Username, &passwordHash, &user.Role, &active, &user.MustChangePassword,
+	)
+	if err != nil || !active || bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(request.Password)) != nil {
+		_ = tx.Rollback()
+		_ = a.recordFailure(c, scope)
+		_ = a.audit(c, nil, "auth.login", "user", request.Username, "denied", nil)
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_credentials"})
+		return
+	}
+	_, err = tx.ExecContext(c, `INSERT INTO sessions
         (id, user_id, token_hash, csrf_token, client_ip, user_agent, expires_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		sessionID, user.ID, tokenHash[:], csrf, c.ClientIP(), truncateString(c.Request.UserAgent(), 512), expiresAt)
@@ -100,6 +106,11 @@ func (a *authService) login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_creation_failed"})
 		return
 	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "session_creation_failed"})
+		return
+	}
+	_ = a.clearFailures(c, scope)
 	user.CSRFToken = csrf
 	a.setSessionCookie(c, token, expiresAt)
 	_ = a.audit(c, &user.ID, "auth.login", "user", user.PublicID, "success", nil)
@@ -126,17 +137,8 @@ func (a *authService) changePassword(c *gin.Context) {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.NewPassword) < 12 {
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.NewPassword) < 12 || len(request.NewPassword) > 72 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_password_change"})
-		return
-	}
-	var currentHash string
-	if err := a.db.QueryRowContext(c, "SELECT password_hash FROM users WHERE id = ?", user.ID).Scan(&currentHash); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "password_change_failed"})
-		return
-	}
-	if bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(request.CurrentPassword)) != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_current_password"})
 		return
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(request.NewPassword), bcrypt.DefaultCost)
@@ -150,6 +152,17 @@ func (a *authService) changePassword(c *gin.Context) {
 		return
 	}
 	defer tx.Rollback()
+	var currentHash string
+	var active bool
+	if err := tx.QueryRowContext(c, `SELECT password_hash, active FROM users
+        WHERE id = ? FOR UPDATE`, user.ID).Scan(&currentHash, &active); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "password_change_failed"})
+		return
+	}
+	if !active || bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(request.CurrentPassword)) != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid_current_password"})
+		return
+	}
 	if _, err := tx.ExecContext(c, `UPDATE users
         SET password_hash = ?, must_change_password = FALSE WHERE id = ?`, string(newHash), user.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "password_change_failed"})

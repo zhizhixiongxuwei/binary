@@ -35,7 +35,11 @@ PYC 与 JVM 只是可以共享 Go worker runtime，不能共享工具 capability
 
 每次 claim 增加 fencing token。heartbeat、发布和 finish 都必须同时匹配 job ID、owner、token 和有效租约。旧 worker 的迟到写入必须影响零行。
 
-文件发布使用 run ID 决定的 staging 目录和同文件系统原子 rename。数据库事务和 fencing 决定唯一有效结果，不使用重复哈希代替并发控制。
+文件发布使用 run ID 决定的 staging 目录和同文件系统原子 rename。数据库事务和 fencing 决定唯一有效结果，不使用重复哈希代替并发控制。结果数据库事务同时写入 `runs.published_at`；若 worker 在发布后、finish 前退出，lease 回收器直接把 attempt、job 和 run 收敛为成功并释放资源槽，不再次调用工具。数据库提交返回不确定错误时，worker 也会复查发布标记。
+
+checker 连接失败、响应中断、HTTP 408/429/5xx 属于依赖暂不可用。scanner 会结束当前 attempt、释放语言资源槽并延迟重排队；三个 checker job 从创建时刻起使用 12 小时绝对执行/重试期限，同时仍受最大 attempt 数限制。某个 checker 停机不会阻塞 scanner 的归档、Trivy 或其他语言检查。格式错误和 checker 明确返回的 4xx 仍作为永久失败处理。
+
+claim、start、retry 和 finish 的 job、run、attempt 与资源槽关键转换均检查影响行数；lease 回收器锁定过期 job 后，在同一事务修复 attempt、run 与资源槽。静止状态下不允许活跃 job 缺少匹配 owner/fencing 的槽、不允许非活跃 job 占槽，也不允许已发布 run 未收敛为 `complete/succeeded`。
 
 ## 哈希边界
 

@@ -23,6 +23,8 @@ type Executor interface {
 
 type Factory func(config.Config, *sql.DB, *job.Repository) (Executor, error)
 
+const checkerRetryBudget = 12 * time.Hour
+
 func Run(role string, kinds []job.Kind, factory Factory) error {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		cfg, err := config.Load(role)
@@ -102,7 +104,34 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 			logger.Warn("job start rejected", "job_id", claim.ID, "error", err)
 			continue
 		}
-		err = executeWithHeartbeat(ctx, repository, workerID, *claim, cfg.Worker.Lease, cfg.Worker.Heartbeat, executor)
+		published, err := repository.PublicationComplete(ctx, *claim)
+		if err != nil {
+			err = job.Retryable(err, 5*time.Second)
+		} else if published {
+			logger.Info("skipping previously published job", "job_id", claim.ID, "run_id", claim.RunID)
+		} else {
+			executionCtx, executionCancel := executionContext(ctx, *claim)
+			err = executeWithHeartbeat(executionCtx, repository, workerID, *claim, cfg.Worker.Lease, cfg.Worker.Heartbeat, executor)
+			executionCancel()
+			if err != nil {
+				committed, inspectErr := repository.PublicationComplete(ctx, *claim)
+				if inspectErr == nil && committed {
+					logger.Warn("execution returned after publication; treating committed result as successful",
+						"job_id", claim.ID, "run_id", claim.RunID, "error", err)
+					err = nil
+				}
+			}
+		}
+		var retryable *job.RetryableError
+		if errors.As(err, &retryable) && canRetry(*claim, retryable.Delay) {
+			if retryErr := repository.Retry(ctx, workerID, *claim, attempt, retryable.Delay,
+				"dependency_unavailable", truncate(retryable.Error(), 1024)); retryErr != nil {
+				logger.Error("job retry rejected", "job_id", claim.ID, "error", retryErr)
+			} else {
+				logger.Warn("job deferred", "job_id", claim.ID, "kind", claim.Kind, "retry_after", retryable.Delay)
+			}
+			continue
+		}
 		completion := job.Completion{RunStatus: "complete", JobStatus: "succeeded", AttemptStatus: "succeeded"}
 		if err != nil {
 			completion = job.Completion{
@@ -119,6 +148,27 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 		}
 		logger.Info("job completed", "job_id", claim.ID, "kind", claim.Kind, "status", completion.JobStatus)
 	}
+}
+
+func executionContext(parent context.Context, claim job.Claim) (context.Context, context.CancelFunc) {
+	if isCheckerKind(claim.Kind) {
+		return context.WithDeadline(parent, claim.CreatedAt.Add(checkerRetryBudget))
+	}
+	return context.WithCancel(parent)
+}
+
+func canRetry(claim job.Claim, delay time.Duration) bool {
+	if claim.AttemptCount+1 >= claim.MaxAttempts {
+		return false
+	}
+	if !isCheckerKind(claim.Kind) {
+		return true
+	}
+	return time.Now().UTC().Add(delay).Before(claim.CreatedAt.Add(checkerRetryBudget))
+}
+
+func isCheckerKind(kind job.Kind) bool {
+	return kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck
 }
 
 func executeWithHeartbeat(

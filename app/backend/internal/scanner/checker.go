@@ -266,17 +266,24 @@ func callChecker(ctx context.Context, client *http.Client, url string, request c
 	httpRequest.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(httpRequest)
 	if err != nil {
-		return checkerResponse{}, fmt.Errorf("call checker: %w", err)
+		return checkerResponse{}, job.Retryable(fmt.Errorf("call checker: %w", err), 15*time.Second)
 	}
 	defer response.Body.Close()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, checkerResponseBytes+1))
 	if err != nil {
-		return checkerResponse{}, fmt.Errorf("read checker response: %w", err)
+		return checkerResponse{}, job.Retryable(fmt.Errorf("read checker response: %w", err), 15*time.Second)
 	}
 	if len(responseBody) > checkerResponseBytes {
 		return checkerResponse{}, fmt.Errorf("checker response exceeds the supported size")
 	}
 	if response.StatusCode != http.StatusOK {
+		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests ||
+			response.StatusCode >= http.StatusInternalServerError {
+			return checkerResponse{}, job.Retryable(
+				fmt.Errorf("checker returned HTTP %d: %s", response.StatusCode, truncate(string(responseBody), 1024)),
+				15*time.Second,
+			)
+		}
 		return checkerResponse{}, fmt.Errorf("checker returned HTTP %d: %s", response.StatusCode, truncate(string(responseBody), 1024))
 	}
 	var result checkerResponse

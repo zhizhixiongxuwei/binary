@@ -426,8 +426,12 @@ func (s *taskService) enqueueRun(
 	}
 	created := actual.ID == runID
 	if created {
+		maxAttempts := 3
+		if kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck {
+			maxAttempts = 2880
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (run_id, kind, status, max_attempts)
-            VALUES (?, ?, 'queued', 3)`, runID, kind); err != nil {
+			VALUES (?, ?, 'queued', ?)`, runID, kind, maxAttempts); err != nil {
 			return queuedRun{}, false, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events

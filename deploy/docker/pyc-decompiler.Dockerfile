@@ -1,4 +1,4 @@
-ARG GO_BUILD_IMAGE=golang:1.25.0-bookworm
+ARG GO_BUILD_IMAGE=golang:1.26.7-bookworm
 ARG PYCDC_TOOLS_IMAGE=binaryscan/pycdc-tools:git-b428976
 
 FROM ${GO_BUILD_IMAGE} AS build

@@ -1,11 +1,12 @@
 :root { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17212b; background: #eef2f5; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 0 0, #dce9e6 0, transparent 34rem), #eef2f5; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { border: 0; border-radius: 8px; padding: .7rem 1rem; color: white; background: #0b665d; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .45; }
 button.secondary { color: #0b665d; background: #e1efec; white-space: nowrap; }
 button.ghost { color: #43515b; background: transparent; border: 1px solid #c8d1d5; }
+button.ghost.active { color: #07584f; border-color: #74aaa3; background: #e1efec; }
 .shell { width: min(1440px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 20px; }
 .masthead, .detail-title, .header-actions, .report-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .masthead { margin-bottom: 22px; }
@@ -19,7 +20,7 @@ h3 { margin: 28px 0 10px; font-size: .95rem; text-transform: uppercase; letter-s
 .login-panel { min-height: 420px; padding: clamp(28px, 6vw, 78px); display: grid; grid-template-columns: 1fr minmax(280px, 420px); align-items: center; gap: 72px; }
 .login-form, .upload { display: grid; gap: 14px; }
 label { display: grid; gap: 6px; color: #43515b; font-size: .85rem; }
-input { width: 100%; border: 1px solid #c7d1d5; border-radius: 8px; padding: .72rem .8rem; color: #17212b; background: white; }
+input, select { width: 100%; border: 1px solid #c7d1d5; border-radius: 8px; padding: .72rem .8rem; color: #17212b; background: white; }
 .muted, small { color: #6b7880; }
 .error { color: #a63131; margin: 0; }
 .global-error { margin: -8px 0 12px; padding: 10px 14px; border-radius: 8px; background: #fde9e7; }
@@ -42,11 +43,25 @@ input { width: 100%; border: 1px solid #c7d1d5; border-radius: 8px; padding: .72
 .finding-row { display: grid; grid-template-columns: 70px minmax(0, 1fr); }
 .severity { border-radius: 999px; padding: 3px 8px; color: white; text-align: center; font-size: .68rem; font-weight: 800; text-transform: uppercase; background: #6d7980; }
 .severity.critical { background: #771d1d; }.severity.high { background: #b43c2d; }.severity.medium { background: #b27818; }.severity.low { background: #287082; }
+.severity.success { background: #247264; }
 .empty { padding: 14px; margin: 0; }
 .empty-state { display: grid; place-content: center; text-align: center; }
 .report-bar { margin-top: 28px; justify-content: flex-end; }
 .report-bar span { margin-right: auto; color: #66747b; }
 .report-links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
 .report-links a { color: #0b665d; font-size: .82rem; }
+.admin-grid { display: grid; grid-template-columns: minmax(260px, 360px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.admin-card { padding: 24px; }
+.admin-form { display: grid; gap: 14px; }
+.admin-users { min-width: 0; }
+.admin-user-row { display: grid; gap: 12px; padding: 14px; border-bottom: 1px solid #e5eaec; background: white; }
+.admin-user-row:last-child { border-bottom: 0; }
+.admin-user-title, .admin-user-actions { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.admin-user-title > div { display: grid; gap: 3px; }
+.admin-user-actions label { flex: 1 1 170px; }
+.admin-user-actions button { margin-bottom: 1px; white-space: nowrap; }
+.admin-audit { grid-column: 1 / -1; }
+.audit-row { justify-content: start; }
+.audit-row > div { flex: 1; }
 footer { padding: 20px 4px 0; color: #738087; font-size: .75rem; letter-spacing: .08em; }
-@media (max-width: 880px) { .workspace-grid, .login-panel { grid-template-columns: 1fr; } .login-panel { gap: 32px; }.task-sidebar { position: static; }.shell { width: min(100% - 20px, 1440px); } }
+@media (max-width: 880px) { .workspace-grid, .login-panel, .admin-grid { grid-template-columns: 1fr; } .login-panel { gap: 32px; }.task-sidebar { position: static; }.shell { width: min(100% - 20px, 1440px); }.admin-user-actions { align-items: stretch; flex-direction: column; }.admin-audit { grid-column: auto; } }

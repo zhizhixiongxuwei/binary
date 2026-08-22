@@ -1,6 +1,9 @@
 package job
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 type Kind string
 
@@ -18,6 +21,18 @@ const (
 
 var ErrFenceLost = errors.New("job lease or fencing token is no longer valid")
 
+type RetryableError struct {
+	Err   error
+	Delay time.Duration
+}
+
+func (e *RetryableError) Error() string { return e.Err.Error() }
+func (e *RetryableError) Unwrap() error { return e.Err }
+
+func Retryable(err error, delay time.Duration) error {
+	return &RetryableError{Err: err, Delay: delay}
+}
+
 type Claim struct {
 	ID           uint64
 	RunID        string
@@ -25,6 +40,7 @@ type Claim struct {
 	FencingToken uint64
 	AttemptCount uint32
 	MaxAttempts  uint32
+	CreatedAt    time.Time
 	ResourcePool string
 }
 

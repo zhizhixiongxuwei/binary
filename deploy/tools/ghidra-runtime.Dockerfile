@@ -12,6 +12,8 @@ RUN mkdir -p /opt/ghidra-extract \
     && test "$(printf '%s\n' "$root" | wc -l)" -eq 1 \
     && mv "$root" /opt/ghidra \
     && while IFS= read -r relative; do test -f "/opt/ghidra/$relative" && chmod 0555 "/opt/ghidra/$relative"; done < /tmp/ghidra-executable-files.txt \
+    && grep -Fx 'DATA SEARCH IGNORE DIR: yajsw-stable-13.18' /opt/ghidra/Ghidra/Features/GhidraServer/Module.manifest \
+    && rm -rf /opt/ghidra/Ghidra/Features/GhidraServer/data/yajsw-stable-13.18 \
     && rm -rf /opt/ghidra-extract /tmp/ghidra.zip /tmp/ghidra-executable-files.txt \
     && test -x /opt/ghidra/support/analyzeHeadless
 
@@ -22,7 +24,7 @@ ENV PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 
 LABEL org.opencontainers.image.title="BinaryScan Ghidra runtime" \
       com.binaryscan.dependency-role="ghidra" \
-      com.binaryscan.ghidra-version="12.1.2"
+      com.binaryscan.ghidra-version="12.1.3"
 
 USER 10001:10001
 WORKDIR /tmp

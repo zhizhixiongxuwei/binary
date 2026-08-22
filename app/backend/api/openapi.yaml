@@ -56,8 +56,152 @@ paths:
           name: X-CSRF-Token
           required: true
           schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password }
+                newPassword:
+                  type: string
+                  format: password
+                  minLength: 12
+                  maxLength: 72
+                  description: Must be 12 to 72 bytes after UTF-8 encoding.
       responses:
+        "400": { description: New password is outside the supported length }
+        "401": { description: Current password is invalid }
         "204": { description: Password changed and sessions revoked }
+  /api/v1/admin/users:
+    get:
+      description: Lists at most 500 users. Administrator role and a completed initial password change are required.
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Users without password or session material
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users:
+                    type: array
+                    items: { $ref: "#/components/schemas/AdminUser" }
+        "403": { description: Administrator access required }
+    post:
+      description: Creates an active user whose password must be changed at first login.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password, role]
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 64
+                  pattern: "^[a-z0-9][a-z0-9._-]{2,63}$"
+                  description: Trimmed and converted to lowercase before validation.
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  maxLength: 72
+                  writeOnly: true
+                  description: Must be 12 to 72 bytes after UTF-8 encoding.
+                role: { $ref: "#/components/schemas/UserRole" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/AdminUser" }
+        "400": { description: Invalid username, password or role }
+        "403": { description: Administrator access required }
+        "409": { description: Username already exists }
+  /api/v1/admin/users/{userID}:
+    patch:
+      description: Updates role or active state, or resets a password. Every successful update revokes all target sessions.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/AdminUserID"
+        - $ref: "#/components/parameters/CSRFToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                role: { $ref: "#/components/schemas/UserRole" }
+                active: { type: boolean }
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  maxLength: 72
+                  writeOnly: true
+                  description: Must be 12 to 72 bytes after UTF-8 encoding.
+      responses:
+        "200":
+          description: User updated and target sessions revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user: { $ref: "#/components/schemas/AdminUser" }
+        "400": { description: Invalid update }
+        "403": { description: Administrator access required }
+        "404": { description: User not found }
+        "409": { description: Self-protection or last-active-administrator guard rejected the update }
+  /api/v1/admin/audit:
+    get:
+      description: Returns newest audit entries first without credential, password-hash, session-token or CSRF material.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+        - in: query
+          name: beforeId
+          description: Return entries whose numeric ID is lower than this cursor.
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Bounded audit page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, nextBeforeId]
+                properties:
+                  entries:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEntry" }
+                  nextBeforeId:
+                    type: [integer, "null"]
+                    format: int64
+        "400": { description: Invalid pagination }
+        "403": { description: Administrator access required }
   /api/v1/tasks:
     get:
       security: [{ sessionCookie: [] }]
@@ -210,3 +354,40 @@ components:
       name: projectID
       required: true
       schema: { type: string, format: uuid }
+    AdminUserID:
+      in: path
+      name: userID
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    UserRole:
+      type: string
+      enum: [reader, operator, administrator]
+    AdminUser:
+      type: object
+      additionalProperties: false
+      required: [id, username, role, active, mustChangePassword, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        active: { type: boolean }
+        mustChangePassword: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, actorId, actorUsername, action, objectType, objectId, requestId, clientIp, outcome, details, createdAt]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        actorId: { type: [string, "null"], format: uuid }
+        actorUsername: { type: [string, "null"] }
+        action: { type: string }
+        objectType: { type: [string, "null"] }
+        objectId: { type: [string, "null"] }
+        requestId: { type: [string, "null"] }
+        clientIp: { type: [string, "null"] }
+        outcome: { type: string }
+        details: { type: [object, "null"] }
+        createdAt: { type: string, format: date-time }

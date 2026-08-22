@@ -125,11 +125,17 @@ download_tools() {
   unzip -tq "$cache_root/ghidra/ghidra.zip" >/dev/null
   tar -tzf "$cache_root/pycdc/source.tar.gz" >/dev/null
 
-  zipinfo -l "$cache_root/ghidra/ghidra.zip" |
-    awk '$1 ~ /^-/ && substr($1, 4, 1) == "x" { print $NF }' |
-    sed 's|^[^/]*/||' > "$cache_root/ghidra/executable-files.txt"
+  if [ ! -s "$cache_root/ghidra/executable-files.txt" ]; then
+    temporary=$(mktemp "$cache_root/ghidra/.executable-files.XXXXXX")
+    active_temporary=$temporary
+    zipinfo -l "$cache_root/ghidra/ghidra.zip" |
+      awk '$1 ~ /^-/ && substr($1, 4, 1) == "x" { print $NF }' |
+      sed 's|^[^/]*/||' > "$temporary"
+    chmod 0444 "$temporary"
+    mv "$temporary" "$cache_root/ghidra/executable-files.txt"
+    active_temporary=
+  fi
   [ -s "$cache_root/ghidra/executable-files.txt" ] || die "Ghidra executable manifest is empty"
-  chmod 0444 "$cache_root/ghidra/executable-files.txt"
 
   if [ ! -s "$cache_root/jvm/jadx-all.jar" ]; then
     extract_root=$(mktemp -d "$cache_root/.jadx.XXXXXX")

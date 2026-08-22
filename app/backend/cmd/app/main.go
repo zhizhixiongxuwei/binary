@@ -83,7 +83,7 @@ func healthcheck(cfg config.Config) error {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // local container health probe only
 	}
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
-	response, err := client.Get(scheme + "://" + net.JoinHostPort(host, port) + "/healthz")
+	response, err := client.Get(scheme + "://" + net.JoinHostPort(host, port) + "/readyz")
 	if err != nil {
 		return err
 	}

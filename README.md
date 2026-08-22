@@ -2,7 +2,7 @@
 
 BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环境由九个长期容器组成，支持 Native、JVM/Android 与 Python PYC 三条相互隔离的反编译链路。
 
-当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译、checker 编排和 JSON/HTML 报告链路均已接入。九个最终镜像、四类离线工具输入和代表性样本已完成制备机验收；正式投产前仍须完成目标服务器上的多用户、TLS、备份恢复和断网重启验收。
+当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译、checker 编排、用户管理、审计和 JSON/HTML 报告链路均已接入。九个最终镜像已经完成隔离 direct-TLS、多角色、故障恢复、停启持久化和备份恢复验收；正式投产前仍须在目标服务器完成正式域名/单位证书、授权网段防火墙、并发容量和物理断网复验。
 
 ## 目录边界
 
@@ -30,14 +30,16 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 ## 首次初始化
 
 1. 检查并提交根目录 `.env` 中的正式域名、证书路径、平台和账号配置；该文件含实际密码，仓库权限必须按敏感系统管理。
-2. 把单位 CA 签发的证书放到 `BINARY_DATA_ROOT/tls/server.crt`，私钥放到 `BINARY_DATA_ROOT/tls/server.key`。
-3. 初始化数据根：`deploy/scripts/binary.sh init`。
+2. 初始化数据根：`deploy/scripts/binary.sh init`。
+3. 把单位 CA 签发的证书放到 `BINARY_DATA_ROOT/tls/server.crt`，私钥放到 `BINARY_DATA_ROOT/tls/server.key`。
 4. 静态检查：`deploy/scripts/binary.sh doctor`。
 5. 在制备机准备并验证工具基础镜像：`deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache`。
 6. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
 7. 启动：`deploy/scripts/binary.sh up`。
 
 初始管理员只在空数据库中创建一次。首次登录后必须修改密码，修改 `.env` 不会重置数据库中的管理员密码。
+
+管理员可在产品界面的“管理”页创建 reader、operator 或 administrator，停用账号、调整角色、重置密码并查看审计。所有成功更新都会撤销目标账号的现有会话；系统禁止停用或降级当前管理员，也禁止留下零个活跃管理员。
 
 缓存目录不进入 Git，必须随发布证据保存，以便以后用同一批官方资产和 Trivy 数据库重建。详细边界见 `docs/tool-supply-chain.md`。
 

@@ -34,6 +34,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	}
 
 	auth := newAuthService(db, cfg.App.TLSMode != "http")
+	admin := newAdminService(db, auth)
 	tasks, err := newTaskService(cfg, db)
 	if err != nil {
 		return nil, fmt.Errorf("initialize task service: %w", err)
@@ -60,6 +61,10 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.GET("/auth/me", auth.me)
 	protected.POST("/auth/logout", auth.requireCSRF(), auth.logout)
 	protected.POST("/auth/password", auth.requireCSRF(), auth.changePassword)
+	protected.GET("/admin/users", requireAdministrator(), admin.listUsers)
+	protected.POST("/admin/users", admin.auditRejectedMutation("admin.user.create"), auth.requireCSRF(), requireAdministrator(), admin.createUser)
+	protected.PATCH("/admin/users/:userID", admin.auditRejectedMutation("admin.user.update"), auth.requireCSRF(), requireAdministrator(), admin.patchUser)
+	protected.GET("/admin/audit", requireAdministrator(), admin.listAudit)
 	protected.GET("/tasks", tasks.list)
 	protected.GET("/tasks/:taskID", tasks.get)
 	protected.GET("/tasks/:taskID/findings", tasks.findings)
