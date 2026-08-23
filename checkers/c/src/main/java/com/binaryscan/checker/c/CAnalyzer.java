@@ -25,6 +25,7 @@ final class CAnalyzer {
         var lexer = new PseudoCLexer(CharStreams.fromString(file.content()));
         var tokens = new CommonTokenStream(lexer);
         tokens.fill();
+        var sourceLines = file.content().split("\\n", -1);
         var findings = new ArrayList<Models.Finding>();
         for (Token token : tokens.getTokens()) {
             if (token.getType() != PseudoCLexer.Identifier) continue;
@@ -32,11 +33,25 @@ final class CAnalyzer {
             if (rule == null) continue;
             findings.add(new Models.Finding(
                 rule.id(), rule.severity(), rule.cwe(), file.path(), token.getLine(),
-                token.getCharPositionInLine() + 1, rule.title(), rule.message(),
+                utf16Column(sourceLines, token.getLine(), token.getCharPositionInLine()),
+                rule.title(), rule.message(),
                 Map.of("symbol", token.getText())
             ));
         }
         return findings;
+    }
+
+    /**
+     * ANTLR's CodePointCharStream reports a zero-based Unicode code-point
+     * offset. Java String indexes, like Monaco columns, count UTF-16 code
+     * units, so offsetByCodePoints performs the required conversion.
+     */
+    private static int utf16Column(String[] sourceLines, int line, int codePointOffset) {
+        if (line < 1 || line > sourceLines.length || codePointOffset < 0) return 1;
+        String sourceLine = sourceLines[line - 1];
+        int codePointCount = sourceLine.codePointCount(0, sourceLine.length());
+        if (codePointOffset > codePointCount) return 1;
+        return sourceLine.offsetByCodePoints(0, codePointOffset) + 1;
     }
 
     private record Rule(String id, String severity, String cwe, String title, String message) {}

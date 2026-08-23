@@ -274,10 +274,15 @@ database_counts_sql="
 SELECT CONCAT('schema_version=', COALESCE(MAX(version), 0)) FROM schema_migrations
 UNION ALL SELECT CONCAT('users=', COUNT(*)) FROM users
 UNION ALL SELECT CONCAT('tasks=', COUNT(*)) FROM tasks
+UNION ALL SELECT CONCAT('uploads=', COUNT(*)) FROM uploads
 UNION ALL SELECT CONCAT('blobs=', COUNT(*)) FROM blobs
+UNION ALL SELECT CONCAT('file_nodes=', COUNT(*)) FROM file_nodes
+UNION ALL SELECT CONCAT('archive_entries=', COUNT(*)) FROM archive_entries
 UNION ALL SELECT CONCAT('runs=', COUNT(*)) FROM runs
 UNION ALL SELECT CONCAT('jobs=', COUNT(*)) FROM jobs
 UNION ALL SELECT CONCAT('source_projects=', COUNT(*)) FROM source_projects
+UNION ALL SELECT CONCAT('source_files=', COUNT(*)) FROM source_files
+UNION ALL SELECT CONCAT('source_symbols=', COUNT(*)) FROM source_symbols
 UNION ALL SELECT CONCAT('findings=', COUNT(*)) FROM findings
 UNION ALL SELECT CONCAT('run_artifacts=', COUNT(*)) FROM run_artifacts
 UNION ALL SELECT CONCAT('reports=', COUNT(*)) FROM reports
@@ -465,7 +470,12 @@ prepare_restore_target() {
 compare_restored_counts() {
   drill_db_query "$database_counts_sql" > "$operation_temp/live-counts"
   while IFS='=' read -r count_key actual_count; do
-    expected_count=$(manifest_value "$verified_bundle_dir/manifest" "$count_key") || die "backup manifest is missing count: $count_key"
+    if ! expected_count=$(manifest_value "$verified_bundle_dir/manifest" "$count_key"); then
+      case "$count_key" in
+        uploads|file_nodes|archive_entries|source_files|source_symbols) continue ;;
+        *) die "backup manifest is missing count: $count_key" ;;
+      esac
+    fi
     [ "$actual_count" = "$expected_count" ] || die "restored $count_key count differs: expected $expected_count, got $actual_count"
   done < "$operation_temp/live-counts"
 }
@@ -481,41 +491,66 @@ safe_relative_path() {
   return 0
 }
 
+file_sha256() {
+  shasum -a 256 "$1" | awk '{print $1}'
+}
+
 verify_restored_references() {
   references_sql="
-SELECT 'blob', CONCAT('storage/blobs/', storage_key), CAST(size_bytes AS CHAR)
-  FROM blobs WHERE state = 'ready' AND deleted_at IS NULL
-UNION ALL
-SELECT 'artifact', CONCAT('storage/artifacts/', storage_key), CAST(size_bytes AS CHAR)
-  FROM run_artifacts
-UNION ALL
-SELECT 'report', CONCAT('storage/', storage_key), ''
-  FROM reports WHERE status = 'ready' AND deleted_at IS NULL
-UNION ALL
-SELECT 'project', CONCAT('storage/projects/', source_kind, '/', root_storage_key), CAST(file_count AS CHAR)
-  FROM source_projects WHERE state = 'ready' AND deleted_at IS NULL;
-"
+	SELECT 'blob', CONCAT('storage/blobs/', storage_key), CAST(size_bytes AS CHAR), LOWER(HEX(sha256))
+	  FROM blobs WHERE state = 'ready' AND deleted_at IS NULL
+	UNION ALL
+	SELECT 'artifact', CONCAT('storage/artifacts/', storage_key), CAST(size_bytes AS CHAR), COALESCE(LOWER(HEX(sha256)), '-')
+	  FROM run_artifacts WHERE state = 'ready' AND deleted_at IS NULL
+	UNION ALL
+	SELECT 'report', CONCAT('storage/', storage_key), COALESCE(CAST(size_bytes AS CHAR), '-'), COALESCE(LOWER(HEX(sha256)), '-')
+	  FROM reports WHERE status = 'ready' AND deleted_at IS NULL
+	UNION ALL
+	SELECT 'project', CONCAT('storage/projects/', source_kind, '/', root_storage_key), CAST(file_count AS CHAR), COALESCE(LOWER(HEX(manifest_sha256)), '-')
+	  FROM source_projects WHERE state = 'ready' AND deleted_at IS NULL
+	UNION ALL
+	SELECT 'source-file', CONCAT('storage/projects/', p.source_kind, '/', p.root_storage_key, '/', sf.logical_path),
+	       CAST(sf.size_bytes AS CHAR), LOWER(HEX(sf.sha256))
+	  FROM source_files sf JOIN source_projects p ON p.id = sf.source_project_id
+	 WHERE sf.state = 'ready' AND sf.deleted_at IS NULL AND p.state = 'ready' AND p.deleted_at IS NULL;
+	"
   drill_db_query "$references_sql" > "$operation_temp/references.tsv"
   reference_count=0
   tab_character=$(printf '\t')
-  while IFS="$tab_character" read -r reference_kind relative_path expected_size; do
+	while IFS="$tab_character" read -r reference_kind relative_path expected_size expected_sha256; do
     [ -n "$reference_kind" ] || continue
     safe_relative_path "$relative_path" || die "database contains unsafe storage path: $relative_path"
     absolute_path="$target_path/$relative_path"
     case "$reference_kind" in
-      blob|artifact)
-        [ -f "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored file is missing: $relative_path"
-        actual_size=$(wc -c < "$absolute_path" | tr -d '[:space:]')
-        [ "$actual_size" = "$expected_size" ] || die "restored file size differs: $relative_path"
-        ;;
-      report)
-        [ -f "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored report is missing: $relative_path"
-        ;;
+	  blob|artifact|source-file)
+		[ -f "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored file is missing: $relative_path"
+		actual_size=$(wc -c < "$absolute_path" | tr -d '[:space:]')
+		[ "$actual_size" = "$expected_size" ] || die "restored file size differs: $relative_path"
+		if [ "$expected_sha256" != "-" ]; then
+		  actual_sha256=$(file_sha256 "$absolute_path")
+		  [ "$actual_sha256" = "$expected_sha256" ] || die "restored file digest differs: $relative_path"
+		fi
+		;;
+	  report)
+		[ -f "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored report is missing: $relative_path"
+		if [ "$expected_size" != "-" ]; then
+		  actual_size=$(wc -c < "$absolute_path" | tr -d '[:space:]')
+		  [ "$actual_size" = "$expected_size" ] || die "restored report size differs: $relative_path"
+		fi
+		if [ "$expected_sha256" != "-" ]; then
+		  actual_sha256=$(file_sha256 "$absolute_path")
+		  [ "$actual_sha256" = "$expected_sha256" ] || die "restored report digest differs: $relative_path"
+		fi
+		;;
       project)
         [ -d "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored source project is missing: $relative_path"
         [ -f "$absolute_path/project.json" ] && [ ! -L "$absolute_path/project.json" ] || die "restored source project manifest is missing: $relative_path/project.json"
-        actual_project_files=$(find "$absolute_path" -type f ! -name project.json | wc -l | tr -d '[:space:]')
-        [ "$actual_project_files" = "$expected_size" ] || die "restored source project file count differs: $relative_path"
+		actual_project_files=$(find "$absolute_path" -type f ! -name project.json | wc -l | tr -d '[:space:]')
+		[ "$actual_project_files" = "$expected_size" ] || die "restored source project file count differs: $relative_path"
+		if [ "$expected_sha256" != "-" ]; then
+		  actual_sha256=$(file_sha256 "$absolute_path/project.json")
+		  [ "$actual_sha256" = "$expected_sha256" ] || die "restored project manifest digest differs: $relative_path/project.json"
+		fi
         ;;
       *) die "unexpected reference type: $reference_kind" ;;
     esac

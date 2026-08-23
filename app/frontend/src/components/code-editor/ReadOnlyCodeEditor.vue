@@ -10,6 +10,7 @@ import {
   watch,
 } from 'vue'
 
+import type { SourceNavigationTarget } from '@/api/types'
 import {
   loadMonacoEditor,
   resolveMonacoLanguage,
@@ -24,6 +25,8 @@ const props = defineProps<{
   source: string
   language: ReadOnlyCodeLanguage
   label: string
+  modelUri?: string | undefined
+  targetRange?: SourceNavigationTarget | undefined
 }>()
 
 const editorHost = useTemplateRef<HTMLDivElement>('editorHost')
@@ -31,6 +34,9 @@ const fallbackSource = useTemplateRef<HTMLElement>('fallbackSource')
 const state = shallowRef<EditorState>('fallback')
 const monacoModule = shallowRef<MonacoModule>()
 const editor = shallowRef<ReturnType<MonacoModule['editor']['create']>>()
+const model = shallowRef<ReturnType<MonacoModule['editor']['createModel']>>()
+let targetDecorations: string[] = []
+const fallbackModelUri = `inmemory://binaryscan/read-only/${Math.random().toString(36).slice(2)}`
 
 const statusText = computed(() => {
   if (state.value === 'ready') return 'Monaco 只读编辑器已就绪'
@@ -64,9 +70,9 @@ async function mountEditor(): Promise<void> {
     if (!editorHost.value) return
 
     monacoModule.value = monaco
+    model.value = createModel(monaco)
     editor.value = monaco.editor.create(editorHost.value, {
-      value: props.source,
-      language: resolveMonacoLanguage(props.language),
+      model: model.value,
       readOnly: true,
       domReadOnly: true,
       automaticLayout: true,
@@ -90,16 +96,72 @@ async function mountEditor(): Promise<void> {
       },
     })
     state.value = 'ready'
+    applyTargetRange()
   } catch {
     state.value = 'error'
   }
 }
 
+function createModel(monaco: MonacoModule) {
+  return monaco.editor.createModel(
+    props.source,
+    resolveMonacoLanguage(props.language),
+    monaco.Uri.parse(props.modelUri || fallbackModelUri),
+  )
+}
+
+function replaceModel(): void {
+  const monaco = monacoModule.value
+  const currentEditor = editor.value
+  if (!monaco || !currentEditor) return
+  targetDecorations = currentEditor.deltaDecorations(targetDecorations, [])
+  const previous = model.value
+  const next = createModel(monaco)
+  model.value = next
+  currentEditor.setModel(next)
+  previous?.dispose()
+  applyTargetRange()
+}
+
+function applyTargetRange(): void {
+  const currentEditor = editor.value
+  const currentModel = model.value
+  if (!currentEditor || !currentModel) return
+  const target = props.targetRange
+  if (!target) {
+    targetDecorations = currentEditor.deltaDecorations(targetDecorations, [])
+    return
+  }
+  const range = currentModel.validateRange({
+    startLineNumber: target.startLine,
+    startColumn: target.startColumn,
+    endLineNumber: target.endLine,
+    endColumn: target.endColumn,
+  })
+  targetDecorations = currentEditor.deltaDecorations(targetDecorations, [
+    {
+      range,
+      options: {
+        isWholeLine: true,
+        className: 'source-target-line',
+        inlineClassName: 'source-target-inline',
+        overviewRuler: {
+          color: '#e0bc55',
+          position: 4,
+        },
+      },
+    },
+  ])
+  currentEditor.setSelection(range)
+  currentEditor.revealRangeInCenter(range)
+}
+
 watch(
   () => props.source,
   (source) => {
-    if (editor.value && editor.value.getValue() !== source) {
-      editor.value.setValue(source)
+    if (model.value && model.value.getValue() !== source) {
+      model.value.setValue(source)
+      applyTargetRange()
     }
   },
 )
@@ -107,14 +169,25 @@ watch(
 watch(
   () => props.language,
   (language) => {
-    const model = editor.value?.getModel()
-    if (model && monacoModule.value) {
+    const currentModel = model.value
+    if (currentModel && monacoModule.value) {
       monacoModule.value.editor.setModelLanguage(
-        model,
+        currentModel,
         resolveMonacoLanguage(language),
       )
     }
   },
+)
+
+watch(
+  () => props.modelUri,
+  () => replaceModel(),
+)
+
+watch(
+  () => props.targetRange,
+  () => applyTargetRange(),
+  { deep: true },
 )
 
 watch(
@@ -129,8 +202,13 @@ onMounted(() => {
 })
 
 onScopeDispose(() => {
+  if (editor.value) {
+    targetDecorations = editor.value.deltaDecorations(targetDecorations, [])
+  }
   editor.value?.dispose()
   editor.value = undefined
+  model.value?.dispose()
+  model.value = undefined
 })
 </script>
 
@@ -279,6 +357,16 @@ onScopeDispose(() => {
   width: 100%;
   min-width: 0;
   height: 100%;
+}
+
+.read-only-editor__host :deep(.source-target-line) {
+  background: rgb(224 188 85 / 13%);
+  box-shadow: inset 3px 0 0 #e0bc55;
+}
+
+.read-only-editor__host :deep(.source-target-inline) {
+  border-bottom: 1px solid #f1cf69;
+  background: rgb(241 207 105 / 18%);
 }
 
 .code-panel__source {

@@ -50,11 +50,11 @@ export function isFileNodeDecompileFormatSupported(format: string): boolean {
 
 export function isFileNodeDecompileTargetSupported(
   format: string,
-  architecture: string,
+  _architecture: string,
 ): boolean {
   const normalizedFormat = format.trim().toLowerCase()
   if (normalizedFormat === 'macho-thin') {
-    return architecture.trim().toLowerCase() === 'x86_64'
+	return true
   }
   // Universal Mach-O needs an explicit architecture-slice selector before it
   // can be sent to Ghidra without silently choosing the wrong program.

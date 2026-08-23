@@ -15,6 +15,7 @@ import {
   useTemplateRef,
   watch,
 } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { api, ApiError } from '@/api/client'
 import { isDemoMode } from '@/api/runtime'
@@ -22,6 +23,7 @@ import type {
   FileDecompileRequest,
   FileNodeDetail,
   JsonValue,
+  SourceNavigationTarget,
   TaskDetail,
   TaskEventMessage,
 } from '@/api/types'
@@ -156,6 +158,8 @@ const emit = defineEmits<{
   returnList: []
 }>()
 
+const route = useRoute()
+const router = useRouter()
 const session = useSessionStore()
 const decompileResultState = shallowRef<TaskResultState>({
   status: 'loading',
@@ -181,9 +185,11 @@ const pythonAnalysisBusy = shallowRef(false)
 const liveDecompileResult = useTemplateRef<{
   refresh: () => void
   openResult: (resultId: string) => Promise<boolean>
+  openSource: (target: SourceNavigationTarget) => Promise<boolean>
 }>(
   'liveDecompileResult',
 )
+const pendingSourceTarget = shallowRef<SourceNavigationTarget>()
 const liveCAnalysisResult = useTemplateRef<{
   refresh: () => void
   startProject: (projectId: string) => Promise<void>
@@ -567,6 +573,113 @@ const taskEventStatusTitle = computed(
   () => eventRefreshError.value || taskEvents.errorMessage.value || taskEventStatusLabel.value,
 )
 
+function routeQueryString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function routeQueryPositiveInteger(value: unknown, fallback = 1): number {
+  const parsed = Number.parseInt(routeQueryString(value), 10)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function sourceTargetFromRoute(): SourceNavigationTarget | undefined {
+  const projectId = routeQueryString(route.query.sourceProject)
+  if (!projectId) return undefined
+  const startLine = routeQueryPositiveInteger(route.query.startLine)
+  const startColumn = routeQueryPositiveInteger(route.query.startColumn)
+  const endLine = Math.max(
+    routeQueryPositiveInteger(route.query.endLine, startLine),
+    startLine,
+  )
+  const endColumn = Math.max(
+    routeQueryPositiveInteger(
+      route.query.endColumn,
+      endLine === startLine ? startColumn + 1 : 1,
+    ),
+    endLine === startLine ? startColumn : 1,
+  )
+  const sourceFileId = routeQueryString(route.query.sourceFile)
+  const path = routeQueryString(route.query.sourcePath)
+  return {
+    projectId,
+    ...(sourceFileId ? { sourceFileId } : {}),
+    ...(path ? { path } : {}),
+    startLine,
+    startColumn,
+    endLine,
+    endColumn,
+  }
+}
+
+function sourceTargetKey(target: SourceNavigationTarget | undefined): string {
+  if (!target) return ''
+  return [
+    target.projectId,
+    target.sourceFileId ?? '',
+    target.path ?? '',
+    target.startLine,
+    target.startColumn,
+    target.endLine,
+    target.endColumn,
+  ].join('\u0000')
+}
+
+let activeSourceTargetKey = ''
+
+async function replaceSourceRoute(target: SourceNavigationTarget): Promise<void> {
+  const targetKey = sourceTargetKey(target)
+  activeSourceTargetKey = targetKey
+  if (sourceTargetKey(sourceTargetFromRoute()) === targetKey) return
+  await router.replace({
+    query: {
+      ...route.query,
+      detail: 'results',
+      result: 'decompile',
+      sourceProject: target.projectId,
+      sourceFile: target.sourceFileId,
+      sourcePath: target.path,
+      startLine: String(target.startLine),
+      startColumn: String(target.startColumn),
+      endLine: String(target.endLine),
+      endColumn: String(target.endColumn),
+    },
+  })
+}
+
+async function openPendingSourceTarget(): Promise<void> {
+  const workspace = liveDecompileResult.value
+  const target = pendingSourceTarget.value
+  if (!workspace || !target) return
+  pendingSourceTarget.value = undefined
+  await workspace.openSource(target)
+}
+
+function restoreSourceTarget(target: SourceNavigationTarget): void {
+  activeSourceTargetKey = sourceTargetKey(target)
+  pendingSourceTarget.value = target
+  activeDetailTab.value = 'results'
+  activeResultTab.value = 'decompile'
+  void nextTick(() => openPendingSourceTarget())
+}
+
+function handleDecompileNavigationChange(target: SourceNavigationTarget): void {
+  void replaceSourceRoute(target)
+}
+
+watch(liveDecompileResult, () => {
+  void openPendingSourceTarget()
+})
+
+watch(
+  () => route.query,
+  () => {
+    const target = sourceTargetFromRoute()
+    const targetKey = sourceTargetKey(target)
+    if (!target || targetKey === activeSourceTargetKey) return
+    restoreSourceTarget(target)
+  },
+)
+
 async function load(): Promise<void> {
   const generation = ++loadGeneration
   eventRefreshGeneration += 1
@@ -586,8 +699,11 @@ async function load(): Promise<void> {
   pythonAnalysisBusy.value = false
   vulnerabilityResultState.value = { status: 'loading' }
   reportResultState.value = { status: 'loading' }
-  activeResultTab.value = 'files'
-  activeDetailTab.value = 'progress'
+  const routeSourceTarget = sourceTargetFromRoute()
+  activeResultTab.value = routeSourceTarget ? 'decompile' : 'files'
+  activeDetailTab.value = routeSourceTarget ? 'results' : 'progress'
+  pendingSourceTarget.value = routeSourceTarget
+  activeSourceTargetKey = sourceTargetKey(routeSourceTarget)
   pendingCAnalysisProjectId.value = ''
   pendingJavaAnalysisProject.value = undefined
   pendingPythonAnalysisProject.value = undefined
@@ -603,6 +719,9 @@ async function load(): Promise<void> {
   } finally {
     if (generation === loadGeneration && taskId === props.taskId) {
       loading.value = false
+      if (pendingSourceTarget.value) {
+        void nextTick(() => openPendingSourceTarget())
+      }
     }
   }
 }
@@ -688,10 +807,9 @@ function handleCAnalysisBusy(busy: boolean): void {
   cAnalysisBusy.value = busy
 }
 
-async function openCAnalysisSource(resultId: string): Promise<void> {
-  activeResultTab.value = 'decompile'
-  await nextTick()
-  await liveDecompileResult.value?.openResult(resultId)
+async function openCAnalysisSource(target: SourceNavigationTarget): Promise<void> {
+  await replaceSourceRoute(target)
+  restoreSourceTarget(target)
 }
 
 async function startCAnalysisProject(projectId: string): Promise<void> {
@@ -730,16 +848,14 @@ function handlePythonAnalysisBusy(busy: boolean): void {
   pythonAnalysisBusy.value = busy
 }
 
-async function openJavaAnalysisSource(resultId: string): Promise<void> {
-  activeResultTab.value = 'decompile'
-  await nextTick()
-  await liveDecompileResult.value?.openResult(resultId)
+async function openJavaAnalysisSource(target: SourceNavigationTarget): Promise<void> {
+  await replaceSourceRoute(target)
+  restoreSourceTarget(target)
 }
 
-async function openPythonAnalysisSource(resultId: string): Promise<void> {
-  activeResultTab.value = 'decompile'
-  await nextTick()
-  await liveDecompileResult.value?.openResult(resultId)
+async function openPythonAnalysisSource(target: SourceNavigationTarget): Promise<void> {
+  await replaceSourceRoute(target)
+  restoreSourceTarget(target)
 }
 
 async function startPythonAnalysisProject(projectId: string): Promise<void> {
@@ -947,6 +1063,7 @@ function handleReportState(state: TaskResultState): void {
                 ref="liveDecompileResult"
                 :task-id="task.id"
                 @state-change="handleDecompileState"
+                @navigation-change="handleDecompileNavigationChange"
               />
             </div>
           </template>

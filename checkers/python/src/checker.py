@@ -10,8 +10,9 @@ MAX_FINDINGS = 10000
 
 
 class Analyzer(ast.NodeVisitor):
-    def __init__(self, path):
+    def __init__(self, path, content):
         self.path = path
+        self.lines = content.split("\n")
         self.findings = []
 
     def visit_Call(self, node):
@@ -27,18 +28,38 @@ class Analyzer(ast.NodeVisitor):
             rule = ("PY004", "medium", "CWE-502", "Unsafe deserialization", "pickle may execute code while deserializing")
         if rule:
             rule_id, severity, cwe, title, message = rule
+            line = getattr(node, "lineno", 1)
             self.findings.append({
                 "ruleId": rule_id,
                 "severity": severity,
                 "cwe": cwe,
                 "path": self.path,
-                "line": getattr(node, "lineno", 1),
-                "column": getattr(node, "col_offset", 0) + 1,
+                "line": line,
+                "column": utf16_column(self.lines, line, getattr(node, "col_offset", 0)),
                 "title": title,
                 "message": message,
                 "evidence": {"call": name},
             })
         self.generic_visit(node)
+
+
+def utf16_column(lines, line_number, utf8_byte_offset):
+    """Convert CPython's zero-based UTF-8 byte offset to a Monaco column."""
+    if line_number < 1 or line_number > len(lines) or utf8_byte_offset < 0:
+        return 1
+    line = lines[line_number - 1]
+    consumed_bytes = 0
+    utf16_units = 0
+    for character in line:
+        if consumed_bytes == utf8_byte_offset:
+            break
+        consumed_bytes += len(character.encode("utf-8"))
+        utf16_units += 2 if ord(character) > 0xFFFF else 1
+    if consumed_bytes != utf8_byte_offset:
+        # ast positions are guaranteed to be UTF-8 character boundaries. Keep
+        # a defensive fallback for a future parser returning malformed data.
+        return 1
+    return utf16_units + 1
 
 
 def call_name(node):
@@ -75,7 +96,7 @@ def analyze(request):
             raise ValueError("invalid source file")
         try:
             tree = ast.parse(content, filename=path)
-            analyzer = Analyzer(path)
+            analyzer = Analyzer(path, content)
             analyzer.visit(tree)
             findings.extend(analyzer.findings)
         except SyntaxError as error:

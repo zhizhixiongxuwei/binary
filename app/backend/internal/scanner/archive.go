@@ -1,19 +1,16 @@
 package scanner
 
 import (
-	"archive/tar"
-	"archive/zip"
-	"compress/gzip"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
+	"binaryscan.local/backend/internal/extract"
+	"binaryscan.local/backend/internal/filetype"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
 	"binaryscan.local/backend/internal/storage"
@@ -87,6 +84,10 @@ func (e *Executor) archive(ctx context.Context, claim job.Claim) error {
 			e.cfg.Version, claim.RunID); err != nil {
 			return fmt.Errorf("record archive importer: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE tasks SET status = 'ready'
+			WHERE id = ? AND deleted_at IS NULL`, subject.taskID); err != nil {
+			return fmt.Errorf("mark archive task ready: %w", err)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
             (task_id, event_type, message, progress_current, progress_total)
             VALUES (?, 'archive.complete', ?, ?, ?)`, subject.taskID,
@@ -118,205 +119,71 @@ func (e *Executor) loadArchiveSubject(ctx context.Context, runID string) (subjec
 func (e *Executor) readArchive(
 	ctx context.Context, inputPath, sourceName, format string,
 ) ([]archiveItem, int64, error) {
-	switch format {
-	case "zip":
-		return e.readZip(ctx, inputPath, sourceName)
-	case "tar":
-		file, err := os.Open(inputPath)
-		if err != nil {
-			return nil, 0, fmt.Errorf("open tar archive: %w", err)
-		}
-		defer file.Close()
-		return e.readTar(ctx, tar.NewReader(file), sourceName)
-	case "gzip":
-		file, err := os.Open(inputPath)
-		if err != nil {
-			return nil, 0, fmt.Errorf("open gzip archive: %w", err)
-		}
-		defer file.Close()
-		reader, err := gzip.NewReader(file)
-		if err != nil {
-			return nil, 0, fmt.Errorf("open gzip stream: %w", err)
-		}
-		defer reader.Close()
-		lower := strings.ToLower(sourceName)
-		if strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz") {
-			return e.readTar(ctx, tar.NewReader(reader), sourceName)
-		}
-		name := strings.TrimSuffix(filepath.Base(sourceName), filepath.Ext(sourceName))
-		if name == "" {
-			name = "decompressed.bin"
-		}
-		return e.ingestArchiveReaders(ctx, sourceName,
-			[]archiveReader{{ordinal: 1, name: name, size: -1, source: reader}}, e.cfg.Worker.ArchiveMaxBytes)
-	default:
-		return nil, 0, fmt.Errorf("unsupported archive format %q", format)
-	}
-}
-
-func (e *Executor) readZip(ctx context.Context, inputPath, sourceName string) ([]archiveItem, int64, error) {
-	reader, err := zip.OpenReader(inputPath)
-	if err != nil {
-		return nil, 0, fmt.Errorf("open zip archive: %w", err)
-	}
-	defer reader.Close()
-	if len(reader.File) > e.cfg.Worker.ArchiveMaxFiles {
-		return nil, 0, fmt.Errorf("archive entry limit exceeded")
-	}
-	entries := make([]archiveReader, 0, len(reader.File))
-	for index, file := range reader.File {
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		if !file.Mode().IsRegular() {
-			entries = append(entries, archiveReader{ordinal: index + 1, name: file.Name, skipped: true})
-			continue
-		}
-		if file.UncompressedSize64 > uint64(e.cfg.Worker.ArchiveMaxBytes) {
-			return nil, 0, fmt.Errorf("archive expanded byte limit exceeded")
-		}
-		entries = append(entries, archiveReader{ordinal: index + 1, name: file.Name, size: int64(file.UncompressedSize64), open: file.Open})
-	}
-	return e.ingestArchiveReaders(ctx, sourceName, entries, e.cfg.Worker.ArchiveMaxBytes)
-}
-
-func (e *Executor) readTar(ctx context.Context, reader *tar.Reader, sourceName string) ([]archiveItem, int64, error) {
-	entries := make([]archiveReader, 0)
+	items := make([]archiveItem, 0)
 	seen := make(map[string]struct{})
 	var total int64
-	for ordinal := 1; ; ordinal++ {
-		header, err := reader.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return nil, 0, fmt.Errorf("read tar header: %w", err)
-		}
-		if ordinal > e.cfg.Worker.ArchiveMaxFiles {
-			return nil, 0, fmt.Errorf("archive entry limit exceeded")
-		}
-		if header.FileInfo().IsDir() {
-			continue
-		}
-		if !header.FileInfo().Mode().IsRegular() || header.Size < 0 {
-			entries = append(entries, archiveReader{ordinal: ordinal, name: header.Name, skipped: true})
-			continue
-		}
-		entryName := header.Name
-		entrySize := header.Size
-		items, expanded, err := e.ingestArchiveReaders(ctx, sourceName,
-			[]archiveReader{{ordinal: ordinal, name: entryName, size: entrySize, source: reader}},
-			e.cfg.Worker.ArchiveMaxBytes-total)
-		if err != nil {
-			return nil, 0, err
-		}
-		if _, duplicate := seen[items[0].logicalPath]; duplicate {
-			return nil, 0, fmt.Errorf("archive contains duplicate path %q", items[0].logicalPath)
-		}
-		seen[items[0].logicalPath] = struct{}{}
-		entries = append(entries, archiveReader{materialized: items[0], expanded: expanded})
-		total += expanded
-	}
-	items := make([]archiveItem, 0, len(entries))
-	total = 0
-	for _, entry := range entries {
-		if entry.materialized.status != "" {
-			items = append(items, entry.materialized)
-			total += entry.expanded
-			continue
-		}
-		item, err := e.skippedArchiveItem(sourceName, entry.ordinal, entry.name)
-		if err != nil {
-			return nil, 0, err
-		}
-		items = append(items, item)
-	}
-	if total > e.cfg.Worker.ArchiveMaxBytes {
-		return nil, 0, fmt.Errorf("archive expanded byte limit exceeded")
-	}
-	return items, total, nil
-}
-
-type archiveReader struct {
-	ordinal      int
-	name         string
-	size         int64
-	source       io.Reader
-	open         func() (io.ReadCloser, error)
-	skipped      bool
-	materialized archiveItem
-	expanded     int64
-}
-
-func (e *Executor) ingestArchiveReaders(
-	ctx context.Context, sourceName string, entries []archiveReader, maxExpandedBytes int64,
-) ([]archiveItem, int64, error) {
-	if maxExpandedBytes <= 0 {
-		return nil, 0, fmt.Errorf("archive expanded byte limit exceeded")
-	}
-	items := make([]archiveItem, 0, len(entries))
-	seen := make(map[string]struct{}, len(entries))
-	var total int64
-	for _, entry := range entries {
-		logicalPath, fileNodePath, err := archivePaths(sourceName, entry.name)
-		if err != nil {
-			return nil, 0, err
-		}
-		if _, duplicate := seen[logicalPath]; duplicate {
-			return nil, 0, fmt.Errorf("archive contains duplicate path %q", logicalPath)
-		}
-		seen[logicalPath] = struct{}{}
-		if entry.skipped || entry.size == 0 {
-			item, err := e.skippedArchiveItem(sourceName, entry.ordinal, entry.name)
+	err := extract.Walk(ctx, inputPath, sourceName, format, e.cfg.Worker.ArchiveMaxFiles,
+		func(entry extract.Entry, source io.Reader) error {
+			if !entry.Regular {
+				name := strings.TrimSpace(entry.Name)
+				if name == "." || name == "./" {
+					return nil
+				}
+			}
+			logicalPath, fileNodePath, err := archivePaths(sourceName, entry.Name)
 			if err != nil {
-				return nil, 0, err
+				return err
 			}
-			items = append(items, item)
-			continue
-		}
-		remaining := maxExpandedBytes - total
-		if remaining <= 0 || (entry.size > 0 && entry.size > remaining) {
-			return nil, 0, fmt.Errorf("archive expanded byte limit exceeded")
-		}
-		var source io.Reader = entry.source
-		var closer io.Closer
-		if entry.open != nil {
-			opened, err := entry.open()
+			if _, duplicate := seen[logicalPath]; duplicate {
+				return fmt.Errorf("archive contains duplicate path %q", logicalPath)
+			}
+			seen[logicalPath] = struct{}{}
+			if !entry.Regular || entry.Size == 0 {
+				item, err := e.skippedArchiveItem(sourceName, entry.Ordinal, entry.Name)
+				if err != nil {
+					return err
+				}
+				items = append(items, item)
+				return nil
+			}
+			remaining := e.cfg.Worker.ArchiveMaxBytes - total
+			if remaining <= 0 || (entry.Size > 0 && entry.Size > remaining) {
+				return fmt.Errorf("archive expanded byte limit exceeded")
+			}
+			blob, ingestErr := e.blobs.Ingest(&contextReader{ctx: ctx, reader: source}, remaining)
+			if ingestErr != nil {
+				if errors.Is(ingestErr, storage.ErrBlobTooLarge) {
+					return fmt.Errorf("archive expanded byte limit exceeded")
+				}
+				return fmt.Errorf("materialize archive entry %q: %w", logicalPath, ingestErr)
+			}
+			if entry.Size >= 0 && blob.SizeBytes != entry.Size {
+				return fmt.Errorf("archive entry %q size mismatch", logicalPath)
+			}
+			blobID, err := identity.UUID()
 			if err != nil {
-				return nil, 0, fmt.Errorf("open archive entry %q: %w", logicalPath, err)
+				return err
 			}
-			source, closer = opened, opened
-		}
-		blob, ingestErr := e.blobs.Ingest(&contextReader{ctx: ctx, reader: source}, remaining)
-		if closer != nil {
-			_ = closer.Close()
-		}
-		if ingestErr != nil {
-			if errors.Is(ingestErr, storage.ErrBlobTooLarge) {
-				return nil, 0, fmt.Errorf("archive expanded byte limit exceeded")
+			fileNodeID, err := identity.UUID()
+			if err != nil {
+				return err
 			}
-			return nil, 0, fmt.Errorf("materialize archive entry %q: %w", logicalPath, ingestErr)
-		}
-		blobID, err := identity.UUID()
-		if err != nil {
-			return nil, 0, err
-		}
-		fileNodeID, err := identity.UUID()
-		if err != nil {
-			return nil, 0, err
-		}
-		blobPath, err := e.blobPath(blob.StorageKey)
-		if err != nil {
-			return nil, 0, err
-		}
-		detected, err := detectFile(blobPath, logicalPath)
-		if err != nil {
-			return nil, 0, err
-		}
-		items = append(items, archiveItem{ordinal: entry.ordinal, logicalPath: logicalPath,
-			detected: detected, status: "materialized", blob: blob, blobID: blobID,
-			fileNodeID: fileNodeID, fileNodePath: fileNodePath})
-		total += blob.SizeBytes
+			blobPath, err := e.blobPath(blob.StorageKey)
+			if err != nil {
+				return err
+			}
+			detected, err := filetype.Detect(blobPath, logicalPath)
+			if err != nil {
+				return err
+			}
+			items = append(items, archiveItem{ordinal: entry.Ordinal, logicalPath: logicalPath,
+				detected: detected.Format, status: "materialized", blob: blob, blobID: blobID,
+				fileNodeID: fileNodeID, fileNodePath: fileNodePath})
+			total += blob.SizeBytes
+			return nil
+		})
+	if err != nil {
+		return nil, 0, err
 	}
 	return items, total, nil
 }

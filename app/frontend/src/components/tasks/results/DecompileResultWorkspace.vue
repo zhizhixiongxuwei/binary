@@ -14,8 +14,11 @@ import { computed, shallowRef, watch, type Component } from 'vue'
 
 import type {
   DecompileResult,
+  DecompileSourceFile,
+  DecompileSourceFileContent,
   DecompileSymbolKind,
   JsonValue,
+  SourceNavigationTarget,
 } from '@/api/types'
 import ReadOnlyCodeEditor from '@/components/code-editor/ReadOnlyCodeEditor.vue'
 import type { ReadOnlyCodeLanguage } from '@/components/code-editor/monacoLoader'
@@ -29,18 +32,23 @@ const props = defineProps<{
   taskId: string
   items: readonly DecompileResult[]
   selectedId: string
+  sourceFiles: readonly DecompileSourceFile[]
+  selectedSourceFileId: string
+  sourceFile: DecompileSourceFileContent | undefined
   source: string
+  sourceFilesLoading: boolean
+  sourceFilesError: string
   sourceLoading: boolean
   sourceError: string
+  targetRange: SourceNavigationTarget | undefined
   hasMoreResults: boolean
   loadingMoreResults: boolean
-  hasMoreSource: boolean
 }>()
 
 const emit = defineEmits<{
   select: [resultId: string]
+  selectSourceFile: [fileId: string]
   loadMoreResults: []
-  loadMoreSource: []
 }>()
 
 interface ResultGroup {
@@ -50,6 +58,7 @@ interface ResultGroup {
 
 type ResultFilter = 'all' | 'source' | 'bytecode' | 'issues'
 const MAX_DIAGNOSTIC_PREVIEW_LENGTH = 4_096
+const MAX_RENDERED_SOURCE_FILES = 500
 
 const query = shallowRef('')
 const resultFilter = shallowRef<ResultFilter>('all')
@@ -59,6 +68,29 @@ const normalizedQuery = computed(() =>
 )
 const selectedResult = computed(() =>
   props.items.find((item) => item.id === props.selectedId),
+)
+const selectedSourceFile = computed(() =>
+  props.sourceFiles.find((item) => item.id === props.selectedSourceFileId),
+)
+const filteredSourceFiles = computed(() => {
+  if (!normalizedQuery.value) return props.sourceFiles
+  return props.sourceFiles.filter((file) =>
+    [file.logicalPath, file.language, file.sha256]
+      .join(' ')
+      .toLocaleLowerCase('zh-CN')
+      .includes(normalizedQuery.value),
+  )
+})
+const visibleSourceFiles = computed(() => {
+  const visible = filteredSourceFiles.value.slice(0, MAX_RENDERED_SOURCE_FILES)
+  const selected = selectedSourceFile.value
+  if (selected && !visible.some((file) => file.id === selected.id)) {
+    return [...visible, selected]
+  }
+  return visible
+})
+const sourceFilesTruncated = computed(
+  () => filteredSourceFiles.value.length > visibleSourceFiles.value.length,
 )
 const isJvmBytecodeResult = computed(() => {
   const language = selectedResult.value?.language.trim().toLocaleLowerCase('en-US') ?? ''
@@ -92,6 +124,14 @@ const filteredItems = computed(() => {
   )
   if (!normalizedQuery.value) return statusFiltered
   return statusFiltered.filter((item) => {
+    const selectedProjectHasMatchingFile =
+      item.id === props.selectedId &&
+      props.sourceFiles.some((file) =>
+        [file.logicalPath, file.language, file.sha256]
+          .join(' ')
+          .toLocaleLowerCase('zh-CN')
+          .includes(normalizedQuery.value),
+      )
     const searchable = [
       item.display_name,
       item.group_name,
@@ -101,11 +141,10 @@ const filteredItems = computed(() => {
       item.language,
       item.engine_name,
       item.symbol_key,
-      item.id === props.selectedId ? props.source : '',
     ]
       .join(' ')
       .toLocaleLowerCase('zh-CN')
-    return searchable.includes(normalizedQuery.value)
+    return searchable.includes(normalizedQuery.value) || selectedProjectHasMatchingFile
   })
 })
 const groupedItems = computed<readonly ResultGroup[]>(() => {
@@ -118,41 +157,44 @@ const groupedItems = computed<readonly ResultGroup[]>(() => {
   })
   return [...groups].map(([name, items]) => ({ name, items }))
 })
-const sourceMatchCount = computed(() => {
-  if (!normalizedQuery.value || !props.source) return 0
-  const escaped = normalizedQuery.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return (
-    props.source
-      .toLocaleLowerCase('zh-CN')
-      .match(new RegExp(escaped, 'g'))?.length ?? 0
-  )
-})
 const editorLanguage = computed<ReadOnlyCodeLanguage>(() => {
-  const language = selectedResult.value?.language.trim().toLowerCase() ?? ''
+  const language = (
+    selectedSourceFile.value?.language ?? selectedResult.value?.language ?? ''
+  ).trim().toLowerCase()
   if (language.includes('java') && language.includes('bytecode')) {
     return 'jvm-bytecode'
   }
   if (language.includes('java')) return 'java'
   if (language.includes('smali') || language.includes('dex')) return 'smali'
-  if (language.includes('pyc') || language.includes('bytecode')) {
+  if (language.includes('pyc') || language.includes('python-bytecode')) {
     return 'python-bytecode'
   }
+  if (language.includes('python') || language === 'py') return 'python'
   return 'c'
 })
 const languageLabel = computed(() => {
-  const language = selectedResult.value?.language.trim()
+  const language = (
+    selectedSourceFile.value?.language ?? selectedResult.value?.language
+  )?.trim()
   if (!language) return '反编译文本'
   const normalized = language.toLowerCase()
   if (normalized.includes('java') && normalized.includes('bytecode')) {
     return 'JVM 字节码索引'
   }
   if (normalized.includes('smali') || normalized.includes('dex')) return 'Smali'
-  if (normalized.includes('pyc') || normalized.includes('python')) {
+  if (normalized.includes('pyc') || normalized.includes('python-bytecode')) {
     return 'Python 字节码'
   }
+  if (normalized.includes('python') || normalized === 'py') return 'Python'
   if (normalized.includes('java')) return 'Java 形态'
   if (normalized.includes('c')) return '伪 C'
   return language
+})
+const editorModelUri = computed(() => {
+  const taskId = encodeURIComponent(props.taskId)
+  const projectId = encodeURIComponent(props.selectedId || 'project')
+  const fileId = encodeURIComponent(props.selectedSourceFileId || 'file')
+  return `binaryscan-source:///${taskId}/${projectId}/${fileId}`
 })
 const capabilityMessage = computed(() => {
   const result = selectedResult.value
@@ -262,6 +304,24 @@ function selectFilter(filter: ResultFilter): void {
 function selectBytecodeMethod(methodKey: string): void {
   selectedBytecodeMethodKey.value = methodKey
 }
+
+function sourceFilePathParts(file: DecompileSourceFile): string[] {
+  return file.logicalPath.replace(/\\/g, '/').split('/').filter(Boolean)
+}
+
+function sourceFileName(file: DecompileSourceFile): string {
+  const parts = sourceFilePathParts(file)
+  return parts[parts.length - 1] ?? file.logicalPath
+}
+
+function sourceFileDirectory(file: DecompileSourceFile): string {
+  const parts = sourceFilePathParts(file)
+  return parts.slice(0, -1).join('/') || '项目根目录'
+}
+
+function sourceFileDepth(file: DecompileSourceFile): number {
+  return Math.min(Math.max(sourceFilePathParts(file).length - 1, 0), 12)
+}
 </script>
 
 <template>
@@ -297,20 +357,20 @@ function selectBytecodeMethod(methodKey: string): void {
     </div>
 
     <div class="decompile-workspace__body">
-      <aside class="symbol-panel" aria-label="反编译符号列表">
+      <aside class="symbol-panel" aria-label="反编译源码项目和文件列表">
         <div class="symbol-panel__heading">
           <div>
-            <strong>函数 / 类 / 方法</strong>
+            <strong>源码项目</strong>
             <span>{{ filteredItems.length }} / {{ items.length }}</span>
           </div>
           <label class="symbol-search">
-            <span class="sr-only">搜索已加载的名称、签名或代码</span>
+            <span class="sr-only">搜索源码项目、文件路径或语言</span>
             <Search :size="14" aria-hidden="true" />
             <input
               v-model="query"
               type="search"
               autocomplete="off"
-              placeholder="搜索已加载的名称、签名或代码"
+              placeholder="搜索项目、文件路径或语言"
             >
           </label>
           <div class="result-filters" role="group" aria-label="按反编译能力筛选">
@@ -333,7 +393,7 @@ function selectBytecodeMethod(methodKey: string): void {
           v-if="groupedItems.length"
           class="symbol-tree"
           role="tree"
-          aria-label="反编译符号"
+          aria-label="反编译源码项目"
         >
           <section
             v-for="group in groupedItems"
@@ -369,7 +429,7 @@ function selectBytecodeMethod(methodKey: string): void {
           </section>
         </div>
         <div v-else class="symbol-panel__empty" role="status">
-          没有匹配的函数、类、方法或已加载代码
+          没有匹配的源码项目
         </div>
         <button
           v-if="hasMoreResults"
@@ -386,8 +446,63 @@ function selectBytecodeMethod(methodKey: string): void {
             aria-hidden="true"
           />
           <ChevronDown v-else :size="14" aria-hidden="true" />
-          加载更多符号
+          加载更多源码项目
         </button>
+
+        <section
+          v-if="selectedResult"
+          class="source-file-group"
+          aria-labelledby="source-file-heading"
+        >
+          <header>
+            <strong id="source-file-heading">项目文件</strong>
+            <span>{{ filteredSourceFiles.length }} / {{ sourceFiles.length }}</span>
+          </header>
+          <div v-if="sourceFilesLoading" class="source-file-state" role="status">
+            <LoaderCircle class="spin" :size="14" aria-hidden="true" />
+            正在读取文件树
+          </div>
+          <div
+            v-else-if="sourceFilesError && sourceFiles.length === 0"
+            class="source-file-state source-file-state--error"
+            role="alert"
+          >
+            <TriangleAlert :size="14" aria-hidden="true" />
+            {{ sourceFilesError }}
+          </div>
+          <div
+            v-else-if="visibleSourceFiles.length"
+            class="source-file-tree"
+            role="tree"
+            aria-label="项目源码文件"
+          >
+            <button
+              v-for="file in visibleSourceFiles"
+              :key="file.id"
+              class="source-file-row"
+              :class="{ 'source-file-row--active': selectedSourceFileId === file.id }"
+              type="button"
+              role="treeitem"
+              :aria-selected="selectedSourceFileId === file.id"
+              :aria-level="sourceFileDepth(file) + 1"
+              :title="file.logicalPath"
+              :style="{ paddingLeft: `${12 + sourceFileDepth(file) * 10}px` }"
+              @click="emit('selectSourceFile', file.id)"
+            >
+              <FileCode2 :size="13" aria-hidden="true" />
+              <span>
+                <strong>{{ sourceFileName(file) }}</strong>
+                <small>{{ sourceFileDirectory(file) }} · {{ file.language }} · {{ file.lineCount }} 行</small>
+              </span>
+            </button>
+            <p v-if="sourceFilesTruncated" class="source-file-limit" role="status">
+              文件较多，仅渲染前 {{ MAX_RENDERED_SOURCE_FILES }} 项；可用上方搜索定位其余文件。
+            </p>
+          </div>
+          <div v-else class="source-file-state" role="status">
+            该项目没有匹配的源码文件
+          </div>
+        </section>
       </aside>
 
       <section class="code-panel" aria-label="只读反编译输出">
@@ -396,13 +511,15 @@ function selectBytecodeMethod(methodKey: string): void {
             <div class="code-panel__title">
               <span>
                 <strong>
-                  {{ selectedResult.display_name || selectedResult.symbol_key }}
+                  {{ selectedSourceFile?.logicalPath || selectedResult.display_name || selectedResult.symbol_key }}
                 </strong>
                 <small>
-                  {{ unitLabels[selectedResult.symbol_kind] ?? '符号' }}
+                  {{ selectedSourceFile ? '源码文件' : (unitLabels[selectedResult.symbol_kind] ?? '项目') }}
                 </small>
               </span>
-              <code>{{ selectedResult.signature || '签名不可用' }}</code>
+              <code>
+                {{ selectedSourceFile ? `${selectedSourceFile.lineCount} 行 · ${selectedSourceFile.sizeBytes} bytes` : (selectedResult.signature || '项目元数据不可用') }}
+              </code>
             </div>
             <div class="code-panel__badges" aria-label="代码属性">
               <span>{{ languageLabel }}</span>
@@ -412,11 +529,8 @@ function selectBytecodeMethod(methodKey: string): void {
           </header>
 
           <div class="code-panel__meta">
-            <span>位置 <code>{{ selectedResult.location || '未知' }}</code></span>
+            <span>路径 <code>{{ selectedSourceFile?.logicalPath || selectedResult.location || '未知' }}</code></span>
             <span>{{ selectedResult.detail || '无附加符号信息' }}</span>
-            <span v-if="normalizedQuery" aria-live="polite">
-              已加载代码命中 <code>{{ sourceMatchCount }}</code> 处
-            </span>
             <span class="mono">task: {{ taskId }}</span>
           </div>
 
@@ -450,10 +564,12 @@ function selectBytecodeMethod(methodKey: string): void {
             <strong>{{ sourceError }}</strong>
           </div>
           <ReadOnlyCodeEditor
-            v-else-if="source"
+            v-else-if="sourceFile"
             :source="source"
             :language="editorLanguage"
             :label="`只读${languageLabel}反编译输出`"
+            :model-uri="editorModelUri"
+            :target-range="targetRange"
           />
           <div v-else class="code-panel__state" role="status">
             <FileCode2 :size="24" aria-hidden="true" />
@@ -463,22 +579,9 @@ function selectBytecodeMethod(methodKey: string): void {
 
           <footer class="code-panel__footnote">
             <span>此内容由反编译或字节码分析产生，不代表原始源代码。</span>
-            <button
-              v-if="hasMoreSource"
-              type="button"
-              :disabled="sourceLoading"
-              :aria-busy="sourceLoading"
-              @click="emit('loadMoreSource')"
-            >
-              <LoaderCircle
-                v-if="sourceLoading"
-                class="spin"
-                :size="13"
-                aria-hidden="true"
-              />
-              <ChevronDown v-else :size="13" aria-hidden="true" />
-              继续读取
-            </button>
+            <span v-if="sourceFilesError" class="code-panel__footnote-error">
+              {{ sourceFilesError }}
+            </span>
           </footer>
         </template>
       </section>
@@ -816,6 +919,117 @@ function selectBytecodeMethod(methodKey: string): void {
 .load-more:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+.source-file-group {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.source-file-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px 7px;
+}
+
+.source-file-group > header strong {
+  color: var(--ink-800);
+  font-size: 10px;
+}
+
+.source-file-group > header span {
+  color: var(--ink-600);
+  font-size: 8px;
+}
+
+.source-file-tree {
+  max-height: 360px;
+  overflow: auto;
+  padding-bottom: 10px;
+}
+
+.source-file-row {
+  display: grid;
+  width: 100%;
+  min-height: 42px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px 6px 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  color: var(--ink-600);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.source-file-row:hover {
+  background: #f1f5f4;
+}
+
+.source-file-row:focus-visible {
+  outline: 2px solid #4f94b8;
+  outline-offset: -2px;
+}
+
+.source-file-row--active {
+  border-left-color: var(--teal);
+  color: var(--teal-strong);
+  background: #eaf5f2;
+}
+
+.source-file-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.source-file-row strong,
+.source-file-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-file-row strong {
+  color: var(--ink-800);
+  font-size: 9px;
+}
+
+.source-file-row small {
+  color: var(--ink-600);
+  font-size: 8px;
+}
+
+.source-file-state {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px;
+  color: var(--ink-600);
+  font-size: 9px;
+  text-align: center;
+}
+
+.source-file-state--error,
+.code-panel__footnote-error {
+  color: #9a4d36;
+}
+
+.source-file-limit {
+  margin: 6px 12px 2px;
+  padding: 7px 8px;
+  border: 1px solid #d7dfdf;
+  border-radius: 3px;
+  color: var(--ink-600);
+  background: #f7f9f9;
+  font-size: 8px;
+  line-height: 1.5;
 }
 
 .code-panel {

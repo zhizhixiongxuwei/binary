@@ -44,6 +44,8 @@ import type {
   DecompileProjectPage,
   DecompileResultListQuery,
   DecompileResultPage,
+  DecompileSourceFileContent,
+  DecompileSourceFileList,
   DecompileSourceChunk,
   DecompileSourceQuery,
   ExtendTaskRetentionInput,
@@ -103,6 +105,11 @@ import {
   parseDecompileProjectPage,
 } from '@/api/decompileProjectContract'
 import {
+  DecompileSourceContractError,
+  parseDecompileSourceFileContent,
+  parseDecompileSourceFileList,
+} from '@/api/decompileSourceContract'
+import {
   FileNodeContractError,
   parseFileNodeDetail,
   parseFileNodePage,
@@ -123,11 +130,6 @@ const MAX_RETRY_AFTER_SECONDS = 86_400
 
 interface ApiEnvelope<T> {
   data: T
-}
-
-interface ErrorEnvelope {
-  error: ApiErrorBody
-  meta?: unknown
 }
 
 export class ApiError extends Error {
@@ -175,14 +177,37 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   return typeof value === 'object' && value !== null && 'data' in value
 }
 
-function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'error' in value &&
-    typeof value.error === 'object' &&
-    value.error !== null
-  )
+export function parseApiErrorBody(value: unknown): ApiErrorBody | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const payload = value as Record<string, unknown>
+  const topLevelDetails = payload.details
+  if (typeof payload.error === 'string') {
+    return {
+      code: payload.error,
+      ...(typeof payload.message === 'string' ? { message: payload.message } : {}),
+      ...(topLevelDetails === undefined ? {} : { details: topLevelDetails }),
+    }
+  }
+  if (typeof payload.error === 'object' && payload.error !== null) {
+    const nested = payload.error as Record<string, unknown>
+    return {
+      ...(typeof nested.code === 'string' ? { code: nested.code } : {}),
+      ...(typeof nested.message === 'string' ? { message: nested.message } : {}),
+      ...(topLevelDetails !== undefined
+        ? { details: topLevelDetails }
+        : nested.details === undefined
+          ? {}
+          : { details: nested.details }),
+    }
+  }
+  const direct: ApiErrorBody = {
+    ...(typeof payload.code === 'string' ? { code: payload.code } : {}),
+    ...(typeof payload.message === 'string' ? { message: payload.message } : {}),
+    ...(topLevelDetails === undefined ? {} : { details: topLevelDetails }),
+  }
+  return direct.code || direct.message || direct.details !== undefined
+    ? direct
+    : undefined
 }
 
 export function readCookie(name: string, cookieSource?: string): string | undefined {
@@ -237,7 +262,7 @@ async function request<T>(
     let body: ApiErrorBody | undefined
     try {
       const payload: unknown = await response.json()
-      body = isErrorEnvelope(payload) ? payload.error : (payload as ApiErrorBody)
+      body = parseApiErrorBody(payload)
     } catch {
       body = undefined
     }
@@ -1155,6 +1180,39 @@ export const httpApi: ApiClient = {
     request<DecompileResultPage>(
       `/tasks/${encodeURIComponent(taskId)}/decompile-results${buildDecompileResultQuery(query)}`,
     ),
+  listDecompileSourceFiles: async (
+    taskId: string,
+    projectId: string,
+  ): Promise<DecompileSourceFileList> => {
+    try {
+      const payload = await request<unknown>(
+        `/tasks/${encodeURIComponent(taskId)}/projects/${encodeURIComponent(projectId)}/files`,
+      )
+      return parseDecompileSourceFileList(payload)
+    } catch (error) {
+      if (!(error instanceof DecompileSourceContractError)) throw error
+      throw new ApiError('源码文件列表响应不符合接口契约', 502, {
+        code: 'INVALID_SOURCE_FILE_RESPONSE',
+      })
+    }
+  },
+  getDecompileSourceFileContent: async (
+    taskId: string,
+    projectId: string,
+    fileId: string,
+  ): Promise<DecompileSourceFileContent> => {
+    try {
+      const payload = await request<unknown>(
+        `/tasks/${encodeURIComponent(taskId)}/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/content`,
+      )
+      return parseDecompileSourceFileContent(payload)
+    } catch (error) {
+      if (!(error instanceof DecompileSourceContractError)) throw error
+      throw new ApiError('源码文件内容响应不符合接口契约', 502, {
+        code: 'INVALID_SOURCE_CONTENT_RESPONSE',
+      })
+    }
+  },
   getDecompileSource: (
     taskId: string,
     resultId: string,
@@ -1369,6 +1427,10 @@ export const api: ApiClient = {
     ),
   listDecompileResults: (taskId, query) =>
     activeApi.listDecompileResults(taskId, query),
+  listDecompileSourceFiles: (taskId, projectId) =>
+    activeApi.listDecompileSourceFiles(taskId, projectId),
+  getDecompileSourceFileContent: (taskId, projectId, fileId) =>
+    activeApi.getDecompileSourceFileContent(taskId, projectId, fileId),
   getDecompileSource: (taskId, resultId, query) =>
     activeApi.getDecompileSource(taskId, resultId, query),
   downloadDecompileSources: (taskId, includeCombined) =>

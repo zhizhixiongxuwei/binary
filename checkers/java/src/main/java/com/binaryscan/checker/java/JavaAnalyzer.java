@@ -45,6 +45,8 @@ final class JavaAnalyzer {
     private Models.Finding finding(String path, Node node, String rule, String severity, String cwe,
                                    String title, String message) {
         int line = node.getBegin().map(position -> position.line).orElse(1);
+        // JavaParser Position.column is already one-based UTF-16, the same
+        // coordinate system consumed by Monaco Editor.
         int column = node.getBegin().map(position -> position.column).orElse(1);
         return new Models.Finding(rule, severity, cwe, path, line, column, title, message, Map.of());
     }

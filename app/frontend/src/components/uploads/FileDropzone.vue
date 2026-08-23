@@ -102,6 +102,7 @@ onScopeDispose(() => {
       class="sr-only"
       type="file"
       multiple
+      :accept="inputCategoryAccept[category]"
       :data-accept-hint="inputCategoryAccept[category]"
       :disabled="disabled || prechecking"
       tabindex="-1"

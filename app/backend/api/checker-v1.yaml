@@ -2,6 +2,10 @@ openapi: 3.1.0
 info:
   title: BinaryScan internal checker API
   version: 1.0.0
+  description: >-
+    Checker findings use one-based line numbers and one-based UTF-16 code-unit
+    columns. This is the coordinate system consumed directly by Monaco Editor;
+    supplementary Unicode characters such as emoji occupy two columns.
 paths:
   /healthz:
     get:
@@ -62,8 +66,19 @@ components:
         severity: { enum: [critical, high, medium, low, info] }
         cwe: { type: string }
         path: { type: string }
-        line: { type: integer, minimum: 1 }
-        column: { type: integer, minimum: 1 }
+        line:
+          type: integer
+          minimum: 1
+          description: One-based source line number.
+        column:
+          type: integer
+          minimum: 1
+          description: >-
+            One-based UTF-16 code-unit offset within line, matching Monaco
+            Position.column. Column 1 is before the first code unit and the
+            largest valid value is the line's UTF-16 length plus 1. The offset
+            must be a Unicode scalar boundary, never between the two surrogate
+            code units of a supplementary character.
         title: { type: string }
         message: { type: string }
         evidence: { type: object }

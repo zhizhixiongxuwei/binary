@@ -2,7 +2,8 @@
 import { Code2, ExternalLink, MapPin, ShieldAlert } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
 
-import type { CAnalysisFinding } from '@/api/types'
+import type { CAnalysisFinding, SourceNavigationTarget } from '@/api/types'
+import { cFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
 import { cFindingMessage } from '@/utils/analyzerMessages'
 
 const props = defineProps<{
@@ -11,7 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  openSource: [resultId: string]
+  openSource: [target: SourceNavigationTarget]
 }>()
 
 const MAX_DRAWER_WIDTH = 620
@@ -71,6 +72,13 @@ const snippetLines = computed<readonly SnippetLine[]>(() => {
     hit: hasReliableSourceLine,
   }))
 })
+const sourceTarget = computed(() =>
+  props.finding ? cFindingSourceTarget(props.finding) : undefined,
+)
+
+function openSource(): void {
+  if (sourceTarget.value) emit('openSource', sourceTarget.value)
+}
 </script>
 
 <template>
@@ -141,7 +149,8 @@ const snippetLines = computed<readonly SnippetLine[]>(() => {
       <el-button
         type="primary"
         plain
-        @click="emit('openSource', finding.function.result_id)"
+        :disabled="!sourceTarget"
+        @click="openSource"
       >
         <ExternalLink :size="14" aria-hidden="true" />
         打开反编译函数

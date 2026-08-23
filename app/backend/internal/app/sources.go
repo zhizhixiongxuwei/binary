@@ -3,6 +3,7 @@ package app
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -21,10 +22,23 @@ import (
 
 const maxSourcePreviewBytes = 16 << 20
 
+const maxSourceFileContentBytes = 4 << 20
+
 type sourceProjectPath struct {
 	id         string
 	sourceKind string
 	storageKey string
+}
+
+type sourceFileRecord struct {
+	ID          string `json:"id"`
+	ProjectID   string `json:"projectId"`
+	LogicalPath string `json:"logicalPath"`
+	Language    string `json:"language"`
+	MediaType   string `json:"-"`
+	SHA256      string `json:"sha256"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	LineCount   int    `json:"lineCount"`
 }
 
 func (s *taskService) downloadProject(c *gin.Context) {
@@ -95,6 +109,112 @@ func (s *taskService) sourcePreview(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *taskService) listProjectSourceFiles(c *gin.Context) {
+	rows, err := s.db.QueryContext(c, `SELECT sf.id, sf.source_project_id, sf.logical_path,
+		sf.language, sf.media_type, HEX(sf.sha256), sf.size_bytes, sf.line_count
+		FROM source_files sf
+		JOIN source_projects p ON p.id = sf.source_project_id AND p.state = 'ready'
+		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
+		WHERE p.id = ? AND p.task_id = ? AND sf.state = 'ready'
+		ORDER BY sf.logical_path, sf.id LIMIT 5000`, c.Param("projectID"), c.Param("taskID"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+		return
+	}
+	defer rows.Close()
+	files := make([]sourceFileRecord, 0)
+	for rows.Next() {
+		var file sourceFileRecord
+		if err := rows.Scan(&file.ID, &file.ProjectID, &file.LogicalPath, &file.Language,
+			&file.MediaType, &file.SHA256, &file.SizeBytes, &file.LineCount); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+			return
+		}
+		file.SHA256 = strings.ToLower(file.SHA256)
+		files = append(files, file)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+		return
+	}
+	if len(files) == 0 {
+		var exists int
+		if err := s.db.QueryRowContext(c, `SELECT 1 FROM source_projects p
+			JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
+			WHERE p.id = ? AND p.task_id = ? AND p.state = 'ready'`,
+			c.Param("projectID"), c.Param("taskID")).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "source_project_not_found"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+			}
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"files": files})
+}
+
+func (s *taskService) sourceFileContent(c *gin.Context) {
+	var project sourceProjectPath
+	var file sourceFileRecord
+	err := s.db.QueryRowContext(c, `SELECT p.id, p.source_kind, p.root_storage_key,
+		sf.id, sf.source_project_id, sf.logical_path, sf.language, sf.media_type,
+		HEX(sf.sha256), sf.size_bytes, sf.line_count
+		FROM source_projects p
+		JOIN source_files sf ON sf.source_project_id = p.id AND sf.state = 'ready'
+		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
+		WHERE p.id = ? AND p.task_id = ? AND sf.id = ? AND p.state = 'ready'`,
+		c.Param("projectID"), c.Param("taskID"), c.Param("fileID")).Scan(
+		&project.id, &project.sourceKind, &project.storageKey,
+		&file.ID, &file.ProjectID, &file.LogicalPath, &file.Language, &file.MediaType,
+		&file.SHA256, &file.SizeBytes, &file.LineCount)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "source_file_not_found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+		}
+		return
+	}
+	if file.SizeBytes > maxSourceFileContentBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "source_file_too_large"})
+		return
+	}
+	root, err := s.sourceProjectRoot(project)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "source_storage_corrupt"})
+		return
+	}
+	cleaned, err := storage.CleanRelativePath(file.LogicalPath)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "source_storage_corrupt"})
+		return
+	}
+	filename := filepath.Join(root, filepath.FromSlash(cleaned))
+	info, err := os.Lstat(filename)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != file.SizeBytes {
+		c.JSON(http.StatusConflict, gin.H{"error": "source_storage_corrupt"})
+		return
+	}
+	body, err := os.ReadFile(filename)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "source_storage_corrupt"})
+		return
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(body))
+	if !strings.EqualFold(digest, file.SHA256) {
+		c.JSON(http.StatusConflict, gin.H{"error": "source_storage_corrupt"})
+		return
+	}
+	file.SHA256 = strings.ToLower(file.SHA256)
+	c.Header("ETag", `"`+file.SHA256+`"`)
+	c.JSON(http.StatusOK, gin.H{
+		"id": file.ID, "projectId": file.ProjectID, "logicalPath": file.LogicalPath,
+		"language": file.Language, "sha256": file.SHA256,
+		"sizeBytes": file.SizeBytes, "lineCount": file.LineCount, "content": string(body),
+	})
+}
+
 func boundedQueryInt(raw string, minimum, maximum, fallback int) int {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < minimum {
@@ -108,14 +228,16 @@ func boundedQueryInt(raw string, minimum, maximum, fallback int) int {
 
 func (s *taskService) loadSourceProject(ctx *gin.Context, taskID, projectID string) (sourceProjectPath, error) {
 	var project sourceProjectPath
-	err := s.db.QueryRowContext(ctx, `SELECT id, source_kind, root_storage_key FROM source_projects
-		WHERE id = ? AND task_id = ? AND state = 'ready'`, projectID, taskID).Scan(&project.id, &project.sourceKind, &project.storageKey)
+	err := s.db.QueryRowContext(ctx, `SELECT p.id, p.source_kind, p.root_storage_key FROM source_projects p
+		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
+		WHERE p.id = ? AND p.task_id = ? AND p.state = 'ready'`, projectID, taskID).Scan(&project.id, &project.sourceKind, &project.storageKey)
 	return project, err
 }
 
 func (s *taskService) loadTaskSourceProjects(ctx *gin.Context, taskID string) ([]sourceProjectPath, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, source_kind, root_storage_key FROM source_projects
-		WHERE task_id = ? AND state = 'ready' ORDER BY created_at`, taskID)
+	rows, err := s.db.QueryContext(ctx, `SELECT p.id, p.source_kind, p.root_storage_key FROM source_projects p
+		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
+		WHERE p.task_id = ? AND p.state = 'ready' ORDER BY p.created_at`, taskID)
 	if err != nil {
 		return nil, err
 	}

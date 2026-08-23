@@ -304,6 +304,41 @@ export interface DecompileSourceChunk {
   size_bytes: number
 }
 
+/**
+ * One immutable source file published by a decompile project.
+ *
+ * These field names intentionally mirror the live backend contract. Keeping
+ * the project and file identities separate prevents checker run IDs from being
+ * mistaken for source identities during finding navigation.
+ */
+export interface DecompileSourceFile {
+  id: string
+  projectId: string
+  logicalPath: string
+  language: string
+  sizeBytes: number
+  lineCount: number
+  sha256: string
+}
+
+export interface DecompileSourceFileList {
+  files: DecompileSourceFile[]
+}
+
+export interface DecompileSourceFileContent extends DecompileSourceFile {
+  content: string
+}
+
+export interface SourceNavigationTarget {
+  projectId: string
+  sourceFileId?: string
+  path?: string
+  startLine: number
+  startColumn: number
+  endLine: number
+  endColumn: number
+}
+
 export type DecompileProjectLayoutVersion = 'project-v1' | 'legacy-v1'
 
 export type DecompileProjectStatus =
@@ -472,6 +507,9 @@ export interface CAnalysisFinding {
   rule_id: string
   severity: CAnalysisSeverity
   function: CAnalysisFunctionIdentity
+  source_project_id?: string
+  source_file_id?: string
+  source_path?: string
   location: CAnalysisLocation
   message: string
   snippet?: string
@@ -582,6 +620,9 @@ export interface JavaAnalysisFinding {
   rule_id: string
   severity: JavaAnalysisSeverity
   file: JavaAnalysisFileIdentity
+  source_project_id?: string
+  source_file_id?: string
+  source_path?: string
   callable: JavaAnalysisCallableIdentity
   location: JavaAnalysisLocation
   message: string
@@ -1168,6 +1209,9 @@ export interface PythonAnalysisFinding {
   rule_id: string
   severity: PythonAnalysisSeverity
   file: PythonAnalysisFileIdentity
+  source_project_id?: string
+  source_file_id?: string
+  source_path?: string
   callable: PythonAnalysisCallableIdentity
   location: PythonAnalysisLocation
   message: string

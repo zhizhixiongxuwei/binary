@@ -2,7 +2,8 @@
 import { Code2, ExternalLink, FileCode2, MapPin, ShieldAlert } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
 
-import type { PythonAnalysisFinding } from '@/api/types'
+import type { PythonAnalysisFinding, SourceNavigationTarget } from '@/api/types'
+import { fileFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
 import { javaFindingMessage } from '@/utils/analyzerMessages'
 
 const props = defineProps<{
@@ -11,7 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  openSource: [resultId: string]
+  openSource: [target: SourceNavigationTarget]
 }>()
 
 const MAX_DRAWER_WIDTH = 620
@@ -73,6 +74,13 @@ const snippetLines = computed<readonly SnippetLine[]>(() => {
     }
   })
 })
+const sourceTarget = computed(() =>
+  props.finding ? fileFindingSourceTarget(props.finding) : undefined,
+)
+
+function openSource(): void {
+  if (sourceTarget.value) emit('openSource', sourceTarget.value)
+}
 </script>
 
 <template>
@@ -151,7 +159,8 @@ const snippetLines = computed<readonly SnippetLine[]>(() => {
       <el-button
         type="primary"
         plain
-        @click="emit('openSource', finding.file.result_id)"
+        :disabled="!sourceTarget"
+        @click="openSource"
       >
         <ExternalLink :size="14" aria-hidden="true" />
         打开 Python 源码

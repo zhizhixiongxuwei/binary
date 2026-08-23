@@ -42,6 +42,8 @@ import type {
   DecompileProjectPage,
   DecompileResultListQuery,
   DecompileResultPage,
+  DecompileSourceFileContent,
+  DecompileSourceFileList,
   DecompileSourceChunk,
   DecompileSourceQuery,
   ExtendTaskRetentionInput,
@@ -189,6 +191,16 @@ export interface ApiClient {
     taskId: string,
     query?: DecompileResultListQuery,
   ): Promise<DecompileResultPage>
+  listDecompileSourceFiles(
+    taskId: string,
+    projectId: string,
+  ): Promise<DecompileSourceFileList>
+  getDecompileSourceFileContent(
+    taskId: string,
+    projectId: string,
+    fileId: string,
+  ): Promise<DecompileSourceFileContent>
+  /** @deprecated Use project source files and single-file content instead. */
   getDecompileSource(
     taskId: string,
     resultId: string,

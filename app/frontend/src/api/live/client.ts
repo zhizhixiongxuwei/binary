@@ -1,5 +1,23 @@
 import type { ApiClient } from '@/api/contract'
-import { ApiError, apiEndpoint } from '@/api/client'
+import { ApiError, apiEndpoint, parseApiErrorBody } from '@/api/client'
+import {
+  DecompileSourceContractError,
+  parseDecompileSourceFileContent,
+  parseDecompileSourceFileList,
+} from '@/api/decompileSourceContract'
+import {
+  ArchiveImportContractError,
+  parseArchiveImport,
+  parseArchiveImportEntryPage,
+  parseArchiveImportPage,
+  parseArchiveTaskBatchResult,
+} from '@/api/archiveImportContract'
+import {
+  parseCompletedUpload,
+  parseCreatedUploadSession,
+  parseUploadSession,
+  UploadIntakeContractError,
+} from '@/api/uploadIntakeContract'
 import type * as Model from '@/api/types'
 
 interface LiveUser {
@@ -14,6 +32,7 @@ interface LiveTask {
   id: string
   displayName: string
   status: string
+  inputSha256?: string
   detectedFormat?: string
   createdAt: string
   updatedAt: string
@@ -26,6 +45,7 @@ interface LiveFile {
   kind: string
   detectedFormat: string | null
   sizeBytes: number
+  sha256: string
 }
 
 interface LiveRun {
@@ -73,8 +93,16 @@ interface LiveFinding {
   cwe: string | null
   externalId: string | null
   path: string | null
-  line: number | null
-  column: number | null
+  sourceProjectId?: string | null
+  sourceFileId?: string | null
+  startLine?: number | null
+  startColumn?: number | null
+  endLine?: number | null
+  endColumn?: number | null
+  snippet?: string | null
+  snippetStartLine?: number | null
+  line?: number | null
+  column?: number | null
   title: string
   message: string
   evidence: Record<string, unknown> | null
@@ -85,6 +113,7 @@ interface LiveReport {
   id: string
   taskId: string
   format: Model.ReportFormat
+  schemaVersion: string
   status: string
   sha256?: string | null
   sizeBytes?: number | null
@@ -92,24 +121,11 @@ interface LiveReport {
   completedAt?: string | null
 }
 
-interface LocalUpload extends Model.UploadSession {
-  filename: string
-  contentType: string
-  declaredSize: number
-  taskId?: string
-}
-
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '')
-const uploads = new Map<string, LocalUpload>()
-const queuedArchiveImports = new Set<string>()
 
 let csrfToken = ''
 let currentUser: Model.CurrentUser | null = null
-
-function uuid(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-}
 
 function plusDays(value: string, days: number): string {
   const date = new Date(value)
@@ -139,16 +155,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   })
   if (!response.ok) {
     let code = 'REQUEST_FAILED'
+    let details: unknown
     try {
-      const payload = (await response.json()) as { error?: string | { code?: string; message?: string } }
-      if (typeof payload.error === 'string') code = payload.error
-      else if (payload.error?.code) code = payload.error.code
+      const body = parseApiErrorBody(await response.json())
+      if (body?.code) code = body.code
+      details = body?.details
     } catch {
       // Keep a stable fallback for non-JSON proxy errors.
     }
     throw new ApiError(errorMessage(code, response.status), response.status, {
       code,
       message: errorMessage(code, response.status),
+      details,
     })
   }
   if (response.status === 204) return undefined as T
@@ -163,11 +181,27 @@ function errorMessage(code: string, status: number): string {
     csrf_validation_failed: '登录状态已更新，请刷新页面后重试',
     task_not_found: '任务不存在或已被删除',
     file_not_found: '文件节点不存在',
+    source_project_not_found: '反编译源码项目不存在或已失效',
+    source_file_not_found: '反编译源码文件不存在或已失效',
+    source_file_too_large: '源码文件过大，无法在线预览，请下载源码项目后查看',
+    source_storage_corrupt: '源码存储校验失败，当前文件不能安全展示',
     decompile_not_supported: '该文件格式暂不支持反编译',
     source_required: '当前反编译结果没有可供检测的源码',
     checker_not_supported: '该源码类型暂不支持安全检测',
+    upload_not_found: '上传会话不存在或已失效',
+    upload_incomplete: '上传分片尚未完整到达服务端',
+    upload_conflict: '上传分片或会话内容发生冲突',
+    upload_invalid_state: '上传状态已变化，请刷新后重试',
+    upload_expired: '上传会话已过期，请重新选择文件',
+    chunk_sha256_mismatch: '上传分片校验失败，请重试',
+    input_category_mismatch: '文件实际类别与所选上传入口不一致',
+    unsupported_input_format: '服务端无法识别或暂不支持该文件格式',
+    archive_import_not_found: '归档导入不存在或已删除',
+    idempotency_key_required: '请求标识无效，请刷新页面后重试',
     report_run_not_finished: '仍有处理流程未结束，暂时不能生成报告',
     invalid_report_request: '当前报告格式或分析快照无效',
+    invalid_report_encoding: '报告下载编码无效',
+    report_idempotency_conflict: '该报告生成请求已被用于不同的格式或分析流程，请重新提交',
   }
   return messages[code] ?? `请求失败（HTTP ${status}，${code}）`
 }
@@ -239,7 +273,7 @@ function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
     ...base,
     original_filename: root?.path ?? value.task.displayName,
     size_bytes: root?.sizeBytes ?? 0,
-    sha256: '',
+    sha256: value.task.inputSha256 ?? '',
     current_stage: active ? stageForRun(active.kind) : value.task.status === 'ready' ? 'COMPLETED' : base.status,
     ...(failed?.errorCode ? { error_code: failed.errorCode } : {}),
     ...(failed?.errorMessage ? { error_message: failed.errorMessage } : {}),
@@ -287,7 +321,7 @@ function mapFile(value: LiveFile, all: readonly LiveFile[]): Model.FileNodeDetai
     mime_type: '',
     architecture: '',
     size_bytes: value.kind === 'directory' ? null : value.sizeBytes,
-    sha256: '',
+    sha256: value.sha256,
     extraction_status: value.parentId ? 'extracted' : 'indexed',
     error_code: '',
     error_message: '',
@@ -404,40 +438,107 @@ async function mapPythonAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promi
   return { ...java, analyzer_name: run.toolName ?? 'python-checker' }
 }
 
-function mapSourceFinding(value: LiveFinding): Model.CAnalysisFinding {
-  const line = value.line ?? 1
-  const column = value.column ?? 1
+function positiveCoordinate(value: number | null | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(Math.trunc(value), 1)
+    : fallback
+}
+
+function findingLocation(value: LiveFinding): Model.CAnalysisLocation {
+  const startLine = positiveCoordinate(value.startLine ?? value.line, 1)
+  const startColumn = positiveCoordinate(value.startColumn ?? value.column, 1)
+  const endLine = Math.max(positiveCoordinate(value.endLine, startLine), startLine)
+  const endColumn = Math.max(
+    positiveCoordinate(
+      value.endColumn,
+      endLine === startLine ? startColumn + 1 : 1,
+    ),
+    endLine === startLine ? startColumn : 1,
+  )
+  return {
+    start_line: startLine,
+    start_column: startColumn,
+    end_line: endLine,
+    end_column: endColumn,
+  }
+}
+
+function findingSnippet(value: LiveFinding): string | undefined {
+  if (typeof value.snippet === 'string') return value.snippet
+  return typeof value.evidence?.snippet === 'string'
+    ? value.evidence.snippet
+    : undefined
+}
+
+function sourceProjectId(value: LiveFinding, fallbackProjectId: string): string {
+  return value.sourceProjectId?.trim() || fallbackProjectId
+}
+
+function mapSourceFinding(
+  value: LiveFinding,
+  fallbackProjectId = '',
+): Model.CAnalysisFinding {
+  const projectId = sourceProjectId(value, fallbackProjectId)
+  const snippet = findingSnippet(value)
   return {
     id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
-    function: { result_id: value.runId, address: '', name: value.path ? displayName(value.path) : 'unknown' },
-    location: { start_line: line, start_column: column, end_line: line, end_column: column + 1 },
+    function: { result_id: projectId, address: '', name: value.path ? displayName(value.path) : 'unknown' },
+    ...(projectId ? { source_project_id: projectId } : {}),
+    ...(value.sourceFileId ? { source_file_id: value.sourceFileId } : {}),
+    ...(value.path ? { source_path: value.path } : {}),
+    location: findingLocation(value),
     message: value.message,
-    ...(typeof value.evidence?.snippet === 'string' ? { snippet: value.evidence.snippet } : {}),
+    ...(snippet !== undefined ? { snippet } : {}),
     created_at: value.createdAt,
   }
 }
 
-function mapJavaFinding(value: LiveFinding): Model.JavaAnalysisFinding {
-  const line = value.line ?? 1
-  const column = value.column ?? 1
+function mapJavaFinding(
+  value: LiveFinding,
+  fallbackProjectId = '',
+): Model.JavaAnalysisFinding {
+  const projectId = sourceProjectId(value, fallbackProjectId)
+  const location = findingLocation(value)
+  const snippet = findingSnippet(value)
   return {
     id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
-    file: { result_id: value.runId, logical_path: value.path ?? '', binary_name: value.path ? displayName(value.path) : '' },
+    file: { result_id: projectId, logical_path: value.path ?? '', binary_name: value.path ? displayName(value.path) : '' },
+    ...(projectId ? { source_project_id: projectId } : {}),
+    ...(value.sourceFileId ? { source_file_id: value.sourceFileId } : {}),
+    ...(value.path ? { source_path: value.path } : {}),
     callable: { kind: '', type_name: '', name: '', signature: '' },
-    location: { start_line: line, start_column: column, end_line: line, end_column: column + 1 },
+    location,
     message: value.message,
-    ...(typeof value.evidence?.snippet === 'string' ? { snippet: value.evidence.snippet } : {}),
-    snippet_start_line: line, created_at: value.createdAt,
+    ...(snippet !== undefined ? { snippet } : {}),
+    snippet_start_line: positiveCoordinate(value.snippetStartLine, location.start_line),
+    created_at: value.createdAt,
   }
 }
 
-function mapPythonFinding(value: LiveFinding): Model.PythonAnalysisFinding {
-  return mapJavaFinding(value)
+function mapPythonFinding(
+  value: LiveFinding,
+  fallbackProjectId = '',
+): Model.PythonAnalysisFinding {
+  return mapJavaFinding(value, fallbackProjectId)
+}
+
+async function findingsWithProject(
+  taskId: string,
+  runId: string,
+): Promise<{ findings: LiveFinding[]; projectId: string }> {
+  const [findings, detail] = await Promise.all([
+    loadFindings(taskId, runId),
+    loadTask(taskId),
+  ])
+  return {
+    findings,
+    projectId: detail.runs.find((run) => run.id === runId)?.subjectId ?? '',
+  }
 }
 
 function mapReport(value: LiveReport): Model.TaskReport {
   return {
-    id: value.id, task_id: value.taskId, format: value.format, schema_version: 'binaryscan-report-v1',
+    id: value.id, task_id: value.taskId, format: value.format, schema_version: value.schemaVersion,
     status: value.status === 'ready' ? 'complete' : value.status === 'generating' ? 'generating' : value.status === 'queued' ? 'queued' : 'failed',
     sha256: value.sha256 ?? null, size_bytes: value.sizeBytes ?? null,
     error_code: null, error_message: null, created_at: value.createdAt,
@@ -445,24 +546,15 @@ function mapReport(value: LiveReport): Model.TaskReport {
   }
 }
 
-function uploadSnapshot(value: LocalUpload): Model.UploadSession {
-  const { filename: _filename, contentType: _contentType, declaredSize: _declaredSize, taskId: _taskId, ...snapshot } = value
-  return { ...snapshot }
-}
-
-function archiveCategory(format: string | null): Exclude<Model.InputCategory, 'archive'> | null {
-  if (!format) return null
-  if (['oci-layout', 'docker-archive'].includes(format)) return 'container'
-  return 'binary'
-}
-
 function unsupported(message: string): never {
   throw new ApiError(message, 409, { code: 'OPERATION_NOT_AVAILABLE' })
 }
 
 export function createLiveApiClient(): ApiClient {
+  const reportRunIdsByIntent = new Map<string, readonly string[]>()
   const client: ApiClient = {
     async login(input) {
+      reportRunIdsByIntent.clear()
       const result = await request<{ user: LiveUser }>('/auth/login', { method: 'POST', body: JSON.stringify(input) })
       return mapUser(result.user)
     },
@@ -470,6 +562,7 @@ export function createLiveApiClient(): ApiClient {
       await request<void>('/auth/logout', { method: 'POST' })
       csrfToken = ''
       currentUser = null
+      reportRunIdsByIntent.clear()
     },
     async getMe() {
       const result = await request<{ user: LiveUser }>('/auth/me')
@@ -581,7 +674,10 @@ export function createLiveApiClient(): ApiClient {
       if (!run) throw new ApiError('C 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
       return mapCAnalysisRun(detail, run)
     },
-    async listCAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapSourceFinding) } },
+    async listCAnalysisFindings(taskId, runId) {
+      const result = await findingsWithProject(taskId, runId)
+      return { items: result.findings.map((finding) => mapSourceFinding(finding, result.projectId)) }
+    },
     async cancelCAnalysisRun(taskId, runId) { return client.getCAnalysisRun(taskId, runId) },
     async deleteCAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
     async createJavaAnalysisRun(taskId, projectId, idempotencyKey) {
@@ -602,7 +698,10 @@ export function createLiveApiClient(): ApiClient {
       if (!run) throw new ApiError('Java 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
       return mapJavaAnalysisRun(detail, run)
     },
-    async listJavaAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapJavaFinding) } },
+    async listJavaAnalysisFindings(taskId, runId) {
+      const result = await findingsWithProject(taskId, runId)
+      return { items: result.findings.map((finding) => mapJavaFinding(finding, result.projectId)) }
+    },
     async cancelJavaAnalysisRun(taskId, runId) { return client.getJavaAnalysisRun(taskId, runId) },
     async deleteJavaAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
     async createPythonAnalysisRun(taskId, projectId, idempotencyKey) {
@@ -623,10 +722,22 @@ export function createLiveApiClient(): ApiClient {
       if (!run) throw new ApiError('Python 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
       return mapPythonAnalysisRun(detail, run)
     },
-    async listPythonAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapPythonFinding) } },
+    async listPythonAnalysisFindings(taskId, runId) {
+      const result = await findingsWithProject(taskId, runId)
+      return { items: result.findings.map((finding) => mapPythonFinding(finding, result.projectId)) }
+    },
     async cancelPythonAnalysisRun(taskId, runId) { return client.getPythonAnalysisRun(taskId, runId) },
     async deletePythonAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
-    async createManualImageScanRequest() { return unsupported('容器镜像由基础扫描流程自动识别') },
+    async createManualImageScanRequest(taskId, fileId, idempotencyKey) {
+      return request<Model.ManualImageScanRequest>(
+        `/tasks/${encode(taskId)}/files/${encode(fileId)}/image-scan`,
+        {
+          method: 'POST',
+          body: JSON.stringify({}),
+          headers: { 'Idempotency-Key': idempotencyKey },
+        },
+      )
+    },
     async listDecompileResults(taskId) {
       const detail = await loadTask(taskId)
       return {
@@ -640,6 +751,32 @@ export function createLiveApiClient(): ApiClient {
           size_bytes: project.sizeBytes, diagnostics: {}, created_at: project.createdAt,
           completed_at: detail.runs.find((run) => run.id === project.runId)?.completedAt ?? project.createdAt,
         })),
+      }
+    },
+    async listDecompileSourceFiles(taskId, projectId) {
+      try {
+        const payload = await request<unknown>(
+          `/tasks/${encode(taskId)}/projects/${encode(projectId)}/files`,
+        )
+        return parseDecompileSourceFileList(payload)
+      } catch (error) {
+        if (!(error instanceof DecompileSourceContractError)) throw error
+        throw new ApiError('源码文件列表响应不符合接口契约', 502, {
+          code: 'INVALID_SOURCE_FILE_RESPONSE',
+        })
+      }
+    },
+    async getDecompileSourceFileContent(taskId, projectId, fileId) {
+      try {
+        const payload = await request<unknown>(
+          `/tasks/${encode(taskId)}/projects/${encode(projectId)}/files/${encode(fileId)}/content`,
+        )
+        return parseDecompileSourceFileContent(payload)
+      } catch (error) {
+        if (!(error instanceof DecompileSourceContractError)) throw error
+        throw new ApiError('源码文件内容响应不符合接口契约', 502, {
+          code: 'INVALID_SOURCE_CONTENT_RESPONSE',
+        })
       }
     },
     async getDecompileSource(taskId, resultId, query = {}) {
@@ -675,13 +812,29 @@ export function createLiveApiClient(): ApiClient {
       return { items: result.reports.map(mapReport), sample_relation: 'retained' }
     },
     async createTaskReport(taskId, input, idempotencyKey) {
-      const detail = await loadTask(taskId)
-      const runIds = detail.runs.filter((run) => !['queued', 'running'].includes(run.status)).map((run) => run.id)
+      const intentKey = `${taskId}\u0000${idempotencyKey}`
+      let runIds = reportRunIdsByIntent.get(intentKey)
+      if (!runIds) {
+        const detail = await loadTask(taskId)
+        runIds = detail.runs
+          .filter((run) => !['queued', 'running'].includes(run.status))
+          .map((run) => run.id)
+          .sort()
+      }
       if (runIds.length === 0) throw new ApiError('任务还没有可写入报告的已完成流程', 409, { code: 'NO_COMPLETED_RUNS' })
-      const result = await request<{ report: LiveReport }>(`/tasks/${encode(taskId)}/reports`, {
-        method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ format: input.format, runIds }),
-      })
-      return mapReport(result.report)
+      reportRunIdsByIntent.set(intentKey, runIds)
+      try {
+        const result = await request<{ report: LiveReport }>(`/tasks/${encode(taskId)}/reports`, {
+          method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ format: input.format, runIds }),
+        })
+        reportRunIdsByIntent.delete(intentKey)
+        return mapReport(result.report)
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'report_idempotency_conflict') {
+          reportRunIdsByIntent.delete(intentKey)
+        }
+        throw error
+      }
     },
     async downloadTaskReport(_taskId, reportId, _format, encoding = 'identity') {
       const suffix = encoding === 'gzip' ? '?encoding=gzip' : ''
@@ -758,95 +911,156 @@ export function createLiveApiClient(): ApiClient {
         ? { items }
         : { items, next_cursor: String(result.nextBeforeId) }
     },
-    async createUpload(input) {
-      const id = uuid()
-      const session: LocalUpload = {
-        id, filename: input.filename, contentType: input.content_type, declaredSize: input.size,
-        part_size: Math.max(input.size, 1), status: 'created', uploaded_parts: [],
-        expires_at: plusDays(new Date().toISOString(), 1), input_category: input.input_category,
-        validation_status: 'pending', detected_category: input.input_category,
+    async createUpload(input, idempotencyKey) {
+      try {
+        return parseCreatedUploadSession(
+          await request<unknown>('/uploads', {
+            method: 'POST',
+            body: JSON.stringify(input),
+            headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+          input.input_category,
+        )
+      } catch (error) {
+        if (error instanceof UploadIntakeContractError) {
+          throw new ApiError('上传响应不符合接口契约', 502, {
+            code: 'INVALID_UPLOAD_RESPONSE',
+          })
+        }
+        throw error
       }
-      uploads.set(id, session)
-      return uploadSnapshot(session)
     },
     async getUpload(uploadId) {
-      const session = uploads.get(uploadId)
-      if (!session) throw new ApiError('上传会话已失效，请重新选择文件', 404, { code: 'UPLOAD_NOT_FOUND' })
-      return uploadSnapshot(session)
+      try {
+        return parseUploadSession(
+          await request<unknown>(`/uploads/${encode(uploadId)}`),
+          uploadId,
+        )
+      } catch (error) {
+        if (error instanceof UploadIntakeContractError) {
+          throw new ApiError('上传响应不符合接口契约', 502, {
+            code: 'INVALID_UPLOAD_RESPONSE',
+          })
+        }
+        throw error
+      }
     },
     async uploadPart(uploadId, input) {
-      const session = uploads.get(uploadId)
-      if (!session) throw new ApiError('上传会话已失效，请重新选择文件', 404, { code: 'UPLOAD_NOT_FOUND' })
-      if (session.taskId) return
-      const form = new FormData()
-      form.append('file', input.chunk, session.filename)
-      const result = await request<{ task: LiveTask }>('/tasks', { method: 'POST', body: form })
-      session.taskId = result.task.id
-      session.task_id = result.task.id
-      session.uploaded_parts = [input.part_number]
-      session.status = 'uploading'
-      uploads.set(uploadId, session)
+      await request<void>(
+        `/uploads/${encode(uploadId)}/parts/${input.part_number}`,
+        {
+          method: 'PUT',
+          body: input.chunk,
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'Content-Range': `bytes ${input.start}-${input.end}/${input.total}`,
+            'X-Chunk-SHA256': input.sha256.toLowerCase(),
+          },
+        },
+      )
     },
     async completeUpload(uploadId) {
-      const session = uploads.get(uploadId)
-      if (!session || !session.taskId) throw new ApiError('文件尚未完整上传', 409, { code: 'UPLOAD_INCOMPLETE' })
-      session.status = 'completed'
-      session.validation_status = 'valid'
-      if (session.input_category) session.detected_category = session.input_category
-      session.task_id = session.taskId
-      if (session.input_category === 'archive') session.archive_import_id = session.taskId
-      uploads.set(uploadId, session)
-      return { ...uploadSnapshot(session), sha256: '', size_bytes: session.declaredSize }
+      try {
+        return parseCompletedUpload(
+          await request<unknown>(`/uploads/${encode(uploadId)}/complete`, {
+            method: 'POST',
+          }),
+          uploadId,
+        )
+      } catch (error) {
+        if (error instanceof UploadIntakeContractError) {
+          throw new ApiError('上传响应不符合接口契约', 502, {
+            code: 'INVALID_UPLOAD_RESPONSE',
+          })
+        }
+        throw error
+      }
     },
-    async deleteUpload(uploadId) { uploads.delete(uploadId) },
-    async listArchiveImports() {
-      const items = await Promise.all([...uploads.values()].filter((upload) => upload.input_category === 'archive' && upload.taskId).map((upload) => client.getArchiveImport(upload.taskId!)))
-      return { items }
+    async deleteUpload(uploadId) {
+      await request<void>(`/uploads/${encode(uploadId)}`, { method: 'DELETE' })
+    },
+    async listArchiveImports(query = {}) {
+      const params = new URLSearchParams()
+      if (query.cursor) params.set('cursor', query.cursor)
+      if (query.page_size !== undefined) params.set('page_size', String(query.page_size))
+      try {
+        return parseArchiveImportPage(
+          await request<unknown>(`/archive-imports${params.size ? `?${params}` : ''}`),
+        )
+      } catch (error) {
+        if (error instanceof ArchiveImportContractError) {
+          throw new ApiError('归档导入响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_IMPORT_RESPONSE',
+          })
+        }
+        throw error
+      }
     },
     async getArchiveImport(importId) {
-      const detail = await loadTask(importId)
-      const root = detail.files.find((file) => file.parentId === null)
-      if (root && detail.task.status === 'ready' && !queuedArchiveImports.has(importId) && !detail.runs.some((run) => run.kind === 'archive_import')) {
-        queuedArchiveImports.add(importId)
-        try {
-          await request(`/tasks/${encode(importId)}/files/${encode(root.id)}/archive-import`, { method: 'POST', headers: { 'Idempotency-Key': `archive-${importId}` } })
-        } catch (error) {
-          queuedArchiveImports.delete(importId)
-          throw error
+      try {
+        const result = parseArchiveImport(
+          await request<unknown>(`/archive-imports/${encode(importId)}`),
+        )
+        if (result.id !== importId) {
+          throw new ArchiveImportContractError('data.id')
         }
-        return client.getArchiveImport(importId)
-      }
-      const archiveRun = detail.runs.find((run) => run.kind === 'archive_import')
-      const entries = detail.files.filter((file) => file.parentId !== null)
-      const status: Model.ArchiveImportStatus = !archiveRun ? 'queued' : archiveRun.status === 'complete' ? 'ready' : archiveRun.status === 'failed' ? 'failed' : 'running'
-      return {
-        id: importId, upload_id: [...uploads.values()].find((upload) => upload.taskId === importId)?.id ?? importId,
-        filename: detail.task.displayName, status, scanned_entries: entries.length, total_entries: entries.length,
-        eligible_entries: entries.filter((entry) => entry.kind === 'file').length,
-        skipped_entries: entries.filter((entry) => entry.kind !== 'file').length, created_tasks: 0,
-        ...(archiveRun?.errorCode ? { error_code: archiveRun.errorCode } : {}),
-        ...(archiveRun?.errorMessage ? { error_message: archiveRun.errorMessage } : {}),
-        created_at: detail.task.createdAt, updated_at: archiveRun?.completedAt ?? detail.task.updatedAt,
+        return result
+      } catch (error) {
+        if (error instanceof ArchiveImportContractError) {
+          throw new ApiError('归档导入响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_IMPORT_RESPONSE',
+          })
+        }
+        throw error
       }
     },
     async listArchiveImportEntries(importId, query = {}) {
-      const detail = await loadTask(importId)
-      let items: Model.ArchiveImportEntry[] = detail.files.filter((file) => file.parentId !== null).map((file) => ({
-        id: file.id, path: file.path, size_bytes: file.sizeBytes, sha256: null,
-        detected_format: file.detectedFormat, detected_category: archiveCategory(file.detectedFormat),
-        status: file.kind === 'file' ? 'eligible' : 'skipped',
-        ...(file.kind === 'file' ? {} : { skip_reason: '目录节点' }),
-      }))
-      if (query.filter && query.filter !== 'all') items = items.filter((entry) => entry.status === query.filter)
-      return { items }
+      const params = new URLSearchParams()
+      if (query.filter) params.set('filter', query.filter)
+      if (query.cursor) params.set('cursor', query.cursor)
+      if (query.page_size !== undefined) params.set('page_size', String(query.page_size))
+      try {
+        return parseArchiveImportEntryPage(
+          await request<unknown>(
+            `/archive-imports/${encode(importId)}/entries${params.size ? `?${params}` : ''}`,
+          ),
+        )
+      } catch (error) {
+        if (error instanceof ArchiveImportContractError) {
+          throw new ApiError('归档导入响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_IMPORT_RESPONSE',
+          })
+        }
+        throw error
+      }
     },
-    async createArchiveTaskBatch(importId, input) {
-      return { items: input.entry_ids.map((entryId) => ({ entry_id: entryId, outcome: 'existing' as const, task_id: importId })) }
+    async createArchiveTaskBatch(importId, input, idempotencyKey) {
+      try {
+        return parseArchiveTaskBatchResult(
+          await request<unknown>(`/archive-imports/${encode(importId)}/task-batches`, {
+            method: 'POST',
+            body: JSON.stringify(input),
+            headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+          input.entry_ids,
+        )
+      } catch (error) {
+        if (error instanceof ArchiveImportContractError) {
+          throw new ApiError('归档导入响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_IMPORT_RESPONSE',
+          })
+        }
+        throw error
+      }
     },
     async createTask(input) {
-      const session = uploads.get(input.upload_id)
-      if (!session?.taskId) throw new ApiError('上传会话尚未生成任务', 409, { code: 'TASK_NOT_READY' })
-      return { id: session.taskId }
+      const session = await client.getUpload(input.upload_id)
+      if (!session.task_id) {
+        throw new ApiError('上传会话尚未生成任务', 409, {
+          code: 'TASK_NOT_READY',
+        })
+      }
+      return { id: session.task_id }
     },
   }
   return client

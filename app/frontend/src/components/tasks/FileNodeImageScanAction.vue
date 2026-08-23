@@ -93,7 +93,7 @@ const commandTitle = computed(() => {
             ? '正在提交'
             : rootImage
               ? taskActive
-                ? '检测已排队'
+                ? '等待任务就绪'
                 : '开始 Trivy 检测'
               : '单独检测'
       }}

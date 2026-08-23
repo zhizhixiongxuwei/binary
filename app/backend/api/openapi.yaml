@@ -202,11 +202,119 @@ paths:
                     format: int64
         "400": { description: Invalid pagination }
         "403": { description: Administrator access required }
+  /api/v1/uploads:
+    post:
+      description: Creates an idempotent resumable upload session. The server validates the declared category only after all parts are assembled.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [filename, size, content_type, input_category]
+              properties:
+                filename: { type: string, minLength: 1, maxLength: 512 }
+                size: { type: integer, format: int64, minimum: 1 }
+                content_type: { type: string, minLength: 1, maxLength: 128 }
+                input_category: { $ref: "#/components/schemas/InputCategory" }
+      responses:
+        "201":
+          description: Upload session created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+        "200":
+          description: Existing idempotent upload session returned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+        "409": { description: Idempotency key was reused with different upload metadata }
+        "413": { description: Declared size exceeds the configured limit }
+  /api/v1/uploads/{uploadID}:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UploadID"
+      responses:
+        "200":
+          description: Current upload state and uploaded part numbers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadSession" }
+        "404": { description: Upload not found for the current user }
+    delete:
+      description: Cancels an incomplete upload, or removes a completed archive intake before child tasks exist.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UploadID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204": { description: Upload cancelled }
+        "404": { description: Upload not found }
+        "409": { description: Upload cannot be cancelled in its current state }
+  /api/v1/uploads/{uploadID}/parts/{partNumber}:
+    put:
+      description: Stores one fixed-offset upload part. Replaying an identical part is idempotent.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UploadID"
+        - $ref: "#/components/parameters/UploadPartNumber"
+        - $ref: "#/components/parameters/CSRFToken"
+        - in: header
+          name: Content-Range
+          required: true
+          schema: { type: string, example: "bytes 0-8388607/16777216" }
+        - in: header
+          name: X-Chunk-SHA256
+          required: true
+          schema: { type: string, pattern: "^[0-9a-fA-F]{64}$" }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Part stored or identical replay accepted }
+        "409": { description: Part range conflicts with upload metadata or an existing part }
+        "410": { description: Upload session expired }
+        "422": { description: Chunk SHA-256 does not match the request body }
+  /api/v1/uploads/{uploadID}/complete:
+    post:
+      description: Assembles and validates the upload. Binary and container inputs become ready tasks; archives create an internal parent task and queue one-layer import.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UploadID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "200":
+          description: Upload completed; returns task_id for binary/container or archive_import_id for an archive
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompletedUpload" }
+        "409": { description: Upload is incomplete or in an invalid state }
+        "410": { description: Upload session expired }
+        "422": { description: Unsupported content or declared category does not match server detection }
   /api/v1/tasks:
     get:
       security: [{ sessionCookie: [] }]
       responses:
-        "200": { description: Most recent tasks }
+        "200":
+          description: Most recent non-archive-parent tasks, including the immutable input digest
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [tasks]
+                properties:
+                  tasks:
+                    type: array
+                    items: { $ref: "#/components/schemas/TaskSummary" }
         "401": { description: Authentication required }
     post:
       security: [{ sessionCookie: [] }]
@@ -218,19 +326,36 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              additionalProperties: false
+              required: [file, input_category]
               properties:
                 file: { type: string, format: binary }
+                input_category: { $ref: "#/components/schemas/InputCategory" }
       responses:
-        "201": { description: Upload persisted and automatic scan queued }
+        "201":
+          description: Compatibility upload persisted and format scan queued; Trivy is never automatic
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [task]
+                properties:
+                  task: { $ref: "#/components/schemas/TaskSummary" }
+        "400": { description: Multipart request or input category is invalid }
         "413": { description: Upload exceeds configured size }
+        "422": { description: Unsupported content or declared category does not match server detection; no task or run is created }
   /api/v1/tasks/{taskID}:
     get:
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/TaskID"
       responses:
-        "200": { description: Task, file nodes, runs and source projects }
+        "200":
+          description: Task, file nodes, runs and source projects. Persisted file nodes expose their blob SHA-256 for manual action fencing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskDetailResponse" }
         "404": { description: Task not found }
   /api/v1/tasks/{taskID}/findings:
     get:
@@ -255,6 +380,20 @@ paths:
         "201": { description: Archive import queued }
         "200": { description: Existing idempotent run returned }
         "422": { description: Archive format is not supported }
+  /api/v1/tasks/{taskID}/files/{fileID}/image-scan:
+    post:
+      description: Manually queues Trivy image analysis for a server-validated Docker save tar or OCI image-layout tar. It invokes Trivy image with --input.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/FileID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "201": { description: Trivy image job queued }
+        "200": { description: Existing idempotent image job returned }
+        "404": { description: File not found }
+        "422": { description: File is not a supported container image archive }
   /api/v1/tasks/{taskID}/files/{fileID}/decompile:
     post:
       description: Manually routes a file to exactly one Native, JVM/Android or PYC decompiler.
@@ -281,6 +420,127 @@ paths:
         "201": { description: Checker run queued }
         "200": { description: Existing idempotent run returned }
         "422": { description: Source project cannot be checked }
+  /api/v1/tasks/{taskID}/projects/{projectID}/files:
+    get:
+      description: Lists immutable decompiled source files and their stable file identifiers.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200": { description: Source file metadata }
+        "404": { description: Source project not found }
+  /api/v1/tasks/{taskID}/projects/{projectID}/files/{fileID}/content:
+    get:
+      description: Returns authenticated UTF-8 source content for one persisted decompilation file.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/ProjectID"
+        - $ref: "#/components/parameters/FileID"
+      responses:
+        "200": { description: Source file metadata and content }
+        "404": { description: Source file not found }
+  /api/v1/tasks/{taskID}/runs/{runID}/artifacts:
+    get:
+      description: Lists ready immutable evidence artifacts produced by a run.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/RunID"
+      responses:
+        "200": { description: Run artifacts }
+        "404": { description: Task or run not found }
+  /api/v1/tasks/{taskID}/artifacts/{artifactID}/content:
+    get:
+      description: Downloads one authenticated ready artifact.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/ArtifactID"
+      responses:
+        "200": { description: Artifact content }
+        "404": { description: Artifact not found }
+  /api/v1/archive-imports:
+    get:
+      description: Lists archive intake runs. Their internal parent tasks are omitted from the normal task list.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Archive import page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArchiveImportPage" }
+  /api/v1/archive-imports/{importID}:
+    get:
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ArchiveImportID"
+      responses:
+        "200":
+          description: Archive import summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArchiveImport" }
+        "404": { description: Archive import not found }
+  /api/v1/archive-imports/{importID}/entries:
+    get:
+      description: Lists one-layer archive members. Only server-detected binary members are eligible for child task creation.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ArchiveImportID"
+        - in: query
+          name: filter
+          schema: { enum: [all, eligible, skipped, created, failed], default: all }
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: page_size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Archive entry page
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArchiveEntryPage" }
+        "404": { description: Archive import not found }
+  /api/v1/archive-imports/{importID}/task-batches:
+    post:
+      description: Creates up to 20 binary child tasks from eligible materialized entries. Category eligibility is always revalidated by the server.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ArchiveImportID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [entry_ids]
+              properties:
+                entry_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 20
+                  uniqueItems: true
+                  items: { type: string, pattern: "^[1-9][0-9]*$" }
+      responses:
+        "200":
+          description: Per-entry created, existing or failed outcomes
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArchiveTaskBatchResult" }
   /api/v1/tasks/{taskID}/reports:
     get:
       security: [{ sessionCookie: [] }]
@@ -289,10 +549,12 @@ paths:
       responses:
         "200": { description: Immutable task reports }
     post:
+      description: Creates an immutable report snapshot. Replaying the same Idempotency-Key for the same user and task returns the original report only when format and selected run IDs are identical.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/TaskID"
         - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -302,15 +564,18 @@ paths:
               additionalProperties: false
               required: [format, runIds]
               properties:
-                format: { enum: [json, html] }
+                format: { enum: [json, html, docx] }
                 runIds:
                   type: array
                   minItems: 1
                   maxItems: 100
+                  uniqueItems: true
                   items: { type: string, format: uuid }
       responses:
+        "200": { description: Idempotent replay of the original report }
         "201": { description: Report snapshot created }
-        "409": { description: A selected run is not terminal }
+        "400": { description: Invalid idempotency key, format, run ID set or JSON body }
+        "409": { description: A selected run is not terminal, or the idempotency key was already used with different parameters }
   /api/v1/reports/{reportID}/content:
     get:
       security: [{ sessionCookie: [] }]
@@ -319,9 +584,31 @@ paths:
           name: reportID
           required: true
           schema: { type: string, format: uuid }
+        - in: query
+          name: encoding
+          schema: { enum: [identity, gzip], default: identity }
       responses:
-        "200": { description: Authenticated report download }
+        "200":
+          description: Authenticated report download after its persisted size and SHA-256 have been verified
+          headers:
+            ETag:
+              description: Quoted lowercase SHA-256 of the exact report bytes
+              schema: { type: string, pattern: '^"[0-9a-f]{64}"$' }
+          content:
+            application/json: { schema: { type: object } }
+            text/html: { schema: { type: string } }
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string, format: binary }
+            application/gzip:
+              schema: { type: string, format: binary }
+        "400": { description: Unsupported response encoding }
         "404": { description: Report not found }
+        "409":
+          description: Persisted report bytes are missing, not a regular file, or do not match the recorded size or SHA-256
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/APIError" }
+              example: { error: report_storage_corrupt }
 components:
   securitySchemes:
     sessionCookie:
@@ -354,12 +641,199 @@ components:
       name: projectID
       required: true
       schema: { type: string, format: uuid }
+    RunID:
+      in: path
+      name: runID
+      required: true
+      schema: { type: string, format: uuid }
+    ArtifactID:
+      in: path
+      name: artifactID
+      required: true
+      schema: { type: string, format: uuid }
+    UploadID:
+      in: path
+      name: uploadID
+      required: true
+      schema: { type: string, format: uuid }
+    UploadPartNumber:
+      in: path
+      name: partNumber
+      required: true
+      schema: { type: integer, minimum: 1 }
+    ArchiveImportID:
+      in: path
+      name: importID
+      required: true
+      schema: { type: string, format: uuid }
     AdminUserID:
       in: path
       name: userID
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    APIError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        details: { type: object }
+    SHA256Digest:
+      type: string
+      pattern: "^[0-9a-f]{64}$"
+    TaskSummary:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, status, inputSha256, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        status: { type: string }
+        inputSha256: { $ref: "#/components/schemas/SHA256Digest" }
+        inputCategory: { $ref: "#/components/schemas/InputCategory" }
+        detectedCategory: { $ref: "#/components/schemas/InputCategory" }
+        detectedFormat: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TaskFileNode:
+      type: object
+      additionalProperties: false
+      required: [id, parentId, path, kind, detectedFormat, sizeBytes, sha256]
+      properties:
+        id: { type: string, format: uuid }
+        parentId: { type: [string, "null"], format: uuid }
+        path: { type: string }
+        kind: { type: string }
+        detectedFormat: { type: [string, "null"] }
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        sha256:
+          type: string
+          pattern: "^(?:[0-9a-f]{64})?$"
+          description: Lowercase blob digest, or an empty string for structural nodes without a blob.
+    TaskDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [task, files, runs, projects]
+      properties:
+        task: { $ref: "#/components/schemas/TaskSummary" }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/TaskFileNode" }
+        runs:
+          type: array
+          items: { type: object }
+        projects:
+          type: array
+          items: { type: object }
+    InputCategory:
+      type: string
+      enum: [binary, archive, container]
+    UploadValidationStatus:
+      type: string
+      enum: [pending, valid, mismatch, unsupported]
+    UploadSession:
+      type: object
+      additionalProperties: false
+      required: [id, part_size, status, uploaded_parts, expires_at, input_category, validation_status]
+      properties:
+        id: { type: string, format: uuid }
+        part_size: { type: integer, format: int64, minimum: 1 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        status: { enum: [created, uploading, assembling, completed, failed, expired, cancelled] }
+        uploaded_parts:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 1 }
+        expires_at: { type: string, format: date-time }
+        input_category: { $ref: "#/components/schemas/InputCategory" }
+        validation_status: { $ref: "#/components/schemas/UploadValidationStatus" }
+        detected_category: { $ref: "#/components/schemas/InputCategory" }
+        detected_format: { type: string }
+        validation_error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+        archive_import_id: { type: string, format: uuid }
+        task_id: { type: string, format: uuid }
+    CompletedUpload:
+      allOf:
+        - $ref: "#/components/schemas/UploadSession"
+        - type: object
+          required: [sha256, size_bytes]
+    ArchiveImport:
+      type: object
+      additionalProperties: false
+      required: [id, upload_id, filename, status, scanned_entries, total_entries, eligible_entries, skipped_entries, created_tasks, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        upload_id: { type: string, format: uuid }
+        filename: { type: string }
+        status: { enum: [queued, running, ready, failed, deleting, deleted] }
+        scanned_entries: { type: integer, minimum: 0 }
+        total_entries: { type: integer, minimum: 0 }
+        eligible_entries: { type: integer, minimum: 0 }
+        skipped_entries: { type: integer, minimum: 0 }
+        created_tasks: { type: integer, minimum: 0 }
+        error_code: { type: string }
+        error_message: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ArchiveImportPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ArchiveImport" }
+        next_cursor: { type: string }
+    ArchiveEntry:
+      type: object
+      additionalProperties: false
+      required: [id, path, size_bytes, sha256, detected_format, detected_category, status]
+      properties:
+        id: { type: string, pattern: "^[1-9][0-9]*$" }
+        path: { type: string }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        sha256: { type: [string, "null"], pattern: "^[0-9a-f]{64}$" }
+        detected_format: { type: [string, "null"] }
+        detected_category:
+          oneOf:
+            - enum: [binary, container]
+            - type: "null"
+        status: { enum: [eligible, skipped, created, failed] }
+        skip_reason: { type: string }
+        task_id: { type: string, format: uuid }
+    ArchiveEntryPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ArchiveEntry" }
+        next_cursor: { type: string }
+    ArchiveTaskBatchResult:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [entry_id, outcome]
+            properties:
+              entry_id: { type: string, pattern: "^[1-9][0-9]*$" }
+              outcome: { enum: [created, existing, failed] }
+              task_id: { type: string, format: uuid }
+              error_code: { type: string }
+              message: { type: string }
     UserRole:
       type: string
       enum: [reader, operator, administrator]

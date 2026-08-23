@@ -174,21 +174,6 @@ read_task() {
     "$smoke_base_url/api/v1/tasks/$smoke_task_id"
 }
 
-wait_for_automatic_runs() {
-  smoke_deadline=$(( $(date +%s) + BINARY_SMOKE_TIMEOUT_SECONDS ))
-  while [ "$(date +%s)" -lt "$smoke_deadline" ]; do
-    read_task
-    if jq -e '.runs | any(.kind == "scan" and (.status == "failed" or .status == "cancelled")) or any(.kind == "trivy_scan" and (.status == "failed" or .status == "cancelled"))' "$smoke_tmp/task.json" >/dev/null; then
-      die "automatic scan failed for task $smoke_task_id"
-    fi
-    if jq -e '.runs | length == 2 and all(.kind == "scan" or .kind == "trivy_scan") and any(.kind == "scan" and .status == "complete") and any(.kind == "trivy_scan" and .status == "complete")' "$smoke_tmp/task.json" >/dev/null; then
-      return
-    fi
-    sleep 2
-  done
-  die "automatic scan timed out for task $smoke_task_id"
-}
-
 wait_for_run() {
   smoke_wait_run_id=$1
   smoke_wait_kind=$2
@@ -211,6 +196,7 @@ live_workflow_smoke() {
   require_command date
   require_command jq
   require_command mktemp
+  require_command openssl
 
   : "${BINARY_SMOKE_USERNAME:?set BINARY_SMOKE_USERNAME to an operator or administrator account}"
   : "${BINARY_SMOKE_PASSWORD:?set BINARY_SMOKE_PASSWORD without placing it on the command line}"
@@ -255,18 +241,68 @@ live_workflow_smoke() {
   jq -e '.user.mustChangePassword == false and (.user.role == "operator" or .user.role == "administrator")' \
     "$smoke_tmp/login.json" >/dev/null || die "smoke account must be ready for use and have operator access"
 
+  smoke_upload_size=$(wc -c < "$smoke_tmp/binaryscan-smoke-unsafe.pyc" | tr -d '[:space:]')
+  smoke_upload_sha=$(openssl dgst -sha256 -r "$smoke_tmp/binaryscan-smoke-unsafe.pyc" | awk '{print $1}')
+  [ "${#smoke_upload_sha}" = 64 ] || die "cannot calculate fixture SHA-256"
+  smoke_upload_key="smoke-pyc-upload-$(date +%s)-$$"
+  jq -n --arg filename binaryscan-smoke-unsafe.pyc --argjson size "$smoke_upload_size" \
+    '{filename:$filename,size:$size,content_type:"application/octet-stream",input_category:"binary"}' \
+    > "$smoke_tmp/upload-request.json"
   smoke_code=$(smoke_curl --output "$smoke_tmp/upload.json" --write-out '%{http_code}' \
     --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
-    -F "file=@$smoke_tmp/binaryscan-smoke-unsafe.pyc;type=application/octet-stream" \
-    "$smoke_base_url/api/v1/tasks")
-  [ "$smoke_code" = 201 ] || die "upload failed with HTTP $smoke_code"
-  smoke_task_id=$(jq -r '.task.id // empty' "$smoke_tmp/upload.json")
-  [ -n "$smoke_task_id" ] || die "upload response omitted the task ID"
-  wait_for_automatic_runs
+    -H "Idempotency-Key: $smoke_upload_key" -H 'Content-Type: application/json' \
+    --data-binary "@$smoke_tmp/upload-request.json" "$smoke_base_url/api/v1/uploads")
+  [ "$smoke_code" = 201 ] || die "upload session creation failed with HTTP $smoke_code"
+  smoke_upload_id=$(jq -r '.id // empty' "$smoke_tmp/upload.json")
+  [ -n "$smoke_upload_id" ] || die "upload session response omitted the upload ID"
 
-  smoke_scan_run_id=$(jq -r '.runs[] | select(.kind == "scan") | .id' "$smoke_tmp/task.json")
-  smoke_trivy_run_id=$(jq -r '.runs[] | select(.kind == "trivy_scan") | .id' "$smoke_tmp/task.json")
-  smoke_file_id=$(jq -r '.files[] | select(.detectedFormat == "pyc") | .id' "$smoke_tmp/task.json" | head -1)
+  smoke_code=$(smoke_curl --output "$smoke_tmp/upload-replay.json" --write-out '%{http_code}' \
+    --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
+    -H "Idempotency-Key: $smoke_upload_key" -H 'Content-Type: application/json' \
+    --data-binary "@$smoke_tmp/upload-request.json" "$smoke_base_url/api/v1/uploads")
+  [ "$smoke_code" = 200 ] || die "upload session replay failed with HTTP $smoke_code"
+  jq -e --arg id "$smoke_upload_id" '.id == $id and .status == "created" and .input_category == "binary"' \
+    "$smoke_tmp/upload-replay.json" >/dev/null || die "upload session replay returned different state"
+
+  smoke_upload_end=$((smoke_upload_size - 1))
+  smoke_code=$(smoke_curl --output "$smoke_tmp/upload-part.json" --write-out '%{http_code}' \
+    --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
+    -H "Content-Range: bytes 0-$smoke_upload_end/$smoke_upload_size" \
+    -H "X-Chunk-SHA256: $smoke_upload_sha" -H 'Content-Type: application/octet-stream' \
+    --data-binary "@$smoke_tmp/binaryscan-smoke-unsafe.pyc" -X PUT \
+    "$smoke_base_url/api/v1/uploads/$smoke_upload_id/parts/1")
+  [ "$smoke_code" = 204 ] || die "upload part failed with HTTP $smoke_code"
+
+  smoke_code=$(smoke_curl --output "$smoke_tmp/upload-complete.json" --write-out '%{http_code}' \
+    --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" -X POST \
+    "$smoke_base_url/api/v1/uploads/$smoke_upload_id/complete")
+  [ "$smoke_code" = 200 ] || die "upload completion failed with HTTP $smoke_code"
+  jq -e --arg sha "$smoke_upload_sha" --argjson size "$smoke_upload_size" '
+      .status == "completed"
+      and .input_category == "binary"
+      and .validation_status == "valid"
+      and .detected_category == "binary"
+      and .detected_format == "pyc"
+      and .sha256 == $sha
+      and .size_bytes == $size
+      and (.task_id | type == "string" and length > 0)
+      and (.archive_import_id == null)
+    ' "$smoke_tmp/upload-complete.json" >/dev/null || die "completed upload metadata is invalid"
+  smoke_task_id=$(jq -r '.task_id // empty' "$smoke_tmp/upload-complete.json")
+
+  read_task
+  jq -e --arg sha "$smoke_upload_sha" '
+      .task.status == "ready"
+      and .task.inputSha256 == $sha
+      and .task.inputCategory == "binary"
+      and .task.detectedCategory == "binary"
+      and .task.detectedFormat == "pyc"
+      and (.runs | length == 0)
+      and (.files | any(.detectedFormat == "pyc" and .sha256 == $sha))
+    ' "$smoke_tmp/task.json" >/dev/null ||
+    die "binary upload task must be ready without automatic scan or Trivy runs"
+  smoke_file_id=$(jq -r --arg sha "$smoke_upload_sha" \
+    '.files[] | select(.detectedFormat == "pyc" and .sha256 == $sha) | .id' "$smoke_tmp/task.json" | head -1)
   [ -n "$smoke_file_id" ] || die "scanner did not identify the PYC fixture"
 
   smoke_code=$(smoke_curl --output "$smoke_tmp/decompile.json" --write-out '%{http_code}' \
@@ -280,6 +316,23 @@ live_workflow_smoke() {
   smoke_project_id=$(jq -r --arg run "$smoke_decompile_run_id" '.projects[] | select(.runId == $run and .language == "python" and .resultQuality != "bytecode_only") | .id' "$smoke_tmp/task.json" | head -1)
   [ -n "$smoke_project_id" ] || die "PYC decompile did not publish Python source"
 
+  smoke_curl --fail --output "$smoke_tmp/source-files.json" --cookie "$smoke_cookie_file" \
+    "$smoke_base_url/api/v1/tasks/$smoke_task_id/projects/$smoke_project_id/files"
+  smoke_source_file_id=$(jq -r '.files[] | select(.language == "python") | .id' \
+    "$smoke_tmp/source-files.json" | head -1)
+  [ -n "$smoke_source_file_id" ] || die "PYC project omitted persisted Python source metadata"
+  jq -e --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
+      .files | any(.id == $file and .projectId == $project
+        and (.logicalPath | length > 0) and (.sha256 | test("^[0-9a-f]{64}$"))
+        and .sizeBytes > 0 and .lineCount > 0)
+    ' "$smoke_tmp/source-files.json" >/dev/null || die "persisted source metadata is invalid"
+  smoke_curl --fail --output "$smoke_tmp/source-content.json" --cookie "$smoke_cookie_file" \
+    "$smoke_base_url/api/v1/tasks/$smoke_task_id/projects/$smoke_project_id/files/$smoke_source_file_id/content"
+  jq -e --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
+      .id == $file and .projectId == $project and (.content | contains("eval"))
+      and (.sha256 | test("^[0-9a-f]{64}$")) and .sizeBytes > 0 and .lineCount > 0
+    ' "$smoke_tmp/source-content.json" >/dev/null || die "persisted source content is invalid"
+
   smoke_code=$(smoke_curl --output "$smoke_tmp/check.json" --write-out '%{http_code}' \
     --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
     -H "Idempotency-Key: smoke-python-check-$smoke_task_id" -X POST \
@@ -290,28 +343,54 @@ live_workflow_smoke() {
   wait_for_run "$smoke_check_run_id" python_check
   smoke_curl --fail --output "$smoke_tmp/findings.json" --cookie "$smoke_cookie_file" \
     "$smoke_base_url/api/v1/tasks/$smoke_task_id/findings?runId=$smoke_check_run_id"
-  jq -e '.findings | any(.ruleId == "PY001")' "$smoke_tmp/findings.json" >/dev/null ||
-    die "Python checker did not return PY001"
+  jq -e --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
+      .findings | any(.ruleId == "PY001" and .sourceProjectId == $project
+        and .sourceFileId == $file and (.path | length > 0)
+        and .startLine >= 1 and .startColumn >= 1 and .endLine >= .startLine and .endColumn >= 1)
+    ' "$smoke_tmp/findings.json" >/dev/null ||
+    die "Python checker finding omitted persisted source coordinates"
 
-  jq -n --arg scan "$smoke_scan_run_id" --arg trivy "$smoke_trivy_run_id" \
-    --arg decompile "$smoke_decompile_run_id" --arg check "$smoke_check_run_id" \
-    '{format:"json",runIds:[$scan,$trivy,$decompile,$check]}' > "$smoke_tmp/report-request.json"
+  jq -n --arg decompile "$smoke_decompile_run_id" --arg check "$smoke_check_run_id" \
+    '{format:"json",runIds:[$decompile,$check]}' > "$smoke_tmp/report-request.json"
+  smoke_report_key="smoke-report-$smoke_task_id"
   smoke_code=$(smoke_curl --output "$smoke_tmp/report.json" --write-out '%{http_code}' \
     --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
+    -H "Idempotency-Key: $smoke_report_key" \
     -H 'Content-Type: application/json' --data-binary "@$smoke_tmp/report-request.json" \
     "$smoke_base_url/api/v1/tasks/$smoke_task_id/reports")
   [ "$smoke_code" = 201 ] || die "report creation failed with HTTP $smoke_code"
   smoke_report_id=$(jq -r '.report.id // empty' "$smoke_tmp/report.json")
   [ -n "$smoke_report_id" ] || die "report response omitted the report ID"
-  smoke_curl --fail --output "$smoke_tmp/report-content.json" --cookie "$smoke_cookie_file" \
+
+  smoke_code=$(smoke_curl --output "$smoke_tmp/report-replay.json" --write-out '%{http_code}' \
+    --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \
+    -H "Idempotency-Key: $smoke_report_key" \
+    -H 'Content-Type: application/json' --data-binary "@$smoke_tmp/report-request.json" \
+    "$smoke_base_url/api/v1/tasks/$smoke_task_id/reports")
+  [ "$smoke_code" = 200 ] || die "report idempotent replay failed with HTTP $smoke_code"
+  jq -e --arg id "$smoke_report_id" '.report.id == $id and .report.schemaVersion == "binaryscan-report-v2"' \
+    "$smoke_tmp/report-replay.json" >/dev/null || die "report replay returned a different report"
+
+  smoke_curl --fail --dump-header "$smoke_tmp/report-headers" \
+    --output "$smoke_tmp/report-content.json" --cookie "$smoke_cookie_file" \
     "$smoke_base_url/api/v1/reports/$smoke_report_id/content"
-  jq -e --arg task "$smoke_task_id" --arg scan "$smoke_scan_run_id" \
-    --arg trivy "$smoke_trivy_run_id" --arg decompile "$smoke_decompile_run_id" \
-    --arg check "$smoke_check_run_id" '
-      .schema == "binaryscan-report-v1"
+  smoke_report_sha=$(jq -r '.report.sha256 // empty' "$smoke_tmp/report.json")
+  smoke_report_etag=$(awk 'tolower($1) == "etag:" { gsub("\\r", "", $2); value=$2 } END { print value }' \
+    "$smoke_tmp/report-headers")
+  smoke_download_sha=$(openssl dgst -sha256 -r "$smoke_tmp/report-content.json" | awk '{print $1}')
+  [ "$smoke_report_etag" = "\"$smoke_report_sha\"" ] || die "report download ETag does not match persisted SHA-256"
+  [ "$smoke_download_sha" = "$smoke_report_sha" ] || die "downloaded report bytes do not match persisted SHA-256"
+  jq -e --arg task "$smoke_task_id" --arg sha "$smoke_upload_sha" \
+    --arg decompile "$smoke_decompile_run_id" --arg check "$smoke_check_run_id" \
+    --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
+      .schema == "binaryscan-report-v2"
       and .task.id == $task
-      and (([.runs[].id] | sort) == ([$scan, $trivy, $decompile, $check] | sort))
-      and any(.findings[]; .ruleId == "PY001" and .runId == $check)
+      and .task.inputSha256 == $sha
+      and (([.runs[].id] | sort) == ([$decompile, $check] | sort))
+      and any(.findings[]; .ruleId == "PY001" and .runId == $check
+        and .sourceProjectId == $project and .sourceFileId == $file
+        and (.sourceSha256 | test("^[0-9a-f]{64}$"))
+        and .startLine >= 1 and .startColumn >= 1 and .endLine >= .startLine and .endColumn >= 1)
     ' \
     "$smoke_tmp/report-content.json" >/dev/null || die "downloaded report does not match the smoke workflow"
 

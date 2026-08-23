@@ -778,6 +778,22 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       return { items: [] }
     },
 
+    async listDecompileSourceFiles(taskId) {
+      await delay()
+      requireUser()
+      findTask(taskId)
+      return { files: [] }
+    },
+
+    async getDecompileSourceFileContent(taskId) {
+      await delay()
+      requireUser()
+      findTask(taskId)
+      throw new ApiError('界面预览不读取真实反编译源码文件', 404, {
+        code: 'DECOMPILE_SOURCE_FILE_NOT_FOUND',
+      })
+    },
+
     async getDecompileSource(taskId) {
       await delay()
       requireUser()

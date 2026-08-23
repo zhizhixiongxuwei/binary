@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,11 +21,26 @@ func TestWorkspaceRejectsEscapeAndPublishesImmutableRunDirectory(t *testing.T) {
 	if err := workspace.WriteFile("src/main.c", "c", strings.NewReader("int main(void) { return 0; }")); err != nil {
 		t.Fatal(err)
 	}
-	destination, err := workspace.Publish(filepath.Join(root, "projects"), "project-1", Manifest{
-		RunID: "run-1", Kind: "native", Language: "c", Quality: "source", ToolName: "test", ToolVersion: "1",
+	publication, err := workspace.PublishProject(filepath.Join(root, "projects"), "project-1", Manifest{
+		RunID: "run-1", InputBlobID: "blob-1", InputSHA256: strings.Repeat("a", 64), InputPath: "sample.elf",
+		Kind: "native", Language: "c", Quality: "source", ToolName: "test", ToolVersion: "1",
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	destination := publication.Root
+	if publication.Manifest.Version != "project-v2" || publication.Manifest.ProjectID != "project-1" ||
+		len(publication.Manifest.Files) != 1 || publication.Manifest.Files[0].ID == "" ||
+		publication.Manifest.Files[0].LineCount != 1 || len(publication.Manifest.Files[0].SHA256) != 64 {
+		t.Fatalf("unexpected publication manifest: %#v", publication.Manifest)
+	}
+	body, err := os.ReadFile(filepath.Join(destination, "project.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted Manifest
+	if err := json.Unmarshal(body, &persisted); err != nil || persisted.ProjectID != "project-1" {
+		t.Fatalf("invalid persisted manifest: value=%#v error=%v", persisted, err)
 	}
 	for _, relative := range []string{"project.json", "src/main.c"} {
 		info, err := os.Stat(filepath.Join(destination, relative))
@@ -45,6 +61,17 @@ func TestWorkspaceRejectsEscapeAndPublishesImmutableRunDirectory(t *testing.T) {
 		return os.Chmod(path, 0o600)
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorkspaceRejectsNonUTF8Source(t *testing.T) {
+	workspace, err := NewWorkspace(filepath.Join(t.TempDir(), "work"), "run-2", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workspace.Cleanup() })
+	if err := workspace.WriteFile("bad.py", "python", strings.NewReader(string([]byte{0xff, 0xfe}))); err == nil {
+		t.Fatal("expected invalid UTF-8 source to be rejected")
 	}
 }
 

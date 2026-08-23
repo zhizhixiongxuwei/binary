@@ -3,7 +3,7 @@ import { AlertTriangle, History } from 'lucide-vue-next'
 import { ElMessageBox } from 'element-plus'
 import { onScopeDispose, watch } from 'vue'
 
-import type { UserRole } from '@/api/types'
+import type { SourceNavigationTarget, UserRole } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
 import CAnalysisFindingDrawer from '@/components/tasks/c-analysis/CAnalysisFindingDrawer.vue'
 import CAnalysisFindingFilters from '@/components/tasks/c-analysis/CAnalysisFindingFilters.vue'
@@ -25,7 +25,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   stateChange: [state: TaskResultState]
   busyChange: [busy: boolean]
-  openSource: [resultId: string]
+  openSource: [target: SourceNavigationTarget]
 }>()
 
 const analysis = useCAnalysis({

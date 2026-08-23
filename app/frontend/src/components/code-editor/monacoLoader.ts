@@ -3,6 +3,7 @@ import type * as Monaco from 'monaco-editor'
 export type ReadOnlyCodeLanguage =
   | 'c'
   | 'java'
+  | 'python'
   | 'jvm-bytecode'
   | 'smali'
   | 'python-bytecode'
@@ -16,6 +17,7 @@ interface MonacoEnvironment {
 const languageIds: Readonly<Record<ReadOnlyCodeLanguage, string>> = {
   c: 'cpp',
   java: 'java',
+  python: 'python',
   'jvm-bytecode': 'jvm-bytecode',
   smali: 'smali',
   'python-bytecode': 'python-bytecode',

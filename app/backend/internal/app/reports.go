@@ -4,15 +4,20 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +36,7 @@ type reportRecord struct {
 	ID          string    `json:"id"`
 	TaskID      string    `json:"taskId"`
 	Format      string    `json:"format"`
+	Schema      string    `json:"schemaVersion"`
 	Status      string    `json:"status"`
 	SHA256      string    `json:"sha256,omitempty"`
 	SizeBytes   int64     `json:"sizeBytes,omitempty"`
@@ -38,21 +44,58 @@ type reportRecord struct {
 	CompletedAt time.Time `json:"completedAt,omitempty"`
 }
 
+type storedReport struct {
+	Record  reportRecord
+	RunIDs  []string
+	Deleted bool
+}
+
+type reportRowScanner interface {
+	Scan(dest ...any) error
+}
+
+const maxReportRequestBytes = 32 << 10
+
 func (s *taskService) createReport(c *gin.Context) {
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if !validIdempotencyKey(idempotencyKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "idempotency_key_required"})
+		return
+	}
 	var request reportRequest
-	if err := c.ShouldBindJSON(&request); err != nil || (request.Format != "json" && request.Format != "html" && request.Format != "docx") || len(request.RunIDs) == 0 || len(request.RunIDs) > 100 {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxReportRequestBytes)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		(request.Format != "json" && request.Format != "html" && request.Format != "docx") ||
+		len(request.RunIDs) == 0 || len(request.RunIDs) > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_report_request"})
 		return
 	}
 	seen := make(map[string]struct{}, len(request.RunIDs))
 	for _, runID := range request.RunIDs {
-		if _, exists := seen[runID]; runID == "" || len(runID) > 64 || exists {
+		if _, exists := seen[runID]; !canonicalUUID(runID) || exists {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_report_runs"})
 			return
 		}
 		seen[runID] = struct{}{}
 	}
+	sort.Strings(request.RunIDs)
 	taskID := c.Param("taskID")
+	user := mustCurrentUser(c)
+	existing, found, err := s.loadReportByIdempotency(c, user.ID, taskID, idempotencyKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+		return
+	}
+	if found {
+		if !reportIntentMatches(existing, request) {
+			c.JSON(http.StatusConflict, gin.H{"error": "report_idempotency_conflict"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"report": existing.Record})
+		return
+	}
 	snapshot, err := s.buildReportSnapshot(c, taskID, request.RunIDs)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -71,9 +114,7 @@ func (s *taskService) createReport(c *gin.Context) {
 	}
 	reportBody := snapshotBody
 	if request.Format == "html" {
-		reportBody = []byte("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>BinaryScan 报告</title>" +
-			"<style>body{font:14px/1.6 system-ui;margin:32px;color:#17212b}pre{white-space:pre-wrap;background:#f5f7fa;padding:20px;border-radius:8px}</style>" +
-			"</head><body><h1>BinaryScan 分析报告</h1><pre>" + html.EscapeString(string(snapshotBody)) + "</pre></body></html>")
+		reportBody = buildHTMLReport(snapshot)
 	} else if request.Format == "docx" {
 		reportBody, err = buildDOCXReport(snapshotBody)
 		if err != nil {
@@ -91,8 +132,14 @@ func (s *taskService) createReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
 	}
+	keepPublished := false
+	defer func() {
+		if !keepPublished {
+			_ = os.Remove(filepath.Join(s.reportRoot, filepath.FromSlash(relative)))
+		}
+	}()
 	selected, _ := json.Marshal(request.RunIDs)
-	user := mustCurrentUser(c)
+	digest := sha256.Sum256(reportBody)
 	tx, err := s.db.BeginTx(c, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
@@ -101,10 +148,29 @@ func (s *taskService) createReport(c *gin.Context) {
 	defer tx.Rollback()
 	storageKey := filepath.ToSlash(filepath.Join("reports", relative))
 	if _, err := tx.ExecContext(c, `INSERT INTO reports
-        (id, task_id, created_by, format, status, storage_key, selected_run_ids, snapshot)
-        VALUES (?, ?, ?, ?, 'ready', ?, ?, ?)`,
-		reportID, taskID, user.ID, request.Format, storageKey, selected, snapshotBody); err != nil {
+		(id, task_id, created_by, idempotency_key, format, schema_version, status, storage_key, sha256,
+		 size_bytes, selected_run_ids, snapshot)
+		VALUES (?, ?, ?, ?, ?, 'binaryscan-report-v2', 'ready', ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE id = id`,
+		reportID, taskID, user.ID, idempotencyKey, request.Format, storageKey,
+		digest[:], sizeBytes, selected, snapshotBody); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+		return
+	}
+	actual, err := loadStoredReport(tx.QueryRowContext(c, `SELECT id, task_id, format,
+		schema_version, status, HEX(sha256), size_bytes, created_at, selected_run_ids, deleted_at
+		FROM reports WHERE created_by = ? AND task_id = ? AND idempotency_key = ? FOR UPDATE`,
+		user.ID, taskID, idempotencyKey))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+		return
+	}
+	if actual.Record.ID != reportID {
+		if !reportIntentMatches(actual, request) {
+			c.JSON(http.StatusConflict, gin.H{"error": "report_idempotency_conflict"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"report": actual.Record})
 		return
 	}
 	if _, err := tx.ExecContext(c, `INSERT INTO task_events
@@ -121,15 +187,87 @@ func (s *taskService) createReport(c *gin.Context) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
+		committed, found, queryErr := s.loadReportByIdempotency(c, user.ID, taskID, idempotencyKey)
+		if queryErr == nil && found {
+			if committed.Record.ID == reportID {
+				keepPublished = true
+				if !reportIntentMatches(committed, request) {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+					return
+				}
+				c.JSON(http.StatusCreated, gin.H{"report": committed.Record})
+				return
+			}
+			if !reportIntentMatches(committed, request) {
+				c.JSON(http.StatusConflict, gin.H{"error": "report_idempotency_conflict"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"report": committed.Record})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
 	}
-	digest := sha256.Sum256(reportBody)
-	now := time.Now().UTC()
-	c.JSON(http.StatusCreated, gin.H{"report": reportRecord{
-		ID: reportID, TaskID: taskID, Format: request.Format, Status: "ready", SHA256: fmt.Sprintf("%x", digest[:]),
-		SizeBytes: sizeBytes, CreatedAt: now, CompletedAt: now,
-	}})
+	keepPublished = true
+	c.JSON(http.StatusCreated, gin.H{"report": actual.Record})
+}
+
+func (s *taskService) loadReportByIdempotency(
+	ctx context.Context,
+	userID uint64,
+	taskID, idempotencyKey string,
+) (storedReport, bool, error) {
+	stored, err := loadStoredReport(s.db.QueryRowContext(ctx, `SELECT r.id, r.task_id, r.format,
+		r.schema_version, r.status, HEX(r.sha256), r.size_bytes, r.created_at,
+		r.selected_run_ids, r.deleted_at
+		FROM reports r JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+		WHERE r.created_by = ? AND r.task_id = ? AND r.idempotency_key = ?`,
+		userID, taskID, idempotencyKey))
+	if errors.Is(err, sql.ErrNoRows) {
+		return storedReport{}, false, nil
+	}
+	return stored, err == nil, err
+}
+
+func loadStoredReport(row reportRowScanner) (storedReport, error) {
+	var stored storedReport
+	var sha sql.NullString
+	var size sql.NullInt64
+	var selected []byte
+	var deleted sql.NullTime
+	if err := row.Scan(&stored.Record.ID, &stored.Record.TaskID, &stored.Record.Format,
+		&stored.Record.Schema, &stored.Record.Status, &sha, &size, &stored.Record.CreatedAt,
+		&selected, &deleted); err != nil {
+		return storedReport{}, err
+	}
+	if err := json.Unmarshal(selected, &stored.RunIDs); err != nil {
+		return storedReport{}, fmt.Errorf("decode selected report runs: %w", err)
+	}
+	stored.Deleted = deleted.Valid
+	stored.Record.SHA256 = strings.ToLower(sha.String)
+	if size.Valid {
+		stored.Record.SizeBytes = size.Int64
+	}
+	if stored.Record.Status == "ready" {
+		stored.Record.CompletedAt = stored.Record.CreatedAt
+	}
+	return stored, nil
+}
+
+func reportIntentMatches(stored storedReport, request reportRequest) bool {
+	if stored.Deleted || stored.Record.Format != request.Format || len(stored.RunIDs) != len(request.RunIDs) {
+		return false
+	}
+	left := append([]string(nil), stored.RunIDs...)
+	right := append([]string(nil), request.RunIDs...)
+	sort.Strings(left)
+	sort.Strings(right)
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 var errMutableReportRun = errors.New("report run is not in a terminal state")
@@ -137,9 +275,13 @@ var errMutableReportRun = errors.New("report run is not in a terminal state")
 func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runIDs []string) (map[string]any, error) {
 	var displayName, taskStatus string
 	var detected sql.NullString
+	var inputSHA256 string
 	var taskCreated time.Time
-	if err := s.db.QueryRowContext(ctx, `SELECT display_name, status, detected_format, created_at
-        FROM tasks WHERE id = ? AND deleted_at IS NULL`, taskID).Scan(&displayName, &taskStatus, &detected, &taskCreated); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT t.display_name, t.status, t.detected_format,
+		HEX(b.sha256), t.created_at FROM tasks t JOIN blobs b ON b.id = t.blob_id
+		WHERE t.id = ? AND t.deleted_at IS NULL`, taskID).Scan(
+		&displayName, &taskStatus, &detected, &inputSHA256, &taskCreated,
+	); err != nil {
 		return nil, err
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(runIDs)), ",")
@@ -185,10 +327,13 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 	for index, runID := range runIDs {
 		findingArgs[index] = runID
 	}
-	findingRows, err := s.db.QueryContext(ctx, `SELECT run_id, finding_type, language, severity, rule_id,
-        cwe, external_id, logical_path, start_line, start_column, title, message, details
-        FROM findings WHERE run_id IN (`+placeholders+`)
-        ORDER BY FIELD(severity, 'critical', 'high', 'medium', 'low', 'info'), id LIMIT 50000`, findingArgs...)
+	findingRows, err := s.db.QueryContext(ctx, `SELECT f.run_id, f.finding_type, f.language,
+		f.severity, f.rule_id, f.cwe, f.external_id, f.logical_path, f.start_line,
+		f.start_column, f.end_line, f.end_column, f.title, f.message, f.snippet,
+		f.snippet_start_line, f.source_project_id, f.source_file_id, HEX(sf.sha256), f.details
+		FROM findings f LEFT JOIN source_files sf ON sf.id = f.source_file_id
+		WHERE f.run_id IN (`+placeholders+`)
+		ORDER BY FIELD(f.severity, 'critical', 'high', 'medium', 'low', 'info'), f.id LIMIT 50001`, findingArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -196,10 +341,12 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 	for findingRows.Next() {
 		var runID, findingType, severity, title, message string
 		var language, ruleID, cwe, externalID, logicalPath sql.NullString
-		var line, column sql.NullInt64
+		var snippet, sourceProjectID, sourceFileID, sourceSHA256 sql.NullString
+		var line, column, endLine, endColumn, snippetStartLine sql.NullInt64
 		var details []byte
 		if err := findingRows.Scan(&runID, &findingType, &language, &severity, &ruleID, &cwe,
-			&externalID, &logicalPath, &line, &column, &title, &message, &details); err != nil {
+			&externalID, &logicalPath, &line, &column, &endLine, &endColumn, &title, &message,
+			&snippet, &snippetStartLine, &sourceProjectID, &sourceFileID, &sourceSHA256, &details); err != nil {
 			findingRows.Close()
 			return nil, err
 		}
@@ -208,22 +355,33 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 		findings = append(findings, map[string]any{"runId": runID, "type": findingType,
 			"language": nullableString(language), "severity": severity, "ruleId": nullableString(ruleID),
 			"cwe": nullableString(cwe), "externalId": nullableString(externalID), "path": nullableString(logicalPath),
-			"line": nullableInt(line), "column": nullableInt(column), "title": title, "message": message, "evidence": evidence})
+			"sourceProjectId": nullableString(sourceProjectID), "sourceFileId": nullableString(sourceFileID),
+			"sourceSha256": strings.ToLower(sourceSHA256.String), "startLine": nullableInt(line),
+			"startColumn": nullableInt(column), "endLine": nullableInt(endLine), "endColumn": nullableInt(endColumn),
+			"snippet": nullableString(snippet), "snippetStartLine": nullableInt(snippetStartLine),
+			"title": title, "message": message, "evidence": evidence})
 	}
 	if err := findingRows.Close(); err != nil {
 		return nil, err
 	}
+	findingsTruncated := len(findings) > 50000
+	if findingsTruncated {
+		findings = findings[:50000]
+	}
 	return map[string]any{
-		"schema": "binaryscan-report-v1", "generatedAt": time.Now().UTC(),
+		"schema": "binaryscan-report-v2", "generatedAt": time.Now().UTC(),
 		"task": map[string]any{"id": taskID, "displayName": displayName, "status": taskStatus,
-			"detectedFormat": nullableString(detected), "createdAt": taskCreated},
-		"runs": runs, "findings": findings,
+			"detectedFormat": nullableString(detected), "inputSha256": strings.ToLower(inputSHA256),
+			"createdAt": taskCreated},
+		"runs": runs, "findings": findings, "findingsTruncated": findingsTruncated,
 	}, nil
 }
 
 func (s *taskService) listReports(c *gin.Context) {
-	rows, err := s.db.QueryContext(c, `SELECT id, task_id, format, status, storage_key, created_at
-        FROM reports WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100`, c.Param("taskID"))
+	rows, err := s.db.QueryContext(c, `SELECT r.id, r.task_id, r.format, r.schema_version,
+		r.status, r.storage_key, HEX(r.sha256), r.size_bytes, r.created_at
+		FROM reports r JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+		WHERE r.task_id = ? AND r.deleted_at IS NULL ORDER BY r.created_at DESC LIMIT 100`, c.Param("taskID"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_query_failed"})
 		return
@@ -233,19 +391,17 @@ func (s *taskService) listReports(c *gin.Context) {
 	for rows.Next() {
 		var report reportRecord
 		var storageKey string
-		if err := rows.Scan(&report.ID, &report.TaskID, &report.Format, &report.Status, &storageKey, &report.CreatedAt); err != nil {
+		var sha sql.NullString
+		var size sql.NullInt64
+		if err := rows.Scan(&report.ID, &report.TaskID, &report.Format, &report.Schema,
+			&report.Status, &storageKey, &sha, &size, &report.CreatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_query_failed"})
 			return
 		}
 		if report.Status == "ready" {
 			report.CompletedAt = report.CreatedAt
-			if cleaned, cleanErr := storage.CleanRelativePath(storageKey); cleanErr == nil {
-				if body, readErr := os.ReadFile(filepath.Join(s.storageRoot, filepath.FromSlash(cleaned))); readErr == nil {
-					digest := sha256.Sum256(body)
-					report.SHA256 = fmt.Sprintf("%x", digest[:])
-					report.SizeBytes = int64(len(body))
-				}
-			}
+			report.SHA256 = strings.ToLower(sha.String)
+			report.SizeBytes = size.Int64
 		}
 		reports = append(reports, report)
 	}
@@ -257,9 +413,18 @@ func (s *taskService) listReports(c *gin.Context) {
 }
 
 func (s *taskService) downloadReport(c *gin.Context) {
+	encoding := c.Query("encoding")
+	if encoding != "" && encoding != "identity" && encoding != "gzip" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_report_encoding"})
+		return
+	}
 	var storageKey, format string
-	if err := s.db.QueryRowContext(c, `SELECT storage_key, format FROM reports
-        WHERE id = ? AND status = 'ready' AND deleted_at IS NULL`, c.Param("reportID")).Scan(&storageKey, &format); err != nil {
+	var expectedSHA sql.NullString
+	var expectedSize sql.NullInt64
+	if err := s.db.QueryRowContext(c, `SELECT r.storage_key, r.format, HEX(r.sha256), r.size_bytes FROM reports r
+		JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+		WHERE r.id = ? AND r.status = 'ready' AND r.deleted_at IS NULL`, c.Param("reportID")).Scan(
+		&storageKey, &format, &expectedSHA, &expectedSize); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "report_not_found"})
 		} else {
@@ -273,12 +438,14 @@ func (s *taskService) downloadReport(c *gin.Context) {
 		return
 	}
 	filename := filepath.Join(s.storageRoot, filepath.FromSlash(cleaned))
-	info, err := os.Lstat(filename)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "report_file_not_found"})
+	if err := verifyReportFile(filename, expectedSize, expectedSHA); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "report_storage_corrupt"})
 		return
 	}
-	if c.Query("encoding") == "gzip" {
+	if expectedSHA.Valid && expectedSHA.String != "" {
+		c.Header("ETag", `"`+strings.ToLower(expectedSHA.String)+`"`)
+	}
+	if encoding == "gzip" {
 		body, err := os.ReadFile(filename)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "report_file_not_found"})
@@ -307,6 +474,126 @@ func (s *taskService) downloadReport(c *gin.Context) {
 		c.Header("Content-Type", "application/json")
 	}
 	c.File(filename)
+}
+
+func verifyReportFile(filename string, expectedSize sql.NullInt64, expectedSHA sql.NullString) error {
+	info, err := os.Lstat(filename)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("report is not a regular file")
+	}
+	if expectedSize.Valid && info.Size() != expectedSize.Int64 {
+		return fmt.Errorf("report size does not match database record")
+	}
+	if !expectedSHA.Valid || expectedSHA.String == "" {
+		return nil
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return err
+	}
+	if !strings.EqualFold(fmt.Sprintf("%x", hasher.Sum(nil)), expectedSHA.String) {
+		return fmt.Errorf("report digest does not match database record")
+	}
+	return nil
+}
+
+func buildHTMLReport(snapshot map[string]any) []byte {
+	var output strings.Builder
+	output.WriteString(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">`)
+	output.WriteString(`<meta name="viewport" content="width=device-width,initial-scale=1">`)
+	output.WriteString(`<title>BinaryScan 分析报告</title><style>`)
+	output.WriteString(`body{font:14px/1.6 system-ui;margin:32px;color:#17212b}h1{margin-bottom:4px}`)
+	output.WriteString(`table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce4e8;text-align:left;vertical-align:top}`)
+	output.WriteString(`th{background:#f1f6f7}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}`)
+	output.WriteString(`pre{overflow:auto;white-space:pre;background:#172427;color:#e9f2f0;padding:12px;border-radius:6px}`)
+	output.WriteString(`.critical,.high{color:#a31d2d}.medium{color:#8a5700}.low{color:#176b57}.finding{margin:20px 0}`)
+	output.WriteString(`</style></head><body><h1>BinaryScan 分析报告</h1>`)
+	output.WriteString(`<p>报告格式：<code>binaryscan-report-v2</code></p>`)
+	task, _ := snapshot["task"].(map[string]any)
+	taskID := reportText(task["id"])
+	output.WriteString(`<dl><dt>任务</dt><dd>` + html.EscapeString(reportText(task["displayName"])) + `</dd>`)
+	output.WriteString(`<dt>输入 SHA-256</dt><dd><code>` + html.EscapeString(reportText(task["inputSha256"])) + `</code></dd></dl>`)
+	findings, _ := snapshot["findings"].([]map[string]any)
+	output.WriteString(`<h2>检测结果（` + strconv.Itoa(len(findings)) + `）</h2>`)
+	for _, finding := range findings {
+		severity := strings.ToLower(reportText(finding["severity"]))
+		path := reportText(finding["path"])
+		startLine := reportText(finding["startLine"])
+		startColumn := reportText(finding["startColumn"])
+		output.WriteString(`<section class="finding"><h3 class="` + html.EscapeString(severity) + `">`)
+		output.WriteString(html.EscapeString(strings.ToUpper(severity) + " · " + reportText(finding["ruleId"]) + " · " + reportText(finding["title"])))
+		output.WriteString(`</h3><p>` + html.EscapeString(reportText(finding["message"])) + `</p>`)
+		output.WriteString(`<p><code>` + html.EscapeString(path+":"+startLine+":"+startColumn) + `</code>`)
+		if href := reportSourceHref(taskID, finding); href != "" {
+			output.WriteString(` · <a href="` + html.EscapeString(href) + `">在源码中打开</a>`)
+		}
+		output.WriteString(`</p>`)
+		if snippet := reportText(finding["snippet"]); snippet != "" {
+			output.WriteString(`<pre><code>` + html.EscapeString(snippet) + `</code></pre>`)
+		}
+		output.WriteString(`</section>`)
+	}
+	if truncated, _ := snapshot["findingsTruncated"].(bool); truncated {
+		output.WriteString(`<p><strong>注意：</strong>检测结果已达到报告上限，存在截断。</p>`)
+	}
+	output.WriteString(`</body></html>`)
+	return []byte(output.String())
+}
+
+func reportSourceHref(taskID string, finding map[string]any) string {
+	projectID := reportText(finding["sourceProjectId"])
+	fileID := reportText(finding["sourceFileId"])
+	if taskID == "" || projectID == "" || fileID == "" {
+		return ""
+	}
+	startLine := reportCoordinate(finding["startLine"], 1)
+	startColumn := reportCoordinate(finding["startColumn"], 1)
+	endLine := reportCoordinate(finding["endLine"], startLine)
+	if endLine < startLine {
+		endLine = startLine
+	}
+	endColumnFallback := 1
+	if endLine == startLine {
+		endColumnFallback = startColumn + 1
+	}
+	endColumn := reportCoordinate(finding["endColumn"], endColumnFallback)
+	if endLine == startLine && endColumn < startColumn {
+		endColumn = startColumn
+	}
+	query := url.Values{
+		"detail":        {"results"},
+		"result":        {"decompile"},
+		"sourceProject": {projectID},
+		"sourceFile":    {fileID},
+		"startLine":     {strconv.Itoa(startLine)},
+		"startColumn":   {strconv.Itoa(startColumn)},
+		"endLine":       {strconv.Itoa(endLine)},
+		"endColumn":     {strconv.Itoa(endColumn)},
+	}
+	if path := reportText(finding["path"]); path != "" {
+		query.Set("sourcePath", path)
+	}
+	return "/tasks/" + url.PathEscape(taskID) + "?" + query.Encode()
+}
+
+func reportCoordinate(value any, fallback int) int {
+	parsed, err := strconv.Atoi(reportText(value))
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func reportText(value any) string {
+	if value == nil {
+		return ""
+	}
+	return fmt.Sprint(value)
 }
 
 func buildDOCXReport(snapshot []byte) ([]byte, error) {
@@ -387,6 +674,7 @@ func publishReportFile(root, taskID, reportID, format string, body []byte) (stri
 		return "", 0, err
 	}
 	if err := os.Chmod(destination, 0o440); err != nil {
+		_ = os.Remove(destination)
 		return "", 0, err
 	}
 	return filepath.ToSlash(relative), int64(len(body)), nil

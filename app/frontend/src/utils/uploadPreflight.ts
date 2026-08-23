@@ -13,13 +13,14 @@ export const inputCategoryAccept: Record<InputCategory, string> = {
   binary:
     '.exe,.dll,.sys,.elf,.so,.dylib,.class,.jar,.war,.ear,.dex,.apk,.pyc,application/octet-stream,application/java-archive,application/vnd.android.package-archive',
   archive:
-    '.zip,.7z,.rar,.tar,.tgz,.gz,.bz2,.xz,.zst,.cab,.cpio,.ar,.deb,.rpm,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip',
+    '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip',
   container: '.tar,application/x-tar,application/octet-stream',
 }
 
 interface MagicMatch {
   format: string
   allowedCategories: readonly InputCategory[]
+  supported?: boolean
 }
 
 export interface UploadPreflightResult {
@@ -98,26 +99,28 @@ function detectHead(bytes: Uint8Array): MagicMatch | null {
     return { format: 'GZIP', allowedCategories: ['archive'] }
   }
   if (asciiAt(bytes, 0, 'BZh')) {
-    return { format: 'BZIP2', allowedCategories: ['archive'] }
+    return { format: 'BZIP2', allowedCategories: [], supported: false }
   }
   if (startsWith(bytes, [0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00])) {
     return { format: 'XZ', allowedCategories: ['archive'] }
   }
   if (startsWith(bytes, [0x28, 0xb5, 0x2f, 0xfd])) {
-    return { format: 'ZSTD', allowedCategories: ['archive'] }
+    return { format: 'ZSTD', allowedCategories: [], supported: false }
   }
   if (asciiAt(bytes, 0, 'MSCF')) {
-    return { format: 'CAB', allowedCategories: ['archive'] }
+    return { format: 'CAB', allowedCategories: [], supported: false }
   }
   if (
     asciiAt(bytes, 0, '070701') ||
     asciiAt(bytes, 0, '070702') ||
     asciiAt(bytes, 0, '070707')
   ) {
-    return { format: 'CPIO', allowedCategories: ['archive'] }
+    return { format: 'CPIO', allowedCategories: [], supported: false }
   }
   if (asciiAt(bytes, 0, '!<arch>\n')) {
-    return { format: 'AR / DEB', allowedCategories: ['archive'] }
+    return asciiAt(bytes, 8, 'debian-binary')
+      ? { format: 'DEB', allowedCategories: ['archive'] }
+      : { format: 'AR', allowedCategories: [], supported: false }
   }
   if (startsWith(bytes, [0xed, 0xab, 0xee, 0xdb])) {
     return { format: 'RPM', allowedCategories: ['archive'] }
@@ -180,6 +183,13 @@ export async function preflightUploadFile(
         }
       : null)
 
+  if (match?.supported === false) {
+    return {
+      accepted: false,
+      detectedFormat: match.format,
+      message: `${file.name}：当前流程暂不支持 ${match.format}，请使用界面列出的格式`,
+    }
+  }
   if (!match || match.allowedCategories.includes(category)) {
     return {
       accepted: true,

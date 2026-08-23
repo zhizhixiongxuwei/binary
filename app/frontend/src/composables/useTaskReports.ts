@@ -336,6 +336,12 @@ export function useTaskReports(options: UseTaskReportsOptions) {
       ) {
         return
       }
+      if (
+        caught instanceof ApiError &&
+        caught.code === 'report_idempotency_conflict'
+      ) {
+        idempotencyKeys.delete(intentKey)
+      }
       operationError.value = `生成 ${format.toUpperCase()} 报告失败：${errorMessage(
         caught,
         '未知错误',

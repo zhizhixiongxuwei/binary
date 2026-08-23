@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch } from 'vue'
 
+import type { SourceNavigationTarget } from '@/api/types'
 import type { TaskResultState } from '@/components/tasks/taskResultTypes'
 import StatePanel from '@/components/common/StatePanel.vue'
 import DecompileResultWorkspace from '@/components/tasks/results/DecompileResultWorkspace.vue'
@@ -12,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   stateChange: [state: TaskResultState]
+  navigationChange: [target: SourceNavigationTarget]
 }>()
 
 const results = useDecompileResults({
@@ -24,9 +26,36 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [
+    results.selectedResultId,
+    results.selectedSourceFileId,
+    results.selectedSourceFile,
+    results.targetRange,
+  ],
+  ([projectId, sourceFileId, sourceFile, target]) => {
+    if (!projectId || !sourceFileId || !sourceFile) return
+    const matchingTarget =
+      target?.projectId === projectId &&
+      (!target.sourceFileId || target.sourceFileId === sourceFileId)
+        ? target
+        : undefined
+    emit('navigationChange', {
+      projectId,
+      sourceFileId,
+      path: sourceFile.logicalPath,
+      startLine: matchingTarget?.startLine ?? 1,
+      startColumn: matchingTarget?.startColumn ?? 1,
+      endLine: matchingTarget?.endLine ?? 1,
+      endColumn: matchingTarget?.endColumn ?? 2,
+    })
+  },
+)
+
 defineExpose({
   refresh: results.refresh,
   openResult: results.openResult,
+  openSource: results.openSource,
 })
 </script>
 
@@ -50,14 +79,19 @@ defineExpose({
     :task-id="taskId"
     :items="results.items.value"
     :selected-id="results.selectedResultId.value"
+    :source-files="results.sourceFiles.value"
+    :selected-source-file-id="results.selectedSourceFileId.value"
+    :source-file="results.sourceFile.value"
     :source="results.source.value"
+    :source-files-loading="results.sourceFilesLoading.value"
+    :source-files-error="results.sourceFilesError.value"
     :source-loading="results.sourceLoading.value"
     :source-error="results.sourceError.value"
+    :target-range="results.targetRange.value"
     :has-more-results="results.hasMoreResults.value"
     :loading-more-results="results.loadingMore.value"
-    :has-more-source="results.hasMoreSource.value"
     @select="results.selectResult"
+    @select-source-file="results.selectSourceFile"
     @load-more-results="results.loadMoreResults"
-    @load-more-source="results.loadMoreSource"
   />
 </template>

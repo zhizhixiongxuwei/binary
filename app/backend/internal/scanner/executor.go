@@ -1,10 +1,11 @@
 package scanner
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,8 @@ import (
 	"time"
 
 	"binaryscan.local/backend/internal/config"
+	"binaryscan.local/backend/internal/containerarchive"
+	"binaryscan.local/backend/internal/filetype"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
 	"binaryscan.local/backend/internal/storage"
@@ -36,10 +39,12 @@ type Executor struct {
 }
 
 type subject struct {
-	taskID      string
-	fileID      string
-	logicalPath string
-	storageKey  string
+	taskID         string
+	fileID         string
+	logicalPath    string
+	storageKey     string
+	inputCategory  string
+	detectedFormat string
 }
 
 type trivyReport struct {
@@ -101,47 +106,59 @@ func (e *Executor) scan(ctx context.Context, claim job.Claim) error {
 	if err != nil {
 		return err
 	}
-	format, err := detectFile(inputPath, subject.logicalPath)
+	detected, err := filetype.Detect(inputPath, subject.logicalPath)
 	if err != nil {
 		return err
 	}
-	trivyRunID, err := identity.UUID()
-	if err != nil {
-		return err
+	if detected.Category == "" || detected.Format == "unknown" {
+		return fmt.Errorf("unsupported input format")
+	}
+	if subject.inputCategory != "" && string(detected.Category) != subject.inputCategory {
+		return fmt.Errorf("input category changed after upload validation: expected %s, detected %s", subject.inputCategory, detected.Category)
+	}
+	var archiveRunID string
+	if detected.Category == filetype.CategoryArchive {
+		archiveRunID, err = identity.UUID()
+		if err != nil {
+			return err
+		}
 	}
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `UPDATE tasks
-            SET status = 'scanning', detected_format = ? WHERE id = ? AND deleted_at IS NULL`, format, subject.taskID); err != nil {
+			SET status = 'ready', detected_category = ?, detected_format = ?
+			WHERE id = ? AND deleted_at IS NULL`, detected.Category, detected.Format, subject.taskID); err != nil {
 			return fmt.Errorf("update detected task format: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE file_nodes
-            SET detected_format = ? WHERE id = ? AND task_id = ?`, format, subject.fileID, subject.taskID); err != nil {
+			SET detected_format = ? WHERE id = ? AND task_id = ?`, detected.Format, subject.fileID, subject.taskID); err != nil {
 			return fmt.Errorf("update detected file format: %w", err)
 		}
-		idempotencyKey := "auto:" + claim.RunID
-		if _, err := tx.ExecContext(ctx, `INSERT INTO runs
-            (id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
-            SELECT ?, 'trivy_scan', 'queued', id, 'task', id, created_by, ?, JSON_OBJECT('source', 'scan')
-            FROM tasks WHERE id = ?
-            ON DUPLICATE KEY UPDATE id = runs.id`, trivyRunID, idempotencyKey, subject.taskID); err != nil {
-			return fmt.Errorf("create automatic trivy run: %w", err)
-		}
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM runs
-            WHERE kind = 'trivy_scan' AND subject_id = ? AND idempotency_key = ?`,
-			subject.taskID, idempotencyKey).Scan(&trivyRunID); err != nil {
-			return fmt.Errorf("resolve automatic trivy run: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (run_id, kind, status, max_attempts)
-            VALUES (?, 'trivy_scan', 'queued', 2) ON DUPLICATE KEY UPDATE run_id = run_id`, trivyRunID); err != nil {
-			return fmt.Errorf("enqueue automatic trivy scan: %w", err)
+		if detected.Category == filetype.CategoryArchive {
+			idempotencyKey := "auto-archive:" + claim.RunID
+			if _, err := tx.ExecContext(ctx, `INSERT INTO runs
+				(id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
+				SELECT ?, 'archive_import', 'queued', id, 'file_node', ?, created_by, ?, JSON_OBJECT('source', 'scan')
+				FROM tasks WHERE id = ?
+				ON DUPLICATE KEY UPDATE id = runs.id`, archiveRunID, subject.fileID, idempotencyKey, subject.taskID); err != nil {
+				return fmt.Errorf("create automatic archive import: %w", err)
+			}
+			if err := tx.QueryRowContext(ctx, `SELECT id FROM runs
+				WHERE kind = 'archive_import' AND subject_id = ? AND idempotency_key = ?`,
+				subject.fileID, idempotencyKey).Scan(&archiveRunID); err != nil {
+				return fmt.Errorf("resolve automatic archive import: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (run_id, kind, status, max_attempts)
+				VALUES (?, 'archive_import', 'queued', 3) ON DUPLICATE KEY UPDATE run_id = run_id`, archiveRunID); err != nil {
+				return fmt.Errorf("enqueue automatic archive import: %w", err)
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE runs
             SET tool_name = 'binaryscan-format-detector', tool_version = ? WHERE id = ?`, e.cfg.Version, claim.RunID); err != nil {
 			return fmt.Errorf("record format detector: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
-            (task_id, event_type, message) VALUES (?, 'scan.detected', ?)`,
-			subject.taskID, "识别格式："+format); err != nil {
+			(task_id, event_type, message) VALUES (?, 'scan.detected', ?)`,
+			subject.taskID, "识别格式："+detected.Format); err != nil {
 			return fmt.Errorf("record format detection: %w", err)
 		}
 		return nil
@@ -149,7 +166,7 @@ func (e *Executor) scan(ctx context.Context, claim job.Claim) error {
 }
 
 func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
-	subject, err := e.loadTaskSubject(ctx, claim.RunID)
+	subject, err := e.loadTrivySubject(ctx, claim.RunID)
 	if err != nil {
 		return err
 	}
@@ -162,13 +179,23 @@ func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 		return fmt.Errorf("create trivy workspace: %w", err)
 	}
 	defer os.RemoveAll(workDirectory)
-	reportPath := filepath.Join(workDirectory, "trivy.json")
 	executionCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	defer cancel()
+	cacheDirectory, err := prepareTrivyCache(e.cfg.Worker.TrivyCacheRoot, workDirectory)
+	if err != nil {
+		return fmt.Errorf("prepare trivy cache: %w", err)
+	}
+	trivyInput, err := prepareTrivyInput(executionCtx, inputPath, subject.detectedFormat, workDirectory,
+		e.cfg.Worker.ArchiveMaxBytes, e.cfg.Worker.ArchiveMaxFiles)
+	if err != nil {
+		if errors.Is(executionCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("trivy timed out")
+		}
+		return fmt.Errorf("prepare trivy input: %w", err)
+	}
+	reportPath := filepath.Join(workDirectory, "trivy.json")
 	command := exec.CommandContext(executionCtx, e.cfg.Worker.TrivyPath,
-		"filesystem", "--scanners", "vuln", "--format", "json", "--output", reportPath,
-		"--cache-dir", e.cfg.Worker.TrivyCacheRoot, "--skip-db-update", "--skip-java-db-update",
-		"--offline-scan", inputPath)
+		trivyImageArgs(cacheDirectory, reportPath, trivyInput)...)
 	var stderr bytes.Buffer
 	command.Stdout = io.Discard
 	command.Stderr = &stderr
@@ -221,8 +248,9 @@ func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 					break
 				}
 				details, _ := json.Marshal(map[string]string{
-					"package": finding.PkgName, "installedVersion": finding.InstalledVersion,
-					"fixedVersion": finding.FixedVersion, "primaryUrl": finding.PrimaryURL,
+					"package_name": finding.PkgName, "installed_version": finding.InstalledVersion,
+					"fixed_version": finding.FixedVersion, "primary_url": finding.PrimaryURL,
+					"target": result.Target, "image_logical_path": subject.logicalPath,
 				})
 				title := strings.TrimSpace(finding.Title)
 				if title == "" {
@@ -240,15 +268,18 @@ func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 				count++
 			}
 		}
+		artifactDigest := sha256.Sum256(body)
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_artifacts
-            (id, task_id, run_id, artifact_kind, media_type, storage_key, size_bytes)
-            VALUES (?, ?, ?, 'trivy-json', 'application/json', ?, ?)
-            ON DUPLICATE KEY UPDATE storage_key = VALUES(storage_key), size_bytes = VALUES(size_bytes)`,
-			artifactID, subject.taskID, claim.RunID, artifactKey, artifactSize); err != nil {
+			(id, task_id, run_id, artifact_kind, media_type, storage_key, size_bytes, sha256, schema_version, state)
+			VALUES (?, ?, ?, 'trivy-json', 'application/json', ?, ?, ?, 'trivy-json-v1', 'ready')
+			ON DUPLICATE KEY UPDATE storage_key = VALUES(storage_key), size_bytes = VALUES(size_bytes),
+				sha256 = VALUES(sha256), schema_version = VALUES(schema_version), state = 'ready', deleted_at = NULL`,
+			artifactID, subject.taskID, claim.RunID, artifactKey, artifactSize, artifactDigest[:]); err != nil {
 			return fmt.Errorf("record trivy artifact: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE runs
-            SET tool_name = 'trivy', ruleset_version = 'offline-bundle' WHERE id = ?`, claim.RunID); err != nil {
+			SET tool_name = 'trivy', ruleset_version = 'offline-bundle', image_reference = ? WHERE id = ?`,
+			subject.logicalPath, claim.RunID); err != nil {
 			return fmt.Errorf("record trivy runtime: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
@@ -262,17 +293,196 @@ func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 
 func (e *Executor) loadTaskSubject(ctx context.Context, runID string) (subject, error) {
 	var value subject
-	err := e.db.QueryRowContext(ctx, `SELECT r.task_id, f.id, f.logical_path, b.storage_key
+	err := e.db.QueryRowContext(ctx, `SELECT r.task_id, f.id, f.logical_path, b.storage_key, COALESCE(t.input_category, '')
         FROM runs r
         JOIN tasks t ON t.id = r.task_id
         JOIN file_nodes f ON f.task_id = t.id AND f.blob_id = t.blob_id AND f.parent_id IS NULL
         JOIN blobs b ON b.id = f.blob_id AND b.state = 'ready'
         WHERE r.id = ? AND r.subject_type = 'task' AND t.deleted_at IS NULL
-        LIMIT 1`, runID).Scan(&value.taskID, &value.fileID, &value.logicalPath, &value.storageKey)
+		LIMIT 1`, runID).Scan(&value.taskID, &value.fileID, &value.logicalPath, &value.storageKey, &value.inputCategory)
 	if err != nil {
 		return subject{}, fmt.Errorf("load task input for run %s: %w", runID, err)
 	}
 	return value, nil
+}
+
+func (e *Executor) loadTrivySubject(ctx context.Context, runID string) (subject, error) {
+	var value subject
+	err := e.db.QueryRowContext(ctx, `SELECT r.task_id, f.id, f.logical_path, b.storage_key, f.detected_format
+		FROM runs r
+		JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+		JOIN file_nodes f ON f.id = r.subject_id AND f.task_id = t.id
+		JOIN blobs b ON b.id = f.blob_id AND b.state = 'ready'
+		WHERE r.id = ? AND r.kind = 'trivy_scan' AND r.subject_type = 'file_node'
+		  AND f.detected_format IN ('docker-tar', 'oci-tar')`, runID).Scan(
+		&value.taskID, &value.fileID, &value.logicalPath, &value.storageKey, &value.detectedFormat,
+	)
+	if err != nil {
+		return subject{}, fmt.Errorf("load container image input for run %s: %w", runID, err)
+	}
+	return value, nil
+}
+
+func trivyImageArgs(cacheRoot, reportPath, inputPath string) []string {
+	return []string{"image", "--input", inputPath, "--scanners", "vuln", "--format", "json", "--output", reportPath,
+		"--cache-dir", cacheRoot, "--skip-db-update", "--skip-java-db-update", "--offline-scan"}
+}
+
+// prepareTrivyCache keeps the large, image-baked vulnerability databases
+// immutable while giving Trivy a per-run writable cache root. Trivy creates a
+// fanal cache below --cache-dir even when all database updates are disabled,
+// so pointing it directly at /opt/trivy-cache fails in the read-only scanner
+// container. The database directories are linked into the writable workspace
+// and remain read-only.
+func prepareTrivyCache(databaseRoot, workDirectory string) (string, error) {
+	if !filepath.IsAbs(databaseRoot) || !filepath.IsAbs(workDirectory) {
+		return "", fmt.Errorf("trivy cache paths must be absolute")
+	}
+	cacheDirectory := filepath.Join(workDirectory, "cache")
+	if err := os.Mkdir(cacheDirectory, 0o700); err != nil {
+		return "", fmt.Errorf("create writable cache root: %w", err)
+	}
+	for _, database := range []struct {
+		directory string
+		files     []string
+	}{
+		{directory: "db", files: []string{"metadata.json", "trivy.db"}},
+		{directory: "java-db", files: []string{"metadata.json", "trivy-java.db"}},
+	} {
+		sourceDirectory := filepath.Join(databaseRoot, database.directory)
+		info, err := os.Lstat(sourceDirectory)
+		if err != nil || !info.IsDir() {
+			return "", fmt.Errorf("database directory %s is unavailable", database.directory)
+		}
+		for _, name := range database.files {
+			fileInfo, statErr := os.Lstat(filepath.Join(sourceDirectory, name))
+			if statErr != nil || !fileInfo.Mode().IsRegular() || fileInfo.Size() <= 0 {
+				return "", fmt.Errorf("database file %s/%s is unavailable", database.directory, name)
+			}
+		}
+		if err := os.Symlink(sourceDirectory, filepath.Join(cacheDirectory, database.directory)); err != nil {
+			return "", fmt.Errorf("link database directory %s: %w", database.directory, err)
+		}
+	}
+	return cacheDirectory, nil
+}
+
+func prepareTrivyInput(
+	ctx context.Context,
+	inputPath, detectedFormat, workDirectory string,
+	maxBytes int64,
+	maxFiles int,
+) (string, error) {
+	switch detectedFormat {
+	case containerarchive.FormatDockerTAR:
+		return inputPath, nil
+	case containerarchive.FormatOCITAR:
+		layoutRoot := filepath.Join(workDirectory, "oci-layout")
+		if err := extractOCIImageLayout(ctx, inputPath, layoutRoot, maxBytes, maxFiles); err != nil {
+			return "", err
+		}
+		return layoutRoot, nil
+	default:
+		return "", fmt.Errorf("unsupported container input format %q", detectedFormat)
+	}
+}
+
+// extractOCIImageLayout materializes an uploaded OCI layout tar into the
+// per-run workspace because Trivy accepts OCI layouts as directories, whereas
+// Docker save archives are accepted directly with --input. Only regular files
+// and directories are allowed; links and special files are rejected so a
+// crafted layout cannot escape or alias the workspace.
+func extractOCIImageLayout(
+	ctx context.Context,
+	inputPath, layoutRoot string,
+	maxBytes int64,
+	maxFiles int,
+) error {
+	if maxBytes <= 0 || maxFiles <= 0 {
+		return fmt.Errorf("OCI extraction limits must be positive")
+	}
+	input, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("open OCI layout archive: %w", err)
+	}
+	defer input.Close()
+	if err := os.Mkdir(layoutRoot, 0o700); err != nil {
+		return fmt.Errorf("create OCI layout root: %w", err)
+	}
+
+	reader := tar.NewReader(input)
+	var expandedBytes int64
+	entries := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		header, nextErr := reader.Next()
+		if errors.Is(nextErr, io.EOF) {
+			break
+		}
+		if nextErr != nil {
+			return fmt.Errorf("read OCI layout archive: %w", nextErr)
+		}
+		entries++
+		if entries > maxFiles {
+			return fmt.Errorf("OCI layout entry limit exceeded")
+		}
+		cleaned, cleanErr := storage.CleanRelativePath(header.Name)
+		if cleanErr != nil {
+			return fmt.Errorf("invalid OCI layout member %q: %w", header.Name, cleanErr)
+		}
+		destination := filepath.Join(layoutRoot, filepath.FromSlash(cleaned))
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(destination, 0o700); err != nil {
+				return fmt.Errorf("create OCI layout directory: %w", err)
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if header.Size < 0 || header.Size > maxBytes-expandedBytes {
+				return fmt.Errorf("OCI layout expanded byte limit exceeded")
+			}
+			if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+				return fmt.Errorf("create OCI layout parent: %w", err)
+			}
+			output, openErr := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o400)
+			if openErr != nil {
+				return fmt.Errorf("create OCI layout member %s: %w", cleaned, openErr)
+			}
+			written, copyErr := copyNWithContext(ctx, output, reader, header.Size)
+			closeErr := output.Close()
+			if copyErr != nil || closeErr != nil || written != header.Size {
+				return fmt.Errorf("write OCI layout member %s: copy=%v close=%v", cleaned,
+					copyErr, closeErr)
+			}
+			expandedBytes += written
+		default:
+			return fmt.Errorf("OCI layout member %s has unsupported type %d", cleaned, header.Typeflag)
+		}
+	}
+
+	for _, name := range []string{"oci-layout", "index.json"} {
+		info, err := os.Lstat(filepath.Join(layoutRoot, name))
+		if err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("OCI layout is missing %s", name)
+		}
+	}
+	blobs, err := os.Lstat(filepath.Join(layoutRoot, "blobs"))
+	if err != nil || !blobs.IsDir() {
+		return fmt.Errorf("OCI layout is missing blobs directory")
+	}
+	return nil
+}
+
+func copyNWithContext(ctx context.Context, destination io.Writer, source io.Reader, size int64) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	written, err := io.CopyN(destination, &contextReader{ctx: ctx, reader: source}, size)
+	if err == nil {
+		err = ctx.Err()
+	}
+	return written, err
 }
 
 func (e *Executor) blobPath(storageKey string) (string, error) {
@@ -292,81 +502,11 @@ func (e *Executor) blobPath(storageKey string) (string, error) {
 }
 
 func detectFile(filename, logicalPath string) (string, error) {
-	file, err := os.Open(filename)
+	detected, err := filetype.Detect(filename, logicalPath)
 	if err != nil {
-		return "", fmt.Errorf("open file for detection: %w", err)
+		return "", err
 	}
-	defer file.Close()
-	header := make([]byte, 512)
-	count, err := file.Read(header)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", fmt.Errorf("read file header: %w", err)
-	}
-	header = header[:count]
-	extension := strings.ToLower(filepath.Ext(logicalPath))
-	if len(header) >= 2 && bytes.Equal(header[:2], []byte{'M', 'Z'}) {
-		return "pe", nil
-	}
-	if len(header) >= 4 && bytes.Equal(header[:4], []byte{0x7f, 'E', 'L', 'F'}) {
-		return "elf", nil
-	}
-	if len(header) >= 4 && bytes.Equal(header[:4], []byte("dex\n")) {
-		return "dex", nil
-	}
-	if len(header) >= 8 && bytes.Equal(header[:4], []byte{0xca, 0xfe, 0xba, 0xbe}) {
-		major := binary.BigEndian.Uint16(header[6:8])
-		if major >= 45 && major <= 100 {
-			return "class", nil
-		}
-	}
-	if hasMachOMagic(header) {
-		return "mach-o", nil
-	}
-	if len(header) >= 4 && (bytes.Equal(header[:4], []byte{'P', 'K', 3, 4}) || bytes.Equal(header[:4], []byte{'P', 'K', 5, 6})) {
-		switch extension {
-		case ".apk":
-			return "apk", nil
-		case ".jar":
-			return "jar", nil
-		case ".war":
-			return "war", nil
-		case ".ear":
-			return "ear", nil
-		default:
-			return "zip", nil
-		}
-	}
-	if extension == ".pyc" && len(header) >= 4 {
-		return "pyc", nil
-	}
-	if len(header) >= 6 && bytes.Equal(header[:6], []byte{0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c}) {
-		return "7z", nil
-	}
-	if len(header) >= 2 && bytes.Equal(header[:2], []byte{0x1f, 0x8b}) {
-		return "gzip", nil
-	}
-	if len(header) >= 262 && string(header[257:262]) == "ustar" {
-		return "tar", nil
-	}
-	return "unknown", nil
-}
-
-func hasMachOMagic(header []byte) bool {
-	if len(header) < 4 {
-		return false
-	}
-	magic := header[:4]
-	values := [][]byte{
-		{0xfe, 0xed, 0xfa, 0xce}, {0xce, 0xfa, 0xed, 0xfe},
-		{0xfe, 0xed, 0xfa, 0xcf}, {0xcf, 0xfa, 0xed, 0xfe},
-		{0xca, 0xfe, 0xba, 0xbe}, {0xbe, 0xba, 0xfe, 0xca},
-	}
-	for _, value := range values {
-		if bytes.Equal(magic, value) {
-			return true
-		}
-	}
-	return false
+	return detected.Format, nil
 }
 
 func publishArtifact(root, taskID, runID string, fence uint64, name, source string) (string, int64, error) {
