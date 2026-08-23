@@ -1,6 +1,10 @@
 package app
 
 import (
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -24,16 +28,19 @@ type reportRequest struct {
 }
 
 type reportRecord struct {
-	ID        string    `json:"id"`
-	TaskID    string    `json:"taskId"`
-	Format    string    `json:"format"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	TaskID      string    `json:"taskId"`
+	Format      string    `json:"format"`
+	Status      string    `json:"status"`
+	SHA256      string    `json:"sha256,omitempty"`
+	SizeBytes   int64     `json:"sizeBytes,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	CompletedAt time.Time `json:"completedAt,omitempty"`
 }
 
 func (s *taskService) createReport(c *gin.Context) {
 	var request reportRequest
-	if err := c.ShouldBindJSON(&request); err != nil || (request.Format != "json" && request.Format != "html") || len(request.RunIDs) == 0 || len(request.RunIDs) > 100 {
+	if err := c.ShouldBindJSON(&request); err != nil || (request.Format != "json" && request.Format != "html" && request.Format != "docx") || len(request.RunIDs) == 0 || len(request.RunIDs) > 100 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_report_request"})
 		return
 	}
@@ -67,6 +74,12 @@ func (s *taskService) createReport(c *gin.Context) {
 		reportBody = []byte("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>BinaryScan 报告</title>" +
 			"<style>body{font:14px/1.6 system-ui;margin:32px;color:#17212b}pre{white-space:pre-wrap;background:#f5f7fa;padding:20px;border-radius:8px}</style>" +
 			"</head><body><h1>BinaryScan 分析报告</h1><pre>" + html.EscapeString(string(snapshotBody)) + "</pre></body></html>")
+	} else if request.Format == "docx" {
+		reportBody, err = buildDOCXReport(snapshotBody)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+			return
+		}
 	}
 	reportID, err := identity.UUID()
 	if err != nil {
@@ -111,8 +124,11 @@ func (s *taskService) createReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
 	}
+	digest := sha256.Sum256(reportBody)
+	now := time.Now().UTC()
 	c.JSON(http.StatusCreated, gin.H{"report": reportRecord{
-		ID: reportID, TaskID: taskID, Format: request.Format, Status: "ready", CreatedAt: time.Now().UTC(),
+		ID: reportID, TaskID: taskID, Format: request.Format, Status: "ready", SHA256: fmt.Sprintf("%x", digest[:]),
+		SizeBytes: sizeBytes, CreatedAt: now, CompletedAt: now,
 	}})
 }
 
@@ -206,7 +222,7 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 }
 
 func (s *taskService) listReports(c *gin.Context) {
-	rows, err := s.db.QueryContext(c, `SELECT id, task_id, format, status, created_at
+	rows, err := s.db.QueryContext(c, `SELECT id, task_id, format, status, storage_key, created_at
         FROM reports WHERE task_id = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100`, c.Param("taskID"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_query_failed"})
@@ -216,9 +232,20 @@ func (s *taskService) listReports(c *gin.Context) {
 	reports := make([]reportRecord, 0)
 	for rows.Next() {
 		var report reportRecord
-		if err := rows.Scan(&report.ID, &report.TaskID, &report.Format, &report.Status, &report.CreatedAt); err != nil {
+		var storageKey string
+		if err := rows.Scan(&report.ID, &report.TaskID, &report.Format, &report.Status, &storageKey, &report.CreatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_query_failed"})
 			return
+		}
+		if report.Status == "ready" {
+			report.CompletedAt = report.CreatedAt
+			if cleaned, cleanErr := storage.CleanRelativePath(storageKey); cleanErr == nil {
+				if body, readErr := os.ReadFile(filepath.Join(s.storageRoot, filepath.FromSlash(cleaned))); readErr == nil {
+					digest := sha256.Sum256(body)
+					report.SHA256 = fmt.Sprintf("%x", digest[:])
+					report.SizeBytes = int64(len(body))
+				}
+			}
 		}
 		reports = append(reports, report)
 	}
@@ -251,13 +278,81 @@ func (s *taskService) downloadReport(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "report_file_not_found"})
 		return
 	}
+	if c.Query("encoding") == "gzip" {
+		body, err := os.ReadFile(filename)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "report_file_not_found"})
+			return
+		}
+		var compressed bytes.Buffer
+		writer := gzip.NewWriter(&compressed)
+		if _, err := writer.Write(body); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_compression_failed"})
+			return
+		}
+		if err := writer.Close(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_compression_failed"})
+			return
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"binaryscan-%s.%s.gz\"", c.Param("reportID"), format))
+		c.Data(http.StatusOK, "application/gzip", compressed.Bytes())
+		return
+	}
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"binaryscan-%s.%s\"", c.Param("reportID"), format))
 	if format == "html" {
 		c.Header("Content-Type", "text/html; charset=utf-8")
+	} else if format == "docx" {
+		c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 	} else {
 		c.Header("Content-Type", "application/json")
 	}
 	c.File(filename)
+}
+
+func buildDOCXReport(snapshot []byte) ([]byte, error) {
+	var body bytes.Buffer
+	archive := zip.NewWriter(&body)
+	files := map[string]string{
+		"[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+		"_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`,
+		"word/document.xml": docxDocumentXML(snapshot),
+	}
+	for _, name := range []string{"[Content_Types].xml", "_rels/.rels", "word/document.xml"} {
+		writer, err := archive.Create(name)
+		if err != nil {
+			archive.Close()
+			return nil, err
+		}
+		if _, err := writer.Write([]byte(files[name])); err != nil {
+			archive.Close()
+			return nil, err
+		}
+	}
+	if err := archive.Close(); err != nil {
+		return nil, err
+	}
+	return body.Bytes(), nil
+}
+
+func docxDocumentXML(snapshot []byte) string {
+	var paragraphs strings.Builder
+	paragraphs.WriteString(`<w:p><w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t>BinaryScan 分析报告</w:t></w:r></w:p>`)
+	for _, line := range strings.Split(string(snapshot), "\n") {
+		paragraphs.WriteString(`<w:p><w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">`)
+		paragraphs.WriteString(html.EscapeString(line))
+		paragraphs.WriteString(`</w:t></w:r></w:p>`)
+	}
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+		paragraphs.String() + `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>`
 }
 
 func publishReportFile(root, taskID, reportID, format string, body []byte) (string, int64, error) {

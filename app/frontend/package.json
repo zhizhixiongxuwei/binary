@@ -5,12 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vue-tsc -b && vite build --configLoader native",
+    "dev:demo": "vite --host 127.0.0.1 --mode demo",
+    "build": "vue-tsc -b && vite build",
+    "build:demo": "vue-tsc -b && vite build --mode demo --outDir dist-demo",
     "typecheck": "vue-tsc -b"
   },
   "dependencies": {
+    "element-plus": "2.11.0",
     "lucide-vue-next": "0.468.0",
-    "vue": "3.5.20"
+    "monaco-editor": "0.52.2",
+    "pinia": "3.0.3",
+    "vue": "3.5.20",
+    "vue-router": "4.5.1"
   },
   "devDependencies": {
     "@types/node": "24.3.0",

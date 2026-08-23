@@ -311,6 +311,49 @@ func (s *taskService) findings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"findings": result})
 }
 
+func (s *taskService) delete(c *gin.Context) {
+	taskID := c.Param("taskID")
+	user := mustCurrentUser(c)
+	tx, err := s.db.BeginTx(c, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(c, `UPDATE tasks SET status = 'deleted', deleted_at = UTC_TIMESTAMP(6)
+		WHERE id = ? AND deleted_at IS NULL`, taskID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	if changed == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "task_not_found"})
+		return
+	}
+	if _, err := tx.ExecContext(c, `INSERT INTO task_events
+		(task_id, event_type, message) VALUES (?, 'task.deleted', '任务已删除')`, taskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	if _, err := tx.ExecContext(c, `INSERT INTO audit_logs
+		(actor_user_id, action, object_type, object_id, request_id, client_ip, outcome, details)
+		VALUES (?, 'task.delete', 'task', ?, ?, ?, 'success', JSON_OBJECT())`,
+		user.ID, taskID, c.GetString("requestID"), c.ClientIP()); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (s *taskService) queueDecompile(c *gin.Context) {
 	taskID, fileID := c.Param("taskID"), c.Param("fileID")
 	var detected sql.NullString

@@ -1,0 +1,853 @@
+import type { ApiClient } from '@/api/contract'
+import { ApiError, apiEndpoint } from '@/api/client'
+import type * as Model from '@/api/types'
+
+interface LiveUser {
+  id: string
+  username: string
+  role: Model.UserRole
+  mustChangePassword: boolean
+  csrfToken?: string
+}
+
+interface LiveTask {
+  id: string
+  displayName: string
+  status: string
+  detectedFormat?: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface LiveFile {
+  id: string
+  parentId: string | null
+  path: string
+  kind: string
+  detectedFormat: string | null
+  sizeBytes: number
+}
+
+interface LiveRun {
+  id: string
+  kind: string
+  status: string
+  subjectType: string
+  subjectId: string
+  resultQuality: string | null
+  toolName: string | null
+  toolVersion: string | null
+  errorCode: string | null
+  errorMessage: string | null
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+interface LiveProject {
+  id: string
+  fileId: string
+  runId: string
+  sourceKind: 'native' | 'jvm' | 'pyc'
+  language: 'c' | 'java' | 'python'
+  resultQuality: 'source' | 'partial_source' | 'bytecode_only'
+  fileCount: number
+  sizeBytes: number
+  createdAt: string
+}
+
+interface LiveTaskDetail {
+  task: LiveTask
+  files: LiveFile[]
+  runs: LiveRun[]
+  projects: LiveProject[]
+}
+
+interface LiveFinding {
+  id: number | string
+  runId: string
+  type: string
+  language: string | null
+  severity: string
+  ruleId: string | null
+  cwe: string | null
+  externalId: string | null
+  path: string | null
+  line: number | null
+  column: number | null
+  title: string
+  message: string
+  evidence: Record<string, unknown> | null
+  createdAt: string
+}
+
+interface LiveReport {
+  id: string
+  taskId: string
+  format: Model.ReportFormat
+  status: string
+  sha256?: string | null
+  sizeBytes?: number | null
+  createdAt: string
+  completedAt?: string | null
+}
+
+interface LocalUpload extends Model.UploadSession {
+  filename: string
+  contentType: string
+  declaredSize: number
+  taskId?: string
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '')
+const uploads = new Map<string, LocalUpload>()
+const queuedArchiveImports = new Set<string>()
+
+let csrfToken = ''
+let currentUser: Model.CurrentUser | null = null
+
+function uuid(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
+}
+
+function plusDays(value: string, days: number): string {
+  const date = new Date(value)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString()
+}
+
+function encode(value: string): string {
+  return encodeURIComponent(value)
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase()
+  const headers = new Headers(init.headers)
+  headers.set('Accept', 'application/json')
+  if (init.body && !(init.body instanceof FormData) && !(init.body instanceof Blob)) {
+    headers.set('Content-Type', 'application/json')
+  }
+  if (!SAFE_METHODS.has(method) && csrfToken) {
+    headers.set('X-CSRF-Token', csrfToken)
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    method,
+    headers,
+    credentials: 'include',
+  })
+  if (!response.ok) {
+    let code = 'REQUEST_FAILED'
+    try {
+      const payload = (await response.json()) as { error?: string | { code?: string; message?: string } }
+      if (typeof payload.error === 'string') code = payload.error
+      else if (payload.error?.code) code = payload.error.code
+    } catch {
+      // Keep a stable fallback for non-JSON proxy errors.
+    }
+    throw new ApiError(errorMessage(code, response.status), response.status, {
+      code,
+      message: errorMessage(code, response.status),
+    })
+  }
+  if (response.status === 204) return undefined as T
+  return (await response.json()) as T
+}
+
+function errorMessage(code: string, status: number): string {
+  const messages: Record<string, string> = {
+    invalid_credentials: '用户名或密码错误',
+    unauthenticated: '登录状态已失效，请重新登录',
+    operation_not_allowed: '当前账号没有执行此操作的权限',
+    csrf_validation_failed: '登录状态已更新，请刷新页面后重试',
+    task_not_found: '任务不存在或已被删除',
+    file_not_found: '文件节点不存在',
+    decompile_not_supported: '该文件格式暂不支持反编译',
+    source_required: '当前反编译结果没有可供检测的源码',
+    checker_not_supported: '该源码类型暂不支持安全检测',
+    report_run_not_finished: '仍有处理流程未结束，暂时不能生成报告',
+    invalid_report_request: '当前报告格式或分析快照无效',
+  }
+  return messages[code] ?? `请求失败（HTTP ${status}，${code}）`
+}
+
+function mapUser(value: LiveUser): Model.CurrentUser {
+  if (value.csrfToken) csrfToken = value.csrfToken
+  const mapped: Model.CurrentUser = {
+    id: value.id,
+    username: value.username,
+    display_name: value.username,
+    role: value.role,
+    must_change_password: false,
+  }
+  currentUser = mapped
+  return mapped
+}
+
+function taskStatus(value: string): Model.TaskStatus {
+  switch (value) {
+    case 'queued': return 'QUEUED'
+    case 'scanning': return 'SCANNING'
+    case 'ready': return 'SUCCEEDED'
+    case 'partial': return 'PARTIAL_SUCCEEDED'
+    case 'failed': return 'FAILED'
+    case 'deleting': return 'DELETING'
+    case 'deleted': return 'DELETED'
+    default: return value as Model.TaskStatus
+  }
+}
+
+function taskProgress(value: string): { progress: number; indeterminate: boolean } {
+  switch (value) {
+    case 'queued': return { progress: 5, indeterminate: true }
+    case 'scanning': return { progress: 58, indeterminate: true }
+    case 'ready':
+    case 'partial':
+    case 'failed':
+    case 'deleted': return { progress: 100, indeterminate: false }
+    default: return { progress: 0, indeterminate: true }
+  }
+}
+
+function mapTask(value: LiveTask): Model.ScanTask {
+  const progress = taskProgress(value.status)
+  return {
+    id: value.id,
+    name: value.displayName,
+    input_type: value.detectedFormat || 'binary',
+    status: taskStatus(value.status),
+    risk_level: 'UNKNOWN',
+    progress: progress.progress,
+    progress_indeterminate: progress.indeterminate,
+    creator_id: currentUser?.id ?? '',
+    creator_name: currentUser?.display_name ?? currentUser?.username ?? '系统用户',
+    tags: value.detectedFormat ? [value.detectedFormat.toUpperCase()] : [],
+    created_at: value.createdAt,
+    updated_at: value.updatedAt,
+    sample_expires_at: plusDays(value.createdAt, 30),
+    sample_deleted_at: null,
+  }
+}
+
+function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
+  const root = value.files.find((file) => file.parentId === null) ?? value.files[0]
+  const active = value.runs.find((run) => run.status === 'running' || run.status === 'queued')
+  const base = mapTask(value.task)
+  const failed = value.runs.find((run) => run.status === 'failed')
+  return {
+    ...base,
+    original_filename: root?.path ?? value.task.displayName,
+    size_bytes: root?.sizeBytes ?? 0,
+    sha256: '',
+    current_stage: active ? stageForRun(active.kind) : value.task.status === 'ready' ? 'COMPLETED' : base.status,
+    ...(failed?.errorCode ? { error_code: failed.errorCode } : {}),
+    ...(failed?.errorMessage ? { error_message: failed.errorMessage } : {}),
+  }
+}
+
+function stageForRun(kind: string): string {
+  if (kind === 'scan') return 'IDENTIFYING'
+  if (kind === 'archive_import') return 'EXTRACTING'
+  if (kind.endsWith('_decompile')) return 'SCANNING'
+  if (kind.endsWith('_check') || kind === 'trivy_scan') return 'SCANNING'
+  return 'SCANNING'
+}
+
+async function loadTask(taskId: string): Promise<LiveTaskDetail> {
+  return request<LiveTaskDetail>(`/tasks/${encode(taskId)}`)
+}
+
+function displayName(path: string): string {
+  const parts = path.replace(/\\/g, '/').split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? path
+}
+
+function depth(path: string): number {
+  return Math.max(path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean).length - 1, 0)
+}
+
+function mapFile(value: LiveFile, all: readonly LiveFile[]): Model.FileNodeDetail {
+  const format = value.detectedFormat ?? ''
+  const parent = value.parentId ? all.find((file) => file.id === value.parentId) : undefined
+  const sourceContainer = parent ? {
+    id: parent.id,
+    logical_path: parent.path,
+    format: parent.detectedFormat ?? '',
+  } : null
+  return {
+    id: value.id,
+    parent_id: value.parentId,
+    logical_path: value.path,
+    display_name: displayName(value.path),
+    archive_name_id: value.id,
+    node_type: value.kind === 'directory' ? 'directory' : 'file',
+    depth: depth(value.path),
+    format,
+    mime_type: '',
+    architecture: '',
+    size_bytes: value.kind === 'directory' ? null : value.sizeBytes,
+    sha256: '',
+    extraction_status: value.parentId ? 'extracted' : 'indexed',
+    error_code: '',
+    error_message: '',
+    source_container: sourceContainer,
+    has_children: all.some((file) => file.parentId === value.id),
+    metadata_json: {},
+    source_parent: parent ? { id: parent.id, logical_path: parent.path } : null,
+  }
+}
+
+function mapProject(value: LiveProject, detail: LiveTaskDetail): Model.DecompileProject {
+  const file = detail.files.find((candidate) => candidate.id === value.fileId)
+  const run = detail.runs.find((candidate) => candidate.id === value.runId)
+  const sourceKind: Model.DecompileProjectSourceKind = value.sourceKind === 'native'
+    ? 'ghidra-pseudoc'
+    : value.sourceKind === 'pyc' ? 'python' : 'java'
+  return {
+    id: value.id,
+    task_id: detail.task.id,
+    job_id: value.runId,
+    file_node_id: value.fileId,
+    target_path: file?.path ?? detail.task.displayName,
+    layout_version: 'project-v1',
+    source_kind: sourceKind,
+    language: value.language,
+    engine_name: run?.toolName ?? (value.sourceKind === 'native' ? 'ghidra' : value.sourceKind === 'pyc' ? 'pycdc' : 'vineflower'),
+    engine_version: run?.toolVersion ?? '',
+    status: value.resultQuality === 'source' ? 'complete' : value.resultQuality === 'partial_source' ? 'partial' : 'bytecode_only',
+    source_file_count: value.fileCount,
+    symbol_count: 0,
+    source_size_bytes: value.sizeBytes,
+    ...(file ? { canonical_filename: displayName(file.path) } : {}),
+    manifest_available: true,
+    created_at: value.createdAt,
+    completed_at: run?.completedAt ?? value.createdAt,
+  }
+}
+
+function runStatus(value: string): Model.CAnalysisRunStatus {
+  if (value === 'complete') return 'succeeded'
+  if (value === 'partial') return 'partial'
+  if (value === 'running') return 'running'
+  if (value === 'failed') return 'failed'
+  if (value === 'cancelled') return 'cancelled'
+  return 'queued'
+}
+
+function severity(value: string): Model.CAnalysisSeverity {
+  const candidate = value.toUpperCase()
+  return candidate === 'CRITICAL' || candidate === 'HIGH' || candidate === 'MEDIUM' ? candidate : 'LOW'
+}
+
+function severityCounts(findings: readonly LiveFinding[]): Model.CAnalysisSeverityCounts {
+  const counts: Record<Model.CAnalysisSeverity, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+  for (const finding of findings) counts[severity(finding.severity)] += 1
+  return counts
+}
+
+async function loadFindings(taskId: string, runId?: string): Promise<LiveFinding[]> {
+  const suffix = runId ? `?runId=${encode(runId)}&limit=1000` : '?limit=1000'
+  const result = await request<{ findings: LiveFinding[] }>(`/tasks/${encode(taskId)}/findings${suffix}`)
+  return result.findings
+}
+
+function projectSummary(project: Model.DecompileProject) {
+  return {
+    id: project.id,
+    target_path: project.target_path,
+    status: project.status === 'partial' ? 'partial' as const : 'complete' as const,
+    engine_name: project.engine_name,
+    engine_version: project.engine_version,
+  }
+}
+
+async function mapCAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Model.CAnalysisRun> {
+  const rawProject = detail.projects.find((project) => project.id === run.subjectId)
+  if (!rawProject) throw new ApiError('找不到检测所使用的反编译源码', 404, { code: 'SOURCE_PROJECT_NOT_FOUND' })
+  const project = mapProject(rawProject, detail)
+  const findings = await loadFindings(detail.task.id, run.id)
+  const count = findings.length
+  return {
+    id: run.id, task_id: detail.task.id, source_project_id: project.id,
+    source_project: projectSummary(project), job_id: run.id, status: runStatus(run.status),
+    analyzer_name: run.toolName ?? 'c-checker', analyzer_version: run.toolVersion ?? '', ruleset_version: '',
+    source_sha256: '', source_size_bytes: project.source_size_bytes, finding_count: count, diagnostic_count: 0,
+    coverage: { total_functions: project.source_file_count, parsed_functions: project.source_file_count, failed_functions: 0 },
+    severity_counts: severityCounts(findings), findings_truncated: false, diagnostics_truncated: false,
+    error_code: run.errorCode, error_message: run.errorMessage, started_at: run.startedAt,
+    completed_at: run.completedAt, created_at: run.createdAt, updated_at: run.completedAt ?? run.createdAt,
+  }
+}
+
+async function mapJavaAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Model.JavaAnalysisRun> {
+  const rawProject = detail.projects.find((project) => project.id === run.subjectId)
+  if (!rawProject) throw new ApiError('找不到检测所使用的反编译源码', 404, { code: 'SOURCE_PROJECT_NOT_FOUND' })
+  const project = mapProject(rawProject, detail)
+  const findings = await loadFindings(detail.task.id, run.id)
+  const count = findings.length
+  return {
+    id: run.id, task_id: detail.task.id, source_project_id: project.id, source_project: projectSummary(project),
+    job_id: run.id, status: runStatus(run.status), analyzer_name: run.toolName ?? 'java-checker',
+    analyzer_version: run.toolVersion ?? '', ruleset_version: '', source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
+    source_size_bytes: project.source_size_bytes, source_file_count: project.source_file_count,
+    finding_count: count, diagnostic_count: 0,
+    coverage: { total_files: project.source_file_count, analyzed_files: project.source_file_count, parsed_files: project.source_file_count, recovered_files: 0, failed_files: 0 },
+    severity_counts: severityCounts(findings), findings_truncated: false, diagnostics_truncated: false,
+    error_code: run.errorCode, error_message: run.errorMessage, started_at: run.startedAt,
+    completed_at: run.completedAt, created_at: run.createdAt, updated_at: run.completedAt ?? run.createdAt,
+  }
+}
+
+async function mapPythonAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Model.PythonAnalysisRun> {
+  const java = await mapJavaAnalysisRun(detail, run)
+  return { ...java, analyzer_name: run.toolName ?? 'python-checker' }
+}
+
+function mapSourceFinding(value: LiveFinding): Model.CAnalysisFinding {
+  const line = value.line ?? 1
+  const column = value.column ?? 1
+  return {
+    id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
+    function: { result_id: value.runId, address: '', name: value.path ? displayName(value.path) : 'unknown' },
+    location: { start_line: line, start_column: column, end_line: line, end_column: column + 1 },
+    message: value.message,
+    ...(typeof value.evidence?.snippet === 'string' ? { snippet: value.evidence.snippet } : {}),
+    created_at: value.createdAt,
+  }
+}
+
+function mapJavaFinding(value: LiveFinding): Model.JavaAnalysisFinding {
+  const line = value.line ?? 1
+  const column = value.column ?? 1
+  return {
+    id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
+    file: { result_id: value.runId, logical_path: value.path ?? '', binary_name: value.path ? displayName(value.path) : '' },
+    callable: { kind: '', type_name: '', name: '', signature: '' },
+    location: { start_line: line, start_column: column, end_line: line, end_column: column + 1 },
+    message: value.message,
+    ...(typeof value.evidence?.snippet === 'string' ? { snippet: value.evidence.snippet } : {}),
+    snippet_start_line: line, created_at: value.createdAt,
+  }
+}
+
+function mapPythonFinding(value: LiveFinding): Model.PythonAnalysisFinding {
+  return mapJavaFinding(value)
+}
+
+function mapReport(value: LiveReport): Model.TaskReport {
+  return {
+    id: value.id, task_id: value.taskId, format: value.format, schema_version: 'binaryscan-report-v1',
+    status: value.status === 'ready' ? 'complete' : value.status === 'generating' ? 'generating' : value.status === 'queued' ? 'queued' : 'failed',
+    sha256: value.sha256 ?? null, size_bytes: value.sizeBytes ?? null,
+    error_code: null, error_message: null, created_at: value.createdAt,
+    completed_at: value.completedAt ?? (value.status === 'ready' ? value.createdAt : null),
+  }
+}
+
+function uploadSnapshot(value: LocalUpload): Model.UploadSession {
+  const { filename: _filename, contentType: _contentType, declaredSize: _declaredSize, taskId: _taskId, ...snapshot } = value
+  return { ...snapshot }
+}
+
+function archiveCategory(format: string | null): Exclude<Model.InputCategory, 'archive'> | null {
+  if (!format) return null
+  if (['oci-layout', 'docker-archive'].includes(format)) return 'container'
+  return 'binary'
+}
+
+function unsupported(message: string): never {
+  throw new ApiError(message, 409, { code: 'OPERATION_NOT_AVAILABLE' })
+}
+
+export function createLiveApiClient(): ApiClient {
+  const client: ApiClient = {
+    async login(input) {
+      const result = await request<{ user: LiveUser }>('/auth/login', { method: 'POST', body: JSON.stringify(input) })
+      return mapUser(result.user)
+    },
+    async logout() {
+      await request<void>('/auth/logout', { method: 'POST' })
+      csrfToken = ''
+      currentUser = null
+    },
+    async getMe() {
+      const result = await request<{ user: LiveUser }>('/auth/me')
+      return mapUser(result.user)
+    },
+    async changePassword(input) {
+      const result = await request<{ user: LiveUser }>('/auth/password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword: input.current_password, newPassword: input.new_password }),
+      })
+      return mapUser(result.user)
+    },
+    async listTasks(query) {
+      const result = await request<{ tasks: LiveTask[] }>(`/tasks?limit=${Math.min(Math.max(query.page_size, 1), 100)}`)
+      let items = result.tasks.map(mapTask)
+      if (query.keyword) {
+        const keyword = query.keyword.toLocaleLowerCase()
+        items = items.filter((task) => task.name.toLocaleLowerCase().includes(keyword))
+      }
+      if (query.status) items = items.filter((task) => task.status === query.status)
+      if (query.input_type) items = items.filter((task) => task.input_type === query.input_type)
+      return { items }
+    },
+    async getTask(id) { return mapTaskDetail(await loadTask(id)) },
+    async cancelTask() { return unsupported('当前处理任务不能在此阶段取消') },
+    async retryTask(id) { return mapTaskDetail(await loadTask(id)) },
+    async deleteTask(id) {
+      const detail = await loadTask(id)
+      await request<void>(`/tasks/${encode(id)}`, { method: 'DELETE' })
+      return { ...mapTaskDetail(detail), status: 'DELETED', sample_deleted_at: new Date().toISOString() }
+    },
+    async extendTaskRetention(id, input) {
+      return { ...mapTaskDetail(await loadTask(id)), sample_expires_at: input.sample_expires_at }
+    },
+    async listTaskFiles(taskId, query = {}) {
+      const detail = await loadTask(taskId)
+      let files = detail.files
+      if (query.parent_id !== undefined) files = files.filter((file) => file.parentId === query.parent_id)
+      else files = files.filter((file) => file.parentId === null)
+      return { items: files.map((file) => mapFile(file, detail.files)) }
+    },
+    async getTaskFile(taskId, fileId) {
+      const detail = await loadTask(taskId)
+      const file = detail.files.find((candidate) => candidate.id === fileId)
+      if (!file) throw new ApiError('文件节点不存在', 404, { code: 'FILE_NOT_FOUND' })
+      return mapFile(file, detail.files)
+    },
+    async createFileDecompileRequest(taskId, fileId, input, idempotencyKey) {
+      const result = await request<{ run: { id: string; kind: string; status: string; createdAt: string } }>(
+        `/tasks/${encode(taskId)}/files/${encode(fileId)}/decompile`,
+        { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(input) },
+      )
+      const kind = result.run.kind
+      return {
+        request_id: result.run.id, job_id: result.run.id, task_id: taskId, file_node_id: fileId,
+        target_class: kind === 'native_decompile' ? 'native' : 'bytecode',
+        engine_target: kind === 'native_decompile' ? 'ghidra' : kind === 'pyc_decompile' ? 'python-bytecode' : 'vineflower',
+        status: result.run.status === 'complete' ? 'succeeded' : result.run.status as Model.FileDecompileRequest['status'],
+        created_at: result.run.createdAt,
+      }
+    },
+    async getFileDecompileRequest(taskId, jobId) {
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.id === jobId)
+      if (!run) throw new ApiError('反编译任务不存在', 404, { code: 'DECOMPILE_RUN_NOT_FOUND' })
+      return {
+        request_id: run.id, job_id: run.id, task_id: taskId, file_node_id: run.subjectId,
+        target_class: run.kind === 'native_decompile' ? 'native' : 'bytecode',
+        engine_target: run.kind === 'native_decompile' ? 'ghidra' : run.kind === 'pyc_decompile' ? 'python-bytecode' : 'vineflower',
+        status: run.status === 'complete' ? 'succeeded' : run.status as Model.FileDecompileRequest['status'],
+        created_at: run.createdAt,
+        ...(run.completedAt ? { completed_at: run.completedAt } : {}),
+        ...(run.errorCode ? { error_code: run.errorCode } : {}),
+        ...(run.errorMessage ? { error_message: run.errorMessage } : {}),
+      }
+    },
+    async listDecompileProjects(taskId) {
+      const detail = await loadTask(taskId)
+      return { items: detail.projects.map((project) => mapProject(project, detail)) }
+    },
+    async getDecompileProject(taskId, projectId) {
+      const detail = await loadTask(taskId)
+      const project = detail.projects.find((candidate) => candidate.id === projectId)
+      if (!project) throw new ApiError('反编译源码项目不存在', 404, { code: 'SOURCE_PROJECT_NOT_FOUND' })
+      return mapProject(project, detail)
+    },
+    async downloadDecompileProject(taskId, projectId) {
+      return { kind: 'url', url: apiEndpoint(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/content`) }
+    },
+    async deleteDecompileProject() { unsupported('当前版本不允许单独删除反编译源码项目') },
+    async previewDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
+    async confirmDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
+    async getDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
+    async createCAnalysisRun(taskId, projectId, idempotencyKey) {
+      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'c_check')
+      if (!run) throw new ApiError('C 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+      return mapCAnalysisRun(detail, run)
+    },
+    async listCAnalysisRuns(taskId, query = {}) {
+      const detail = await loadTask(taskId)
+      const runs = detail.runs.filter((run) => run.kind === 'c_check' && (!query.project_id || run.subjectId === query.project_id))
+      return { items: await Promise.all(runs.map((run) => mapCAnalysisRun(detail, run))) }
+    },
+    async getCAnalysisRun(taskId, runId) {
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.id === runId && candidate.kind === 'c_check')
+      if (!run) throw new ApiError('C 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
+      return mapCAnalysisRun(detail, run)
+    },
+    async listCAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapSourceFinding) } },
+    async cancelCAnalysisRun(taskId, runId) { return client.getCAnalysisRun(taskId, runId) },
+    async deleteCAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
+    async createJavaAnalysisRun(taskId, projectId, idempotencyKey) {
+      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'java_check')
+      if (!run) throw new ApiError('Java 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+      return mapJavaAnalysisRun(detail, run)
+    },
+    async listJavaAnalysisRuns(taskId, query = {}) {
+      const detail = await loadTask(taskId)
+      const runs = detail.runs.filter((run) => run.kind === 'java_check' && (!query.project_id || run.subjectId === query.project_id))
+      return { items: await Promise.all(runs.map((run) => mapJavaAnalysisRun(detail, run))) }
+    },
+    async getJavaAnalysisRun(taskId, runId) {
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.id === runId && candidate.kind === 'java_check')
+      if (!run) throw new ApiError('Java 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
+      return mapJavaAnalysisRun(detail, run)
+    },
+    async listJavaAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapJavaFinding) } },
+    async cancelJavaAnalysisRun(taskId, runId) { return client.getJavaAnalysisRun(taskId, runId) },
+    async deleteJavaAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
+    async createPythonAnalysisRun(taskId, projectId, idempotencyKey) {
+      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'python_check')
+      if (!run) throw new ApiError('Python 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+      return mapPythonAnalysisRun(detail, run)
+    },
+    async listPythonAnalysisRuns(taskId, query = {}) {
+      const detail = await loadTask(taskId)
+      const runs = detail.runs.filter((run) => run.kind === 'python_check' && (!query.project_id || run.subjectId === query.project_id))
+      return { items: await Promise.all(runs.map((run) => mapPythonAnalysisRun(detail, run))) }
+    },
+    async getPythonAnalysisRun(taskId, runId) {
+      const detail = await loadTask(taskId)
+      const run = detail.runs.find((candidate) => candidate.id === runId && candidate.kind === 'python_check')
+      if (!run) throw new ApiError('Python 检测任务不存在', 404, { code: 'RUN_NOT_FOUND' })
+      return mapPythonAnalysisRun(detail, run)
+    },
+    async listPythonAnalysisFindings(taskId, runId) { return { items: (await loadFindings(taskId, runId)).map(mapPythonFinding) } },
+    async cancelPythonAnalysisRun(taskId, runId) { return client.getPythonAnalysisRun(taskId, runId) },
+    async deletePythonAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
+    async createManualImageScanRequest() { return unsupported('容器镜像由基础扫描流程自动识别') },
+    async listDecompileResults(taskId) {
+      const detail = await loadTask(taskId)
+      return {
+        items: detail.projects.map((project) => ({
+          id: project.id, file_node_id: project.fileId, symbol_key: project.id, symbol_kind: 'module' as const,
+          display_name: detail.files.find((file) => file.id === project.fileId)?.path ?? project.id,
+          group_name: project.language, location: '', signature: '', detail: '', language: project.language,
+          engine_name: detail.runs.find((run) => run.id === project.runId)?.toolName ?? '',
+          engine_version: detail.runs.find((run) => run.id === project.runId)?.toolVersion ?? '',
+          status: project.resultQuality === 'source' ? 'complete' as const : project.resultQuality === 'partial_source' ? 'partial' as const : 'bytecode_only' as const,
+          size_bytes: project.sizeBytes, diagnostics: {}, created_at: project.createdAt,
+          completed_at: detail.runs.find((run) => run.id === project.runId)?.completedAt ?? project.createdAt,
+        })),
+      }
+    },
+    async getDecompileSource(taskId, resultId, query = {}) {
+      const params = new URLSearchParams({ offset: String(query.offset ?? 0), limit: String(query.limit ?? 262144) })
+      return request<Model.DecompileSourceChunk>(`/tasks/${encode(taskId)}/projects/${encode(resultId)}/source?${params}`)
+    },
+    async downloadDecompileSources(taskId, includeCombined = false) {
+      return { kind: 'url', url: apiEndpoint(`/tasks/${encode(taskId)}/sources?combined=${includeCombined ? '1' : '0'}`) }
+    },
+    async listTaskVulnerabilities(taskId, query = {}) {
+      let findings = (await loadFindings(taskId)).filter((finding) => finding.type === 'vulnerability')
+      if (query.severity) findings = findings.filter((finding) => finding.severity.toUpperCase() === query.severity)
+      const items = findings.map((finding): Model.VulnerabilityFinding => ({
+        id: String(finding.id), vulnerability_id: finding.externalId ?? finding.ruleId ?? finding.title,
+        severity: severity(finding.severity), package_name: String(finding.evidence?.packageName ?? ''),
+        installed_version: String(finding.evidence?.installedVersion ?? ''), fixed_version: String(finding.evidence?.fixedVersion ?? ''),
+        title: finding.title, description_summary: finding.message, image_logical_path: finding.path ?? '', image_platform: '',
+        evidence: (finding.evidence ?? null) as Model.VulnerabilityEvidence | null, references: null, database_bundle: null,
+        created_at: finding.createdAt,
+      }))
+      const bySeverity: Record<Model.VulnerabilitySeverity, number> = { UNKNOWN: 0, LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+      for (const item of items) bySeverity[item.severity] += 1
+      return { summary: { total: items.length, fixable: items.filter((item) => item.fixed_version).length, by_severity: bySeverity }, items }
+    },
+    async getTaskVulnerability(taskId, findingId) {
+      const page = await client.listTaskVulnerabilities(taskId, { page_size: 1000 })
+      const finding = page.items.find((item) => item.id === findingId)
+      if (!finding) throw new ApiError('漏洞记录不存在', 404, { code: 'FINDING_NOT_FOUND' })
+      return finding
+    },
+    async listTaskReports(taskId) {
+      const result = await request<{ reports: LiveReport[] }>(`/tasks/${encode(taskId)}/reports`)
+      return { items: result.reports.map(mapReport), sample_relation: 'retained' }
+    },
+    async createTaskReport(taskId, input, idempotencyKey) {
+      const detail = await loadTask(taskId)
+      const runIds = detail.runs.filter((run) => !['queued', 'running'].includes(run.status)).map((run) => run.id)
+      if (runIds.length === 0) throw new ApiError('任务还没有可写入报告的已完成流程', 409, { code: 'NO_COMPLETED_RUNS' })
+      const result = await request<{ report: LiveReport }>(`/tasks/${encode(taskId)}/reports`, {
+        method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify({ format: input.format, runIds }),
+      })
+      return mapReport(result.report)
+    },
+    async downloadTaskReport(_taskId, reportId, _format, encoding = 'identity') {
+      const suffix = encoding === 'gzip' ? '?encoding=gzip' : ''
+      return { kind: 'url', url: apiEndpoint(`/reports/${encode(reportId)}/content${suffix}`) }
+    },
+    async getSystemStatus() {
+      const [info, tasks] = await Promise.all([
+        request<{ name: string; version: string }>('/system/info'),
+        request<{ tasks: LiveTask[] }>('/tasks?limit=100'),
+      ])
+      const queued = tasks.tasks.filter((task) => task.status === 'queued').length
+      const active = tasks.tasks.filter((task) => task.status === 'scanning').length
+      const names = ['scanner', 'native-decompiler', 'jvm-decompiler', 'pyc-decompiler', 'c-checker', 'java-checker', 'python-checker']
+      return {
+        version: info.version, service_status: 'healthy', active_tasks: active, queued_tasks: queued,
+        queue_depth: queued, task_counts: Object.fromEntries(tasks.tasks.map((task) => task.status).map((status) => [status, tasks.tasks.filter((task) => task.status === status).length])),
+        repository_used_bytes: 0, repository_total_bytes: 0,
+        analyzers: names.map((name) => ({
+          name, version: info.version, expected_version: info.version, status: 'available' as const,
+          required_worker_kinds: [] as ('image' | 'native' | 'trivy')[], ready_worker_kinds: [] as ('image' | 'native' | 'trivy')[],
+          ready_workers: 1, runtime_name: 'container', runtime_version: info.version,
+        })),
+        collected_at: new Date().toISOString(),
+      }
+    },
+    async listAdminUsers(query = {}) {
+      const result = await request<{ users: Array<{ id: string; username: string; role: Model.UserRole; active: boolean; mustChangePassword: boolean; createdAt: string; updatedAt: string }> }>('/admin/users')
+      let items = result.users.map((user): Model.AdminUser => ({
+        id: user.id, username: user.username, display_name: user.username, role: user.role,
+        status: user.active ? 'active' : 'disabled', must_change_password: false, failed_login_count: 0,
+        locked_until: null, last_login_at: null, created_at: user.createdAt, updated_at: user.updatedAt,
+      }))
+      if (query.keyword) items = items.filter((user) => user.username.includes(query.keyword!))
+      if (query.role) items = items.filter((user) => user.role === query.role)
+      if (query.status) items = items.filter((user) => user.status === query.status)
+      return { items }
+    },
+    async createAdminUser(input) {
+      const result = await request<{ user: { id: string; username: string; role: Model.UserRole; active: boolean; createdAt: string; updatedAt: string } }>('/admin/users', {
+        method: 'POST', body: JSON.stringify({ username: input.username, password: input.temporary_password, role: input.role }),
+      })
+      return { id: result.user.id, username: result.user.username, display_name: input.display_name || result.user.username,
+        role: result.user.role, status: 'active', must_change_password: false, failed_login_count: 0, locked_until: null,
+        last_login_at: null, created_at: result.user.createdAt, updated_at: result.user.updatedAt }
+    },
+    async updateAdminUser(id, input) {
+      const result = await request<{ user: { id: string; username: string; role: Model.UserRole; active: boolean; createdAt: string; updatedAt: string } }>(`/admin/users/${encode(id)}`, {
+        method: 'PATCH', body: JSON.stringify({ ...(input.role ? { role: input.role } : {}), ...(input.status ? { active: input.status === 'active' } : {}) }),
+      })
+      return { id: result.user.id, username: result.user.username, display_name: result.user.username, role: result.user.role,
+        status: result.user.active ? 'active' : 'disabled', must_change_password: false, failed_login_count: 0,
+        locked_until: null, last_login_at: null, created_at: result.user.createdAt, updated_at: result.user.updatedAt }
+    },
+    async resetAdminUserPassword(id, input) {
+      const result = await request<{ user: { id: string; username: string; role: Model.UserRole; active: boolean; createdAt: string; updatedAt: string } }>(`/admin/users/${encode(id)}`, {
+        method: 'PATCH', body: JSON.stringify({ password: input.temporary_password }),
+      })
+      return { id: result.user.id, username: result.user.username, display_name: result.user.username, role: result.user.role,
+        status: result.user.active ? 'active' : 'disabled', must_change_password: false, failed_login_count: 0,
+        locked_until: null, last_login_at: null, created_at: result.user.createdAt, updated_at: result.user.updatedAt }
+    },
+    async listAuditLogs(query = {}) {
+      const params = new URLSearchParams({ limit: String(query.page_size ?? 100) })
+      if (query.cursor) params.set('beforeId', query.cursor)
+      const result = await request<{ entries: Array<{ id: number; actorId: string | null; actorUsername: string | null; action: string; objectType: string | null; objectId: string | null; requestId: string | null; outcome: string; details: Model.JsonValue | null; createdAt: string }>; nextBeforeId: number | null }>(`/admin/audit?${params}`)
+      let items: Model.AuditLog[] = result.entries.map((entry) => ({
+        id: String(entry.id), actor: entry.actorId ? { id: entry.actorId, username: entry.actorUsername ?? '', display_name: entry.actorUsername ?? '' } : null,
+        action: entry.action, outcome: entry.outcome === 'failure' || entry.outcome === 'denied' ? entry.outcome : 'success',
+        object_type: entry.objectType ?? '', object_id: entry.objectId, request_id: entry.requestId ?? '', metadata: entry.details, created_at: entry.createdAt,
+      }))
+      if (query.action) items = items.filter((entry) => entry.action === query.action)
+      if (query.outcome) items = items.filter((entry) => entry.outcome === query.outcome)
+      return result.nextBeforeId === null
+        ? { items }
+        : { items, next_cursor: String(result.nextBeforeId) }
+    },
+    async createUpload(input) {
+      const id = uuid()
+      const session: LocalUpload = {
+        id, filename: input.filename, contentType: input.content_type, declaredSize: input.size,
+        part_size: Math.max(input.size, 1), status: 'created', uploaded_parts: [],
+        expires_at: plusDays(new Date().toISOString(), 1), input_category: input.input_category,
+        validation_status: 'pending', detected_category: input.input_category,
+      }
+      uploads.set(id, session)
+      return uploadSnapshot(session)
+    },
+    async getUpload(uploadId) {
+      const session = uploads.get(uploadId)
+      if (!session) throw new ApiError('上传会话已失效，请重新选择文件', 404, { code: 'UPLOAD_NOT_FOUND' })
+      return uploadSnapshot(session)
+    },
+    async uploadPart(uploadId, input) {
+      const session = uploads.get(uploadId)
+      if (!session) throw new ApiError('上传会话已失效，请重新选择文件', 404, { code: 'UPLOAD_NOT_FOUND' })
+      if (session.taskId) return
+      const form = new FormData()
+      form.append('file', input.chunk, session.filename)
+      const result = await request<{ task: LiveTask }>('/tasks', { method: 'POST', body: form })
+      session.taskId = result.task.id
+      session.task_id = result.task.id
+      session.uploaded_parts = [input.part_number]
+      session.status = 'uploading'
+      uploads.set(uploadId, session)
+    },
+    async completeUpload(uploadId) {
+      const session = uploads.get(uploadId)
+      if (!session || !session.taskId) throw new ApiError('文件尚未完整上传', 409, { code: 'UPLOAD_INCOMPLETE' })
+      session.status = 'completed'
+      session.validation_status = 'valid'
+      if (session.input_category) session.detected_category = session.input_category
+      session.task_id = session.taskId
+      if (session.input_category === 'archive') session.archive_import_id = session.taskId
+      uploads.set(uploadId, session)
+      return { ...uploadSnapshot(session), sha256: '', size_bytes: session.declaredSize }
+    },
+    async deleteUpload(uploadId) { uploads.delete(uploadId) },
+    async listArchiveImports() {
+      const items = await Promise.all([...uploads.values()].filter((upload) => upload.input_category === 'archive' && upload.taskId).map((upload) => client.getArchiveImport(upload.taskId!)))
+      return { items }
+    },
+    async getArchiveImport(importId) {
+      const detail = await loadTask(importId)
+      const root = detail.files.find((file) => file.parentId === null)
+      if (root && detail.task.status === 'ready' && !queuedArchiveImports.has(importId) && !detail.runs.some((run) => run.kind === 'archive_import')) {
+        queuedArchiveImports.add(importId)
+        try {
+          await request(`/tasks/${encode(importId)}/files/${encode(root.id)}/archive-import`, { method: 'POST', headers: { 'Idempotency-Key': `archive-${importId}` } })
+        } catch (error) {
+          queuedArchiveImports.delete(importId)
+          throw error
+        }
+        return client.getArchiveImport(importId)
+      }
+      const archiveRun = detail.runs.find((run) => run.kind === 'archive_import')
+      const entries = detail.files.filter((file) => file.parentId !== null)
+      const status: Model.ArchiveImportStatus = !archiveRun ? 'queued' : archiveRun.status === 'complete' ? 'ready' : archiveRun.status === 'failed' ? 'failed' : 'running'
+      return {
+        id: importId, upload_id: [...uploads.values()].find((upload) => upload.taskId === importId)?.id ?? importId,
+        filename: detail.task.displayName, status, scanned_entries: entries.length, total_entries: entries.length,
+        eligible_entries: entries.filter((entry) => entry.kind === 'file').length,
+        skipped_entries: entries.filter((entry) => entry.kind !== 'file').length, created_tasks: 0,
+        ...(archiveRun?.errorCode ? { error_code: archiveRun.errorCode } : {}),
+        ...(archiveRun?.errorMessage ? { error_message: archiveRun.errorMessage } : {}),
+        created_at: detail.task.createdAt, updated_at: archiveRun?.completedAt ?? detail.task.updatedAt,
+      }
+    },
+    async listArchiveImportEntries(importId, query = {}) {
+      const detail = await loadTask(importId)
+      let items: Model.ArchiveImportEntry[] = detail.files.filter((file) => file.parentId !== null).map((file) => ({
+        id: file.id, path: file.path, size_bytes: file.sizeBytes, sha256: null,
+        detected_format: file.detectedFormat, detected_category: archiveCategory(file.detectedFormat),
+        status: file.kind === 'file' ? 'eligible' : 'skipped',
+        ...(file.kind === 'file' ? {} : { skip_reason: '目录节点' }),
+      }))
+      if (query.filter && query.filter !== 'all') items = items.filter((entry) => entry.status === query.filter)
+      return { items }
+    },
+    async createArchiveTaskBatch(importId, input) {
+      return { items: input.entry_ids.map((entryId) => ({ entry_id: entryId, outcome: 'existing' as const, task_id: importId })) }
+    },
+    async createTask(input) {
+      const session = uploads.get(input.upload_id)
+      if (!session?.taskId) throw new ApiError('上传会话尚未生成任务', 409, { code: 'TASK_NOT_READY' })
+      return { id: session.taskId }
+    },
+  }
+  return client
+}
