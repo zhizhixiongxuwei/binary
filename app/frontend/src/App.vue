@@ -16,7 +16,6 @@ import {
   FileText,
   FolderCode,
   HardDrive,
-  KeyRound,
   ListChecks,
   LogOut,
   Menu,
@@ -32,7 +31,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-type User = { id: string; username: string; role: string; mustChangePassword: boolean; csrfToken: string }
+type User = { id: string; username: string; role: string; csrfToken: string }
 type Task = { id: string; displayName: string; status: string; detectedFormat?: string; createdAt: string }
 type FileNode = { id: string; path: string; kind: string; detectedFormat?: string; sizeBytes: number }
 type Run = { id: string; kind: string; status: string; resultQuality?: string; toolName?: string; errorMessage?: string; createdAt: string }
@@ -40,7 +39,7 @@ type Project = { id: string; language: string; resultQuality: string; fileCount:
 type Finding = { id: number; severity: string; ruleId?: string; cwe?: string; path?: string; line?: number; title: string; message: string }
 type Report = { id: string; format: string; status: string; createdAt: string }
 type TaskDetail = { task: Task; files: FileNode[]; runs: Run[]; projects: Project[] }
-type ManagedUser = { id: string; username: string; role: string; active: boolean; mustChangePassword: boolean; createdAt: string; updatedAt: string }
+type ManagedUser = { id: string; username: string; role: string; active: boolean; createdAt: string; updatedAt: string }
 type AuditEntry = { id: number; actorUsername?: string; action: string; objectType?: string; objectId?: string; outcome: string; details?: unknown; createdAt: string }
 type ViewName = 'overview' | 'tasks' | 'new' | 'detail' | 'admin'
 type DetailTab = 'files' | 'runs' | 'projects' | 'findings' | 'reports'
@@ -49,8 +48,6 @@ const version = ref('')
 const user = ref<User | null>(null)
 const username = ref('')
 const password = ref('')
-const currentPassword = ref('')
-const newPassword = ref('')
 const tasks = ref<Task[]>([])
 const selected = ref<TaskDetail | null>(null)
 const findings = ref<Finding[]>([])
@@ -96,7 +93,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 function csrfHeaders(extra: Record<string, string> = {}) { return { 'X-CSRF-Token': user.value?.csrfToken ?? '', ...extra } }
-function validPassword(value: string) { const bytes = new TextEncoder().encode(value).length; return bytes >= 12 && bytes <= 72 }
+function validPassword(value: string) { const bytes = new TextEncoder().encode(value).length; return bytes >= 8 && bytes <= 72 }
 async function loadInfo() { version.value = (await request<{ version: string }>('/api/v1/system/info')).version }
 
 async function loadCurrentUser() {
@@ -108,14 +105,6 @@ async function login() {
   try {
     user.value = (await request<{ user: User }>('/api/v1/auth/login', { method: 'POST', body: JSON.stringify({ username: username.value, password: password.value }) })).user
     password.value = ''; view.value = 'overview'; await loadTasks()
-  } catch (cause) { error.value = messageOf(cause) } finally { busy.value = '' }
-}
-
-async function changePassword() {
-  busy.value = 'password'; error.value = ''
-  try {
-    await request('/api/v1/auth/password', { method: 'POST', headers: csrfHeaders(), body: JSON.stringify({ currentPassword: currentPassword.value, newPassword: newPassword.value }) })
-    user.value = null; currentPassword.value = ''; newPassword.value = ''
   } catch (cause) { error.value = messageOf(cause) } finally { busy.value = '' }
 }
 
@@ -238,7 +227,7 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
 </script>
 
 <template>
-  <main v-if="!user || user.mustChangePassword" class="login-page">
+  <main v-if="!user" class="login-page">
     <section class="identity-panel" aria-label="系统标识">
       <div class="identity-grid" aria-hidden="true"><span v-for="index in 54" :key="index" :class="{ active: index % 7 === 0 || index % 11 === 0 }" /></div>
       <div class="identity-content">
@@ -248,17 +237,11 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
       </div>
     </section>
     <section class="login-panel">
-      <form v-if="!user" class="login-box" @submit.prevent="login">
+      <form class="login-box" @submit.prevent="login">
         <div class="login-heading"><span class="mono">AUTH / 01</span><h2>登录操作台</h2></div><p class="login-description">使用单位内部账号进入分析工作台。</p>
         <label>用户名<input v-model.trim="username" autocomplete="username" required></label><label>密码<input v-model="password" type="password" autocomplete="current-password" required></label>
         <p v-if="error" class="form-error">{{ error }}</p><button class="primary-button login-submit" :disabled="busy === 'login'">{{ busy === 'login' ? '登录中…' : '登录' }}</button>
         <footer class="login-footer"><span class="status-dot" /><span>单位服务节点</span><strong class="mono">{{ version || 'LOADING' }}</strong></footer>
-      </form>
-      <form v-else class="login-box" @submit.prevent="changePassword">
-        <div class="login-heading"><span class="mono">SECURITY / 01</span><h2>修改初始密码</h2></div><p class="login-description">首次登录必须设置个人密码，保存后请重新登录。</p>
-        <label>当前密码<input v-model="currentPassword" type="password" autocomplete="current-password" required></label><label>新密码<input v-model="newPassword" type="password" autocomplete="new-password" required></label>
-        <p class="field-hint">UTF-8 编码后须为 12–72 字节。</p><p v-if="error" class="form-error">{{ error }}</p><button class="primary-button login-submit" :disabled="busy === 'password' || !validPassword(newPassword)">保存新密码</button>
-        <footer class="login-footer"><KeyRound :size="13" /><span>初始账号保护</span><strong>BinaryScan</strong></footer>
       </form>
     </section>
   </main>
@@ -316,8 +299,8 @@ onUnmounted(() => pollTimer && window.clearInterval(pollTimer))
         </section>
 
         <section v-else class="page-view"><header class="page-header"><div><span class="page-eyebrow mono">SYSTEM / MAINTENANCE</span><h1>系统维护</h1><p>管理单位内部账号，并查看最近审计事件。</p></div><button class="secondary-button" :disabled="busy === 'admin-load'" @click="openAdmin"><RefreshCw :size="16" />刷新</button></header>
-          <div class="admin-layout"><section class="surface-panel form-panel"><div class="section-title"><span class="section-icon"><Users :size="20" /></span><div><h2>创建用户</h2><p>新账号首次登录必须修改密码。</p></div></div><form class="stack-form" @submit.prevent="createManagedUser"><label>用户名<input v-model.trim="createUsername" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9._-]{2,63}" autocomplete="off" required></label><label>初始密码<input v-model="createPassword" type="password" autocomplete="new-password" required></label><label>角色<select v-model="createRole"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label><p class="field-hint">密码须为 12–72 个 UTF-8 字节；用户名会统一转为小写。</p><button class="primary-button" :disabled="busy === 'admin-create' || !validPassword(createPassword)">创建用户</button></form></section>
-            <section class="surface-panel users-panel"><header class="panel-header compact"><div><span class="panel-kicker mono">ACCESS / USERS</span><h2>账号与角色</h2></div><span class="count-label">{{ managedUsers.length }} 个账号</span></header><div class="user-list"><article v-for="target in managedUsers" :key="target.id"><div class="user-summary"><span class="account-avatar light">{{ target.username.slice(0, 1).toUpperCase() }}</span><span><strong>{{ target.username }}</strong><small>{{ target.active ? '已启用' : '已停用' }}<template v-if="target.mustChangePassword"> · 待修改密码</template></small></span><span class="role-token">{{ { administrator: '管理员', operator: '操作员', reader: '只读用户' }[target.role] || target.role }}</span></div><div class="user-actions"><label>角色<select :value="target.role" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @change="updateManagedUser(target, { role: ($event.target as HTMLSelectElement).value })"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label><button class="small-button" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { active: !target.active })">{{ target.active ? '停用账号' : '启用账号' }}</button><label class="reset-field">重置密码<input v-model="resetPasswords[target.id]" type="password" autocomplete="new-password" placeholder="输入新密码" :disabled="target.id === user.id"></label><button class="small-button" :disabled="target.id === user.id || !validPassword(resetPasswords[target.id] ?? '') || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { password: resetPasswords[target.id] })">重置</button></div></article><div v-if="!managedUsers.length" class="empty-panel small"><Users :size="26" /><strong>{{ busy === 'admin-load' ? '正在加载…' : '暂无用户' }}</strong></div></div></section></div>
+          <div class="admin-layout"><section class="surface-panel form-panel"><div class="section-title"><span class="section-icon"><Users :size="20" /></span><div><h2>创建用户</h2><p>账号创建后可以直接登录使用。</p></div></div><form class="stack-form" @submit.prevent="createManagedUser"><label>用户名<input v-model.trim="createUsername" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9._-]{2,63}" autocomplete="off" required></label><label>初始密码<input v-model="createPassword" type="password" autocomplete="new-password" required></label><label>角色<select v-model="createRole"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label><p class="field-hint">密码须为 8–72 个 UTF-8 字节；用户名会统一转为小写。</p><button class="primary-button" :disabled="busy === 'admin-create' || !validPassword(createPassword)">创建用户</button></form></section>
+            <section class="surface-panel users-panel"><header class="panel-header compact"><div><span class="panel-kicker mono">ACCESS / USERS</span><h2>账号与角色</h2></div><span class="count-label">{{ managedUsers.length }} 个账号</span></header><div class="user-list"><article v-for="target in managedUsers" :key="target.id"><div class="user-summary"><span class="account-avatar light">{{ target.username.slice(0, 1).toUpperCase() }}</span><span><strong>{{ target.username }}</strong><small>{{ target.active ? '已启用' : '已停用' }}</small></span><span class="role-token">{{ { administrator: '管理员', operator: '操作员', reader: '只读用户' }[target.role] || target.role }}</span></div><div class="user-actions"><label>角色<select :value="target.role" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @change="updateManagedUser(target, { role: ($event.target as HTMLSelectElement).value })"><option value="reader">只读用户</option><option value="operator">操作员</option><option value="administrator">管理员</option></select></label><button class="small-button" :disabled="target.id === user.id || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { active: !target.active })">{{ target.active ? '停用账号' : '启用账号' }}</button><label class="reset-field">重置密码<input v-model="resetPasswords[target.id]" type="password" autocomplete="new-password" placeholder="输入新密码" :disabled="target.id === user.id"></label><button class="small-button" :disabled="target.id === user.id || !validPassword(resetPasswords[target.id] ?? '') || busy === `admin-update-${target.id}`" @click="updateManagedUser(target, { password: resetPasswords[target.id] })">重置</button></div></article><div v-if="!managedUsers.length" class="empty-panel small"><Users :size="26" /><strong>{{ busy === 'admin-load' ? '正在加载…' : '暂无用户' }}</strong></div></div></section></div>
           <section class="surface-panel audit-panel"><header class="panel-header compact"><div><span class="panel-kicker mono">AUDIT / RECENT</span><h2>最近审计事件</h2></div><span class="count-label">最近 {{ auditEntries.length }} 条</span></header><div v-if="auditEntries.length" class="data-table-wrap"><table class="data-table"><thead><tr><th>结果</th><th>事件</th><th>操作者</th><th>对象</th><th>时间</th></tr></thead><tbody><tr v-for="entry in auditEntries" :key="entry.id"><td><span class="status-badge" :class="entry.outcome === 'success' ? 'status-complete' : 'status-failed'">{{ entry.outcome }}</span></td><td><strong>{{ entry.action }}</strong></td><td class="table-muted">{{ entry.actorUsername || 'system' }}</td><td class="table-muted mono">{{ entry.objectType || 'system' }}<template v-if="entry.objectId">/{{ shortID(entry.objectId) }}</template></td><td class="table-muted">{{ formatTime(entry.createdAt) }}</td></tr></tbody></table></div><div v-else class="empty-panel small"><Clock3 :size="26" /><strong>暂无审计事件</strong></div></section>
         </section>
       </div>

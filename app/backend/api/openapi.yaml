@@ -69,16 +69,16 @@ paths:
                 newPassword:
                   type: string
                   format: password
-                  minLength: 12
+                  minLength: 8
                   maxLength: 72
-                  description: Must be 12 to 72 bytes after UTF-8 encoding.
+                  description: Must be 8 to 72 bytes after UTF-8 encoding.
       responses:
         "400": { description: New password is outside the supported length }
         "401": { description: Current password is invalid }
         "204": { description: Password changed and sessions revoked }
   /api/v1/admin/users:
     get:
-      description: Lists at most 500 users. Administrator role and a completed initial password change are required.
+      description: Lists at most 500 users. Administrator role is required.
       security: [{ sessionCookie: [] }]
       responses:
         "200":
@@ -94,7 +94,7 @@ paths:
                     items: { $ref: "#/components/schemas/AdminUser" }
         "403": { description: Administrator access required }
     post:
-      description: Creates an active user whose password must be changed at first login.
+      description: Creates an active user that can sign in immediately.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/CSRFToken"
@@ -116,10 +116,10 @@ paths:
                 password:
                   type: string
                   format: password
-                  minLength: 12
+                  minLength: 8
                   maxLength: 72
                   writeOnly: true
-                  description: Must be 12 to 72 bytes after UTF-8 encoding.
+                  description: Must be 8 to 72 bytes after UTF-8 encoding.
                 role: { $ref: "#/components/schemas/UserRole" }
       responses:
         "201":
@@ -155,10 +155,10 @@ paths:
                 password:
                   type: string
                   format: password
-                  minLength: 12
+                  minLength: 8
                   maxLength: 72
                   writeOnly: true
-                  description: Must be 12 to 72 bytes after UTF-8 encoding.
+                  description: Must be 8 to 72 bytes after UTF-8 encoding.
       responses:
         "200":
           description: User updated and target sessions revoked

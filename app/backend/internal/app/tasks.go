@@ -577,10 +577,6 @@ func nullableInt(value sql.NullInt64) any {
 func requireOperator() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := mustCurrentUser(c)
-		if user.MustChangePassword {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
-			return
-		}
 		if user.Role != "operator" && user.Role != "administrator" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "operation_not_allowed"})
 			return

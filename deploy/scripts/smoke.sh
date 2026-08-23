@@ -253,7 +253,7 @@ live_workflow_smoke() {
   smoke_csrf=$(jq -r '.user.csrfToken // empty' "$smoke_tmp/login.json")
   [ -n "$smoke_csrf" ] || die "login response omitted the CSRF token"
   jq -e '.user.mustChangePassword == false and (.user.role == "operator" or .user.role == "administrator")' \
-    "$smoke_tmp/login.json" >/dev/null || die "smoke account must complete its password change and have operator access"
+    "$smoke_tmp/login.json" >/dev/null || die "smoke account must be ready for use and have operator access"
 
   smoke_code=$(smoke_curl --output "$smoke_tmp/upload.json" --write-out '%{http_code}' \
     --cookie "$smoke_cookie_file" -H "X-CSRF-Token: $smoke_csrf" \

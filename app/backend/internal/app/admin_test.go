@@ -43,8 +43,8 @@ func TestAdminValidation(t *testing.T) {
 	if _, ok := normalizeAdminRole("owner"); ok {
 		t.Fatal("unsupported role was accepted")
 	}
-	if err := validateAdminPassword("123456789012"); err != nil {
-		t.Fatalf("12-byte password was rejected: %v", err)
+	if err := validateAdminPassword("12345678"); err != nil {
+		t.Fatalf("8-byte password was rejected: %v", err)
 	}
 	if err := validateAdminPassword("short"); err == nil {
 		t.Fatal("short password was accepted")

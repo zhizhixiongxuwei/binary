@@ -28,7 +28,7 @@ func BootstrapAdministrator(ctx context.Context, db *sql.DB, username, password 
 	}
 	_, err = db.ExecContext(ctx, `INSERT INTO users
         (public_id, username, password_hash, role, active, must_change_password)
-        VALUES (?, ?, ?, 'administrator', TRUE, TRUE)`, publicID, username, string(hash))
+        VALUES (?, ?, ?, 'administrator', TRUE, FALSE)`, publicID, username, string(hash))
 	if err != nil {
 		return fmt.Errorf("create initial administrator: %w", err)
 	}

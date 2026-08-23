@@ -24,11 +24,11 @@ Linux 生产机首次创建数据目录时使用 `sudo deploy/scripts/binary.sh 
 
 ## 账号与审计
 
-空数据库首次启动时创建固定初始 administrator：用户名 `admin`，密码 `admin1234567890!`，并强制首次登录修改密码。该密码同时明确保存在根 `.env`；数据库非空时重启不会重新应用它。后续账号只能由 administrator 在产品“管理”页维护；角色含 reader、operator 和 administrator。reader 可以查询任务、finding 和报告，operator 还可以上传并手动触发运行，administrator 额外管理账号和查看审计。
+空数据库首次启动时创建固定初始 administrator：用户名 `admin`，密码 `admin123456`，登录后可以直接使用。该密码同时明确保存在根 `.env`；数据库非空时重启不会重新应用它。后续账号只能由 administrator 在产品“管理”页维护；角色含 reader、operator 和 administrator。reader 可以查询任务、finding 和报告，operator 还可以上传并手动触发运行，administrator 额外管理账号和查看审计。
 
 创建用户、角色/启停更新、密码重置、RBAC/CSRF 拒绝和最后管理员保护都会留下审计结果。密码重置后目标用户必须在下次登录修改密码，且所有旧 session 立即失效；审计不记录明文密码、密码哈希、session token 或 CSRF token。
 
-密码长度按 UTF-8 编码后的字节数计算，范围为 12–72 字节。
+密码长度按 UTF-8 编码后的字节数计算，范围为 8–72 字节。新建账号和管理员重置密码后均不要求首次登录改密。
 
 ## 离线交付
 

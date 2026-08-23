@@ -136,7 +136,7 @@ func (a *authService) changePassword(c *gin.Context) {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.NewPassword) < 12 || len(request.NewPassword) > 72 {
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.NewPassword) < 8 || len(request.NewPassword) > 72 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_password_change"})
 		return
 	}

@@ -138,7 +138,7 @@ func (c Config) validateApp() error {
 	if c.App.PublicBaseURL == "" {
 		return errors.New("BINARY_PUBLIC_BASE_URL is required")
 	}
-	if c.App.InitialAdminUser == "" || len(c.App.InitialAdminPassword) < 16 {
+	if c.App.InitialAdminUser == "" || len(c.App.InitialAdminPassword) < 8 || len(c.App.InitialAdminPassword) > 72 {
 		return errors.New("initial administrator credentials are invalid")
 	}
 	return nil

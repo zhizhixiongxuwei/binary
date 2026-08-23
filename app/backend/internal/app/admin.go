@@ -152,7 +152,7 @@ func (s *adminService) createUser(c *gin.Context) {
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(c, `INSERT INTO users
         (public_id, username, password_hash, role, active, must_change_password)
-        VALUES (?, ?, ?, ?, TRUE, TRUE)`, publicID, username, string(passwordHash), role); err != nil {
+        VALUES (?, ?, ?, ?, TRUE, FALSE)`, publicID, username, string(passwordHash), role); err != nil {
 		_ = tx.Rollback()
 		if duplicateKey(err) {
 			s.rejectChange(c, http.StatusConflict, action, username, "user_already_exists")
@@ -173,7 +173,7 @@ func (s *adminService) createUser(c *gin.Context) {
 	}
 	actor := mustCurrentUser(c)
 	if err := insertAdminAudit(c, tx, &actor.ID, action, "user", publicID, "success", map[string]any{
-		"username": username, "role": role, "active": true, "mustChangePassword": true,
+		"username": username, "role": role, "active": true, "mustChangePassword": false,
 	}); err != nil {
 		_ = tx.Rollback()
 		s.failChange(c, action, publicID, "user_creation_failed", err)
@@ -268,7 +268,7 @@ func (s *adminService) patchUser(c *gin.Context) {
 	query := "UPDATE users SET role = ?, active = ?"
 	arguments := []any{newRole, newActive}
 	if request.Password != nil {
-		query += ", password_hash = ?, must_change_password = TRUE"
+		query += ", password_hash = ?, must_change_password = FALSE"
 		arguments = append(arguments, string(passwordHash))
 	}
 	query += " WHERE id = ?"
@@ -363,10 +363,6 @@ func (s *adminService) listAudit(c *gin.Context) {
 func requireAdministrator() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := mustCurrentUser(c)
-		if user.MustChangePassword {
-			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "password_change_required"})
-			return
-		}
 		if user.Role != "administrator" {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "operation_not_allowed"})
 			return
@@ -431,8 +427,8 @@ func normalizeAdminRole(value string) (string, bool) {
 }
 
 func validateAdminPassword(value string) error {
-	if len(value) < 12 || len(value) > 72 {
-		return fmt.Errorf("password must contain 12-72 bytes")
+	if len(value) < 8 || len(value) > 72 {
+		return fmt.Errorf("password must contain 8-72 bytes")
 	}
 	return nil
 }
