@@ -28,12 +28,11 @@ type currentUser struct {
 }
 
 type authService struct {
-	db           *sql.DB
-	secureCookie bool
+	db *sql.DB
 }
 
-func newAuthService(db *sql.DB, secureCookie bool) *authService {
-	return &authService{db: db, secureCookie: secureCookie}
+func newAuthService(db *sql.DB) *authService {
+	return &authService{db: db}
 }
 
 func (a *authService) login(c *gin.Context) {
@@ -263,7 +262,6 @@ func (a *authService) setSessionCookie(c *gin.Context, token string, expires tim
 		Expires:  expires,
 		MaxAge:   int(time.Until(expires).Seconds()),
 		HttpOnly: true,
-		Secure:   a.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
@@ -275,7 +273,6 @@ func (a *authService) clearSessionCookie(c *gin.Context) {
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   a.secureCookie,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

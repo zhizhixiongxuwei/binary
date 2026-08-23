@@ -33,9 +33,8 @@ drill_compose() {
     export BINARY_DATA_ROOT="$drill_target"
     export COMPOSE_PROJECT_NAME="$drill_project"
     export APP_BIND_IP=127.0.0.1
-    export APP_HTTPS_PORT="$drill_port"
-    export APP_LISTEN_ADDR=:8443
-    export APP_TLS_MODE=http
+    export APP_PORT="$drill_port"
+    export APP_LISTEN_ADDR=:8080
     export PUBLIC_BASE_URL="http://127.0.0.1:$drill_port"
     export APP_ALLOWED_ORIGINS="http://127.0.0.1:$drill_port"
     docker compose --project-directory "$repo_dir" --env-file "$env_file" \
@@ -443,8 +442,7 @@ prepare_restore_target() {
     "$target_path/work/scanner" \
     "$target_path/work/native-decompiler" \
     "$target_path/work/jvm-decompiler" \
-    "$target_path/work/pyc-decompiler" \
-    "$target_path/tls"
+    "$target_path/work/pyc-decompiler"
   (umask 077; printf '%s\n' "$marker_value" > "$target_path/$marker_name")
   tar -C "$target_path" -xpf "$verified_bundle_dir/storage.tar"
   mkdir -p \
@@ -459,9 +457,9 @@ prepare_restore_target() {
   if [ "$(uname -s)" = Linux ]; then
     chown "$PRODUCT_UID:$PRODUCT_GID" "$target_path"
     chown -R "$PRODUCT_UID:$PRODUCT_GID" \
-      "$target_path/storage" "$target_path/work" "$target_path/tls"
+      "$target_path/storage" "$target_path/work"
   fi
-  chmod 0750 "$target_path" "$target_path/storage" "$target_path/work" "$target_path/tls"
+  chmod 0750 "$target_path" "$target_path/storage" "$target_path/work"
 }
 
 compare_restored_counts() {
@@ -529,7 +527,7 @@ SELECT 'project', CONCAT('storage/projects/', source_kind, '/', root_storage_key
 restore_drill() {
   backup_bundle=${1:?usage: data.sh restore-drill BACKUP_DIR TARGET_DATA_ROOT [HOST_PORT]}
   restore_input=${2:?usage: data.sh restore-drill BACKUP_DIR TARGET_DATA_ROOT [HOST_PORT]}
-  requested_port=${3:-18443}
+  requested_port=${3:-18080}
   case "$requested_port" in
     ""|*[!0-9]*) die "restore-drill port must be numeric" ;;
   esac
@@ -571,7 +569,7 @@ restore_drill() {
   drill_db_query 'SELECT 1;' >/dev/null
 
   echo "restore drill passed; restored data remains at $target_path"
-  echo "the isolated Compose project will now be stopped; work and tls were not restored"
+  echo "the isolated Compose project will now be stopped; work was not restored"
 }
 
 usage() {
@@ -597,7 +595,7 @@ case "${1:-}" in
     ;;
   restore-drill)
     [ "$#" -eq 3 ] || [ "$#" -eq 4 ] || usage
-    restore_drill "$2" "$3" "${4:-18443}"
+    restore_drill "$2" "$3" "${4:-18080}"
     ;;
   *) usage ;;
 esac

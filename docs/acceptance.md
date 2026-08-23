@@ -2,7 +2,7 @@
 
 发布前必须完成以下场景：
 
-1. administrator、operator 和 reader 通过单位 HTTPS 地址同时登录，权限和审计互不串扰。
+1. administrator、operator 和 reader 通过单位 HTTP 地址同时登录，权限和审计互不串扰；入口只能位于受控内网，防火墙只放行授权网段。
 2. 上传组合归档后自动完成格式识别和 Trivy；用户手动导入归档文件树，且没有自动 decompile、check 或 report job。
 3. 手动完成 Native 反编译与 C 检查。
 4. 手动完成 JAR 或 APK 反编译，并对 Java 项目执行检查；正式文件矩阵还应各保留一个 DEX/APK 样本。
@@ -31,6 +31,8 @@
 
 ## 隔离产品验收记录（2026-08-23）
 
+以下业务与故障恢复记录来自移除 TLS 之前的最终镜像；其中证书相关结论仅是历史记录，不再代表当前入口。当前 HTTP 入口的回归记录见下一节。
+
 在仓库外数据根 `/Users/chenzhe/Documents/binary-data/acceptance-phase4`、回环端口 `18443` 和短期验收证书上，用最终 `linux/amd64` 镜像完成了以下检查：
 
 - 九个服务全部健康，app direct TLS 的证书链和主机名由客户端 CA 校验通过；只有 app 发布宿主机端口，三个 checker 仍无数据库变量、业务卷和宿主机端口。
@@ -46,4 +48,13 @@
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
 - 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `PY001`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
 
-这次验收仍不替代目标单位现场检查。投产门槛剩余：正式 DNS 与单位 CA 证书、授权网段防火墙、按实际并发与大文件进行容量测试、物理断网后的 `--pull never` 再启动，以及 PE/Mach-O/DEX/APK 等单位实际文件矩阵。验收用短期证书和测试账号不得复制到生产环境。
+## 纯 HTTP localhost 回归（2026-08-23）
+
+- 根 `.env` 使用 `http://localhost:8080`，app 只发布 `127.0.0.1:8080`；Compose 不再挂载证书目录或注入 TLS/可信代理变量。
+- 重新构建 app 产品镜像后，正式 `binary` 项目的九个长期容器全部健康；首页、`healthz` 和 `readyz` 均通过 HTTP 访问。
+- topology 和三个真实 `checker-v1` contract 通过。完整 live smoke 任务 `91debe32-b5b3-4acc-8764-4d573eeb22b6` 完成 PYC 上传、scan/Trivy、pycdc、Python check 与报告 `92519a66-06d4-44ba-a61c-5e5bec387188` 下载。
+- 临时 HTTP smoke 账号已停用且无 session；活跃 job、运行中 attempt 和占用 slot 均为零。
+- 旧备份恢复到新的 `/Users/chenzhe/Documents/binary-restore-http-final`，数据库计数和 4 个数据库到 storage 引用一致；恢复根没有 `tls` 目录，九服务健康后演练容器和网络已全部移除。调用环境中的其他 `COMPOSE_FILE` 未改变正式拓扑。
+- 新九镜像离线包为 `binary-runtime-0.1.0-dev-amd64-http.tar`（2.8 GB），SHA-256 为 `5df7f3034c13f90043fb3812366675f84b84f60e76b5de481b71b67608508434`。旧 direct-TLS 包只保留为历史证据，不得用于当前部署。
+
+这次验收仍不替代目标单位现场检查。投产门槛剩余：实际 HTTP 访问地址、授权网段防火墙、按实际并发与大文件进行容量测试、物理断网后的 `--pull never` 再启动，以及 PE/Mach-O/DEX/APK 等单位实际文件矩阵。验收测试账号不得复制到生产环境。

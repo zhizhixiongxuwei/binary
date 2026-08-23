@@ -35,7 +35,7 @@ topology_smoke() {
       and ([.services[] | select(.image == null or .image == "" or .pull_policy != "never")] | length) == 0
       and ([.services[] | select(((.profiles // []) | length) > 0 or ((.deploy.replicas // 1) != 1))] | length) == 0
       and ([.services | to_entries[] | select(((.value.ports // []) | length) > 0) | .key] == ["app"])
-      and ((.services.app.ports | length) == 1 and .services.app.ports[0].target == 8443)
+      and ((.services.app.ports | length) == 1 and .services.app.ports[0].target == 8080)
       and ((.services.app.networks | keys | sort) == (["database-net", "edge-net"] | sort))
       and ((.services.mysql.networks | keys) == ["database-net"])
       and ((.services.scanner.networks | keys | sort) == (["checker-net", "database-net"] | sort))
@@ -136,12 +136,6 @@ print("three checker-v1 contracts are correct")
 }
 
 smoke_curl() {
-  if [ -n "${BINARY_SMOKE_RESOLVE:-}" ]; then
-    set -- --resolve "$BINARY_SMOKE_RESOLVE" "$@"
-  fi
-  if [ -n "${BINARY_SMOKE_CA_CERT:-}" ]; then
-    set -- --cacert "$BINARY_SMOKE_CA_CERT" "$@"
-  fi
   curl --disable --noproxy '*' --silent --show-error --connect-timeout 10 --max-time 60 "$@"
 }
 
@@ -228,37 +222,14 @@ live_workflow_smoke() {
   smoke_base_url=${BINARY_SMOKE_BASE_URL:-$PUBLIC_BASE_URL}
   smoke_base_url=${smoke_base_url%/}
   case "$smoke_base_url" in
-    https://*)
-      smoke_https_authority=${smoke_base_url#https://}
-      case "$smoke_https_authority" in
-        ''|*@*|*/*|*'?'*|*'#'*) die "HTTPS smoke URL must contain only host and optional port" ;;
-      esac
-      ;;
     http://*)
-      [ -z "${BINARY_SMOKE_RESOLVE:-}" ] || die "BINARY_SMOKE_RESOLVE is not allowed with loopback HTTP"
       smoke_http_authority=${smoke_base_url#http://}
       case "$smoke_http_authority" in
-        *@*|*/*|*'?'*|*'#'*) die "loopback HTTP smoke URL must contain only host and optional port" ;;
-      esac
-      case "$smoke_http_authority" in
-        127.0.0.1|localhost|"[::1]") ;;
-        127.0.0.1:*|localhost:*|"[::1]":*)
-          smoke_http_port=${smoke_http_authority##*:}
-          case "$smoke_http_port" in
-            ''|*[!0-9]*) die "loopback HTTP smoke port must be numeric" ;;
-          esac
-          if ! [ "$smoke_http_port" -ge 1 ] 2>/dev/null || ! [ "$smoke_http_port" -le 65535 ] 2>/dev/null; then
-            die "loopback HTTP smoke port is outside 1-65535"
-          fi
-          ;;
-        *) die "HTTP smoke is restricted to a loopback address" ;;
+        ''|*@*|*/*|*'?'*|*'#'*) die "HTTP smoke URL must contain only host and optional port" ;;
       esac
       ;;
-    *) die "BINARY_SMOKE_BASE_URL must use https or loopback http" ;;
+    *) die "BINARY_SMOKE_BASE_URL must use http" ;;
   esac
-  if [ -n "${BINARY_SMOKE_CA_CERT:-}" ]; then
-    [ -r "$BINARY_SMOKE_CA_CERT" ] || die "BINARY_SMOKE_CA_CERT is not readable"
-  fi
 
   smoke_tmp=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-smoke.XXXXXX")
   smoke_cookie_file="$smoke_tmp/cookies"

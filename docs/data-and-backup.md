@@ -9,7 +9,6 @@
 - `storage/projects`：三类反编译源码项目。
 - `storage/reports`：生成的报告。
 - `work`：worker 临时目录，不进入备份。
-- `tls`：直接 TLS 模式的运行材料，不属于业务备份；恢复后由单位证书管理流程重新提供。
 
 Docker 日志、镜像、容器元数据和网络信息由 Docker 管理，不在 `binary-data` 保证范围内。
 
@@ -24,7 +23,7 @@ Linux 上以 root 执行，macOS 上使用当前 Docker Desktop 用户。以下�
 备份目录包含：
 
 - `database.sql`：同版本 MySQL 生成的逻辑备份。
-- `storage.tar`：完整业务文件存储，不包含 `mysql`、`work` 或 `tls`。
+- `storage.tar`：完整业务文件存储，不包含 `mysql` 或 `work`。
 - `manifest`：版本、MySQL 镜像、schema 版本、关键表行数和两个备份文件的字节数，不包含密码。
 
 数据库 dump 与 storage 必须始终作为同一备份目录保存，不得混用不同时间的文件。工具不计算逐文件哈希；`verify` 检查 manifest、文件字节数、SQL 基线标识、tar 可读性、成员路径及成员类型：
@@ -42,19 +41,19 @@ Linux 上以 root 执行，macOS 上使用当前 Docker Desktop 用户。以下�
     sudo deploy/scripts/data.sh restore-drill \
       /srv/binaryscan-backup/backup-2026-08-23 \
       /srv/binaryscan-restore-2026-08-23 \
-      18443
+      18080
 
 脚本执行以下步骤：
 
 1. 结构化校验备份，并要求 `BINARY_VERSION`、`MYSQL_IMAGE` 和数据库名与当前根 `.env` 一致。
-2. 在新数据根中创建标记、空的 `mysql`、`work` 和 `tls`，只恢复 `storage`。
+2. 在新数据根中创建标记、空的 `mysql` 和 `work`，只恢复 `storage`。
 3. 使用独立 Compose 项目、`127.0.0.1` 临时 HTTP 端口和 `--pull never` 启动 MySQL，确认目标数据库为空后导入 SQL。
 4. 比较 schema 版本和关键表行数；逐项检查数据库引用的 blob、Trivy artifact、report 和 source project 是否存在，并比较有记录的文件大小。这里不重新计算内容哈希。
 5. 实际启动九个产品服务并等待健康，然后停止并移除演练容器和网络。恢复后的数据根会保留，便于人工检查。
 
-第三个参数为演练使用的宿主机端口，默认 `18443`。该入口只绑定 `127.0.0.1` 且使用 HTTP，不复制生产私钥，也不会开放给局域网。演练需要足够资源同时运行九个容器。
+第三个参数为演练使用的宿主机端口，默认 `18080`。该入口只绑定 `127.0.0.1`，不会开放给局域网。演练需要足够资源同时运行九个容器。
 
-生产灾难恢复也必须恢复到新数据根，使用备份 manifest 对应的仓库版本、`.env` 和九镜像离线包。完成数据库与文件引用验证、重新配置单位 TLS 后，才能把正式部署切换到该数据根。初始管理员配置不会覆盖备份数据库中已有管理员的密码。
+生产灾难恢复也必须恢复到新数据根，使用备份 manifest 对应的仓库版本、`.env` 和九镜像离线包。完成数据库与文件引用验证并确认 HTTP 监听地址和防火墙后，才能把正式部署切换到该数据根。初始管理员配置不会覆盖备份数据库中已有管理员的密码。
 
 ## 数据根保护
 

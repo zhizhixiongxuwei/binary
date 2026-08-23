@@ -70,20 +70,15 @@ services:
       - database-net
       - edge-net
     ports:
-      - "${APP_BIND_IP:?required}:${APP_HTTPS_PORT:?required}:8443"
+      - "${APP_BIND_IP:?required}:${APP_PORT:?required}:8080"
     volumes:
       - ${BINARY_DATA_ROOT:?required}/storage:/data/storage
-      - ${BINARY_DATA_ROOT:?required}/tls:/run/binary/tls:ro
     environment:
       <<: *db-client
       BINARY_VERSION: ${BINARY_VERSION:?required}
       BINARY_ROLE: app
       BINARY_LISTEN_ADDR: ${APP_LISTEN_ADDR:?required}
       BINARY_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:?required}
-      BINARY_TLS_MODE: ${APP_TLS_MODE:?required}
-      BINARY_TLS_CERT_FILE: ${APP_TLS_CERT_FILE:?required}
-      BINARY_TLS_KEY_FILE: ${APP_TLS_KEY_FILE:?required}
-      BINARY_TRUSTED_PROXY_CIDRS: ${APP_TRUSTED_PROXY_CIDRS:-}
       BINARY_ALLOWED_ORIGINS: ${APP_ALLOWED_ORIGINS:?required}
       BINARY_INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?required}
       BINARY_INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?required}

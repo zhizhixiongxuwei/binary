@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -76,14 +75,8 @@ func healthcheck(cfg config.Config) error {
 	if strings.TrimSpace(host) == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}
-	scheme := "http"
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if cfg.App.TLSMode == "direct" {
-		scheme = "https"
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // local container health probe only
-	}
-	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
-	response, err := client.Get(scheme + "://" + net.JoinHostPort(host, port) + "/readyz")
+	client := &http.Client{Timeout: 3 * time.Second}
+	response, err := client.Get("http://" + net.JoinHostPort(host, port) + "/readyz")
 	if err != nil {
 		return err
 	}

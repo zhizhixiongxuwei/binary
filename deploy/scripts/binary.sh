@@ -74,20 +74,6 @@ reject_placeholder() {
   esac
 }
 
-tls_host_path() {
-  container_path=$1
-  case "$container_path" in
-    /run/binary/tls/*)
-      relative=${container_path#/run/binary/tls/}
-      case "$relative" in
-        ""|.|..|*/*) die "TLS files must be direct children of /run/binary/tls" ;;
-      esac
-      printf '%s/tls/%s\n' "$BINARY_DATA_ROOT" "$relative"
-      ;;
-    *) die "TLS files must be below /run/binary/tls" ;;
-  esac
-}
-
 validate_env_permissions() {
   [ ! -L "$env_file" ] || die "$env_file must not be a symlink"
   mode=$(file_mode "$env_file")
@@ -114,8 +100,7 @@ validate_data_layout() {
     "$BINARY_DATA_ROOT/work/scanner" \
     "$BINARY_DATA_ROOT/work/native-decompiler" \
     "$BINARY_DATA_ROOT/work/jvm-decompiler" \
-    "$BINARY_DATA_ROOT/work/pyc-decompiler" \
-    "$BINARY_DATA_ROOT/tls"; do
+    "$BINARY_DATA_ROOT/work/pyc-decompiler"; do
     [ -d "$directory" ] || die "required data directory is missing: $directory"
     [ ! -L "$directory" ] || die "data directory must not be a symlink: $directory"
   done
@@ -124,7 +109,6 @@ validate_data_layout() {
   require_product_access "$BINARY_DATA_ROOT/storage" 7 "storage root"
   require_product_access "$BINARY_DATA_ROOT/storage/projects" 7 "project storage root"
   require_product_access "$BINARY_DATA_ROOT/work" 7 "work root"
-  require_product_access "$BINARY_DATA_ROOT/tls" 5 "TLS directory"
 
   for directory in \
     "$BINARY_DATA_ROOT/storage/uploads" \
@@ -142,48 +126,22 @@ validate_data_layout() {
   done
 }
 
-validate_tls() {
-  case "$APP_TLS_MODE" in
-    direct)
-      case "$PUBLIC_BASE_URL" in
-        https://*) ;;
-        *) die "direct TLS requires an https PUBLIC_BASE_URL" ;;
-      esac
-      cert_file=$(tls_host_path "$APP_TLS_CERT_FILE")
-      key_file=$(tls_host_path "$APP_TLS_KEY_FILE")
-      [ -f "$cert_file" ] && [ ! -L "$cert_file" ] || die "direct TLS certificate is missing or unsafe"
-      [ -f "$key_file" ] && [ ! -L "$key_file" ] || die "direct TLS private key is missing or unsafe"
-      require_product_access "$cert_file" 4 "direct TLS certificate"
-      require_product_access "$key_file" 4 "direct TLS private key"
-      key_mode=$(file_mode "$key_file")
-      key_mode=$(printf '%s\n' "$key_mode" | sed 's/.*\(...\)$/\1/')
-      key_group=$(printf '%s\n' "$key_mode" | cut -c 2)
-      key_other=$(printf '%s\n' "$key_mode" | cut -c 3)
-      case "$key_group:$key_other" in
-        0:0|4:0)
-          if [ "$key_group" = 4 ]; then
-            key_owner=$(file_owner "$key_file")
-            [ "${key_owner#*:}" = "$PRODUCT_GID" ] ||
-              die "group-readable TLS private key must use PRODUCT_GID"
-          fi
-          ;;
-        *) die "TLS private key must not be writable/executable by group or accessible by other users" ;;
-      esac
-      ;;
-    proxy)
-      case "$PUBLIC_BASE_URL" in
-        https://*) ;;
-        *) die "proxy TLS mode requires an https PUBLIC_BASE_URL" ;;
-      esac
-      [ -n "${APP_TRUSTED_PROXY_CIDRS:-}" ] || die "proxy TLS mode requires APP_TRUSTED_PROXY_CIDRS"
-      trusted_proxy_cidrs=$(printf '%s' "$APP_TRUSTED_PROXY_CIDRS" | tr -d '[:space:]')
-      case ",${trusted_proxy_cidrs}," in
-        *,0.0.0.0/0,*|*,::/0,*) die "trusted proxy CIDRs must not trust every address" ;;
-      esac
-      ;;
-    http) die "production doctor requires direct or proxy TLS mode" ;;
-    *) die "unsupported APP_TLS_MODE" ;;
+validate_http() {
+  case "$PUBLIC_BASE_URL" in
+    http://*) ;;
+    *) die "PUBLIC_BASE_URL must use http" ;;
   esac
+  public_authority=${PUBLIC_BASE_URL#http://}
+  case "$public_authority" in
+    ""|*@*|*/*|*'?'*|*'#'*) die "PUBLIC_BASE_URL must contain only host and optional port" ;;
+  esac
+  printf '%s' "$APP_ALLOWED_ORIGINS" | tr ',' '\n' | grep -Fqx "$PUBLIC_BASE_URL" ||
+    die "APP_ALLOWED_ORIGINS must include PUBLIC_BASE_URL exactly"
+  case "$APP_PORT" in
+    ""|*[!0-9]*) die "APP_PORT must be numeric" ;;
+  esac
+  [ "$APP_PORT" -ge 1 ] && [ "$APP_PORT" -le 65535 ] || die "APP_PORT must be between 1 and 65535"
+  [ "$APP_LISTEN_ADDR" = ":8080" ] || die "APP_LISTEN_ADDR must remain :8080"
 }
 
 validate_images() {
@@ -263,20 +221,17 @@ init_data() {
     "$BINARY_DATA_ROOT/work/scanner" \
     "$BINARY_DATA_ROOT/work/native-decompiler" \
     "$BINARY_DATA_ROOT/work/jvm-decompiler" \
-    "$BINARY_DATA_ROOT/work/pyc-decompiler" \
-    "$BINARY_DATA_ROOT/tls"
+    "$BINARY_DATA_ROOT/work/pyc-decompiler"
 
   if [ "$(id -u)" -eq 0 ]; then
     chown "$PRODUCT_UID:$PRODUCT_GID" "$BINARY_DATA_ROOT"
     chown -R "$PRODUCT_UID:$PRODUCT_GID" \
       "$BINARY_DATA_ROOT/storage" \
-      "$BINARY_DATA_ROOT/work" \
-      "$BINARY_DATA_ROOT/tls"
+      "$BINARY_DATA_ROOT/work"
   fi
   chmod 0750 "$BINARY_DATA_ROOT" \
     "$BINARY_DATA_ROOT/storage" \
-    "$BINARY_DATA_ROOT/work" \
-    "$BINARY_DATA_ROOT/tls"
+    "$BINARY_DATA_ROOT/work"
   chmod 0600 "$env_file"
   echo "initialized $BINARY_DATA_ROOT"
 }
@@ -289,7 +244,7 @@ doctor() {
   reject_placeholder PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
   reject_placeholder APP_ALLOWED_ORIGINS "$APP_ALLOWED_ORIGINS"
   validate_data_layout
-  validate_tls
+  validate_http
   docker compose --project-directory "$repo_dir" --env-file "$env_file" \
     -f "$repo_dir/docker-compose.yml" config --quiet
   validate_images

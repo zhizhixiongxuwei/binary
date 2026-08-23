@@ -16,24 +16,17 @@ import (
 )
 
 type Server struct {
-	cfg    config.Config
-	db     *sql.DB
-	router *gin.Engine
-	http   *http.Server
+	http *http.Server
 }
 
 func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
-	if len(cfg.App.TrustedProxyCIDRs) == 0 {
-		if err := router.SetTrustedProxies(nil); err != nil {
-			return nil, fmt.Errorf("disable trusted proxies: %w", err)
-		}
-	} else if err := router.SetTrustedProxies(cfg.App.TrustedProxyCIDRs); err != nil {
-		return nil, fmt.Errorf("configure trusted proxies: %w", err)
+	if err := router.SetTrustedProxies(nil); err != nil {
+		return nil, fmt.Errorf("disable trusted proxies: %w", err)
 	}
 
-	auth := newAuthService(db, cfg.App.TLSMode != "http")
+	auth := newAuthService(db)
 	admin := newAdminService(db, auth)
 	tasks, err := newTaskService(cfg, db)
 	if err != nil {
@@ -99,9 +92,6 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	})
 
 	return &Server{
-		cfg:    cfg,
-		db:     db,
-		router: router,
 		http: &http.Server{
 			Addr:              cfg.App.ListenAddr,
 			Handler:           router,
@@ -114,9 +104,6 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 }
 
 func (s *Server) Run() error {
-	if s.cfg.App.TLSMode == "direct" {
-		return s.http.ListenAndServeTLS(s.cfg.App.TLSCertFile, s.cfg.App.TLSKeyFile)
-	}
 	return s.http.ListenAndServe()
 }
 

@@ -29,5 +29,5 @@ LABEL org.opencontainers.image.title="BinaryScan app" \
       com.binaryscan.runtime-role="app"
 COPY --from=backend-build --chmod=0555 /out/binary-app /usr/local/bin/binary-app
 USER 10001:10001
-EXPOSE 8443
+EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/binary-app"]

@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -20,10 +19,6 @@ type Database struct {
 type App struct {
 	ListenAddr           string
 	PublicBaseURL        string
-	TLSMode              string
-	TLSCertFile          string
-	TLSKeyFile           string
-	TrustedProxyCIDRs    []string
 	AllowedOrigins       []string
 	InitialAdminUser     string
 	InitialAdminPassword string
@@ -84,12 +79,8 @@ func Load(role string) (Config, error) {
 			Password: os.Getenv("BINARY_DB_PASSWORD"),
 		},
 		App: App{
-			ListenAddr:           valueOr("BINARY_LISTEN_ADDR", ":8443"),
+			ListenAddr:           valueOr("BINARY_LISTEN_ADDR", ":8080"),
 			PublicBaseURL:        strings.TrimSpace(os.Getenv("BINARY_PUBLIC_BASE_URL")),
-			TLSMode:              valueOr("BINARY_TLS_MODE", "direct"),
-			TLSCertFile:          strings.TrimSpace(os.Getenv("BINARY_TLS_CERT_FILE")),
-			TLSKeyFile:           strings.TrimSpace(os.Getenv("BINARY_TLS_KEY_FILE")),
-			TrustedProxyCIDRs:    csv("BINARY_TRUSTED_PROXY_CIDRS"),
 			AllowedOrigins:       csv("BINARY_ALLOWED_ORIGINS"),
 			InitialAdminUser:     strings.TrimSpace(os.Getenv("BINARY_INITIAL_ADMIN_USERNAME")),
 			InitialAdminPassword: os.Getenv("BINARY_INITIAL_ADMIN_PASSWORD"),
@@ -149,15 +140,6 @@ func (c Config) validateApp() error {
 	}
 	if c.App.InitialAdminUser == "" || len(c.App.InitialAdminPassword) < 16 {
 		return errors.New("initial administrator credentials are invalid")
-	}
-	switch c.App.TLSMode {
-	case "direct":
-		if c.App.TLSCertFile == "" || c.App.TLSKeyFile == "" {
-			return errors.New("direct TLS requires certificate and key paths")
-		}
-	case "proxy", "http":
-	default:
-		return fmt.Errorf("unsupported BINARY_TLS_MODE %q", c.App.TLSMode)
 	}
 	return nil
 }

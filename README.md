@@ -2,7 +2,7 @@
 
 BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环境由九个长期容器组成，支持 Native、JVM/Android 与 Python PYC 三条相互隔离的反编译链路。
 
-当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译、checker 编排、用户管理、审计和 JSON/HTML 报告链路均已接入。九个最终镜像已经完成隔离 direct-TLS、多角色、故障恢复、停启持久化和备份恢复验收；正式投产前仍须在目标服务器完成正式域名/单位证书、授权网段防火墙、并发容量和物理断网复验。
+当前仓库是全新重构实现，不读取旧仓库数据库和旧运行制品。上传、格式识别、手动归档导入、Trivy、三类反编译、checker 编排、用户管理、审计和 JSON/HTML 报告链路均已接入。九个最终镜像已经完成多角色、故障恢复、停启持久化和备份恢复验收；正式投产前仍须在目标服务器完成实际访问地址、授权网段防火墙、并发容量和物理断网复验。
 
 ## 目录边界
 
@@ -29,13 +29,12 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 
 ## 首次初始化
 
-1. 检查并提交根目录 `.env` 中的正式域名、证书路径、平台和账号配置；该文件含实际密码，仓库权限必须按敏感系统管理。
+1. 检查并提交根目录 `.env` 中的实际访问地址、监听地址、平台和账号配置；该文件含实际密码，仓库权限必须按敏感系统管理。默认 `http://localhost:8080` 仅供服务器本机访问。
 2. 初始化数据根：`deploy/scripts/binary.sh init`。
-3. 把单位 CA 签发的证书放到 `BINARY_DATA_ROOT/tls/server.crt`，私钥放到 `BINARY_DATA_ROOT/tls/server.key`。
-4. 静态检查：`deploy/scripts/binary.sh doctor`。
-5. 在制备机准备并验证工具基础镜像：`deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache`。
-6. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
-7. 启动：`deploy/scripts/binary.sh up`；该命令会再次执行 `doctor`，不能附加服务名或 Compose 参数，也不能绕过生产检查。
+3. 静态检查：`deploy/scripts/binary.sh doctor`。
+4. 在制备机准备并验证工具基础镜像：`deploy/scripts/prepare-tools.sh all /srv/binaryscan-tool-cache`。
+5. 在制备机构建最终镜像：`deploy/scripts/release.sh build`。
+6. 启动：`deploy/scripts/binary.sh up`；该命令会再次执行 `doctor`，不能附加服务名或 Compose 参数，也不能绕过生产检查。
 
 初始管理员只在空数据库中创建一次。首次登录后必须修改密码，修改 `.env` 不会重置数据库中的管理员密码。
 
@@ -57,7 +56,7 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
     npm ci
     npm run dev
 
-开发入口使用 `deploy/docker/compose.dev.yml` 覆盖为本机 HTTP；生产仍使用根 `docker-compose.yml` 的 HTTPS 入口。
+开发和生产都使用 HTTP；开发覆盖只额外开放回环 MySQL 端口并允许 Vue 开发服务器的 Origin。
 
 发布 smoke 集中在一个脚本中：`deploy/scripts/smoke.sh topology` 检查九服务边界，`contracts` 对运行中的三个 checker 执行真实 `checker-v1` 请求，`live` 完成一条 PYC 上传、自动 scan/Trivy、手动反编译、手动检查和报告下载链路。完整参数和数据保留边界见 `docs/deployment.md`。
 
