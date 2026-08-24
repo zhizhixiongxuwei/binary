@@ -33,15 +33,18 @@ python3 -c "import py_compile,sys; py_compile.compile(sys.argv[1], cfile=sys.arg
   "$repo_root/test-fixtures/vulnerable/unsafe.py" "$output_dir/vulnerable.pyc"
 
 cp "$repo_root/test-fixtures/vulnerable/OUTPUT_README.md" "$output_dir/README.md"
+cp "$repo_root/test-fixtures/vulnerable/expected-findings.json" "$output_dir/expected-findings.json"
 rm -f "$archive_dir/vulnerable-binaries.zip"
 (
   cd "$output_dir"
   zip -X -q "$archive_dir/vulnerable-binaries.zip" \
-    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc README.md
+    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc \
+    README.md expected-findings.json
 )
 (
   cd "$output_dir"
-  shasum -a 256 vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc > SHA256SUMS
+  shasum -a 256 vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc \
+    README.md expected-findings.json > SHA256SUMS
 )
 
 file "$output_dir/vulnerable-macho" "$output_dir/VulnerableFixture.class" \

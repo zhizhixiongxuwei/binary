@@ -1,0 +1,59 @@
+{
+  "schema": "binaryscan-checker-fixtures-v1",
+  "targets": {
+    "native-ghidra": {
+      "artifacts": [
+        "01-binary/vulnerable/vulnerable-macho"
+      ],
+      "decompiler": "ghidra",
+      "language": "c",
+      "sourceFixture": "native.c",
+      "expectedRuleIds": [
+        "cwe-120-bounds",
+        "cwe-252-unchecked-return",
+        "cwe-732-permissions",
+        "cwe-78-command"
+      ],
+      "notes": "These rule families survive native compilation and Ghidra pseudo-C recovery. The complete 15-family C ruleset is covered by CAnalyzerTest because source-only facts do not all survive compilation."
+    },
+    "jvm-vineflower": {
+      "artifacts": [
+        "01-binary/vulnerable/VulnerableFixture.class",
+        "01-binary/vulnerable/vulnerable.jar"
+      ],
+      "decompiler": "vineflower",
+      "language": "java",
+      "sourceFixture": "VulnerableFixture.java",
+      "expectedRuleIds": [
+        "java-command-injection",
+        "java-dynamic-code-execution",
+        "java-hardcoded-crypto-key",
+        "java-insecure-cookie",
+        "java-legacy-tls",
+        "java-overly-permissive-file",
+        "java-sql-injection",
+        "java-trust-all-hostname-verifier",
+        "java-trust-all-x509-manager",
+        "java-unsafe-deserialization",
+        "java-weak-cipher",
+        "java-weak-message-digest",
+        "java-xxe-enabled"
+      ]
+    },
+    "python-pycdc": {
+      "artifacts": [
+        "01-binary/vulnerable/vulnerable.pyc"
+      ],
+      "decompiler": "pycdc",
+      "language": "python",
+      "sourceFixture": "unsafe.pycdc.py",
+      "expectedRuleIds": [
+        "python-command-injection",
+        "python-dynamic-code-execution",
+        "python-insecure-request",
+        "python-unsafe-deserialization",
+        "python-weak-message-digest"
+      ]
+    }
+  }
+}

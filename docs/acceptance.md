@@ -47,6 +47,7 @@
 - 最终队列静止后，活跃 job/slot、非活跃占槽、running attempt、已发布未完成和孤立 running attempt 五类一致性查询均为零。
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
 - 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `python-dynamic-code-execution`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
+- `deploy/scripts/decompiler-checker-regression.sh` 使用 `binary-repo/01-binary/vulnerable/expected-findings.json` 作为唯一预期清单，真实执行 Ghidra、Vineflower、pycdc 后再请求三个 checker；Native、Java、Python 分别严格命中 4、13、5 个预期规则族，额外或缺失规则都会使回归失败。
 
 ## 纯 HTTP localhost 回归（2026-08-23）
 

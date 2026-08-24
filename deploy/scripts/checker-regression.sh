@@ -25,33 +25,29 @@ docker run --rm --pull never --platform "$BINARY_PLATFORM" \
 import json
 import urllib.request
 
+with open("/fixtures/expected-findings.json", encoding="utf-8") as source:
+    expected_manifest = json.load(source)
+if expected_manifest.get("schema") != "binaryscan-checker-fixtures-v1":
+    raise SystemExit("unsupported checker fixture manifest")
+targets = expected_manifest["targets"]
+
 cases = [
     (
-        "c-checker", "c", "native.c", "/fixtures/native.c",
-        {"cwe-120-bounds", "cwe-78-command", "cwe-732-permissions"},
+        "native-ghidra", "c-checker", "native.c", "/fixtures/native.c",
     ),
     (
-        "java-checker", "java", "VulnerableFixture.java", "/fixtures/VulnerableFixture.java",
-        {
-            "java-weak-message-digest", "java-weak-cipher", "java-legacy-tls",
-            "java-hardcoded-crypto-key", "java-trust-all-hostname-verifier",
-            "java-trust-all-x509-manager", "java-xxe-enabled",
-            "java-unsafe-deserialization", "java-sql-injection",
-            "java-command-injection", "java-dynamic-code-execution",
-            "java-overly-permissive-file", "java-insecure-cookie",
-        },
+        "jvm-vineflower", "java-checker", "VulnerableFixture.java",
+        "/fixtures/VulnerableFixture.java",
     ),
     (
-        "python-checker", "python", "unsafe.py", "/fixtures/unsafe.pycdc.py",
-        {
-            "python-dynamic-code-execution", "python-command-injection",
-            "python-unsafe-deserialization", "python-weak-message-digest",
-            "python-insecure-request",
-        },
+        "python-pycdc", "python-checker", "unsafe.py", "/fixtures/unsafe.pycdc.py",
     ),
 ]
 
-for service, language, path, source_path, expected in cases:
+for target_name, service, path, source_path in cases:
+    target = targets[target_name]
+    language = target["language"]
+    expected = set(target["expectedRuleIds"])
     with open(source_path, encoding="utf-8") as source:
         content = source.read()
     body = json.dumps({
@@ -70,9 +66,11 @@ for service, language, path, source_path, expected in cases:
         result = json.load(response)
     actual = {finding["ruleId"] for finding in result["findings"]}
     missing = expected - actual
-    if result.get("status") != "complete" or missing:
+    unexpected = actual - expected
+    if result.get("status") != "complete" or missing or unexpected:
         raise SystemExit(
             service + " regression failed; missing=" + repr(sorted(missing))
+            + " unexpected=" + repr(sorted(unexpected))
             + " diagnostics=" + repr(result.get("diagnostics"))
         )
     print(service + ": " + str(len(actual)) + " rule families observed")
