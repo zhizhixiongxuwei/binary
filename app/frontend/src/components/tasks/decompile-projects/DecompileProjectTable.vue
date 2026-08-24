@@ -57,13 +57,17 @@ const analysisStatusLabels: Readonly<Record<CAnalysisRun['status'], string>> = {
   cancelled: '已取消',
 }
 
-const javaAnalysisStatusLabels: Readonly<
-  Record<JavaAnalysisRun['status'], string>
-> = analysisStatusLabels
+type SourceAnalysisRun = Pick<CAnalysisRun, 'status' | 'finding_count' | 'diagnostic_count'>
 
-const pythonAnalysisStatusLabels: Readonly<
-  Record<PythonAnalysisRun['status'], string>
-> = analysisStatusLabels
+function analysisStatusLabel(run: SourceAnalysisRun | undefined): string {
+  if (!run) return '未执行'
+  const status = analysisStatusLabels[run.status]
+  if (run.status === 'succeeded' || run.status === 'partial') {
+    const diagnostics = run.diagnostic_count > 0 ? ` · ${run.diagnostic_count} 条诊断` : ''
+    return `${status} · ${run.finding_count} 条发现${diagnostics}`
+  }
+  return status
+}
 
 function supportsCAnalysis(project: DecompileProject): boolean {
   return project.layout_version === 'project-v1' &&
@@ -151,19 +155,13 @@ function engineLabel(project: DecompileProject): string {
           {{ statusLabels[project.status] }}
         </span>
         <small v-if="supportsCAnalysis(project)" class="analysis-status">
-          C 检测：{{ latestCAnalysisByProject[project.id]
-            ? analysisStatusLabels[latestCAnalysisByProject[project.id]!.status]
-            : '未执行' }}
+          C 检测：{{ analysisStatusLabel(latestCAnalysisByProject[project.id]) }}
         </small>
         <small v-else-if="supportsJavaAnalysis(project)" class="analysis-status">
-          Java 检测：{{ latestJavaAnalysisByProject[project.id]
-            ? javaAnalysisStatusLabels[latestJavaAnalysisByProject[project.id]!.status]
-            : '未执行' }}
+          Java 检测：{{ analysisStatusLabel(latestJavaAnalysisByProject[project.id]) }}
         </small>
         <small v-else-if="supportsPythonAnalysis(project)" class="analysis-status">
-          Python 检测：{{ latestPythonAnalysisByProject[project.id]
-            ? pythonAnalysisStatusLabels[latestPythonAnalysisByProject[project.id]!.status]
-            : '未执行' }}
+          Python 检测：{{ analysisStatusLabel(latestPythonAnalysisByProject[project.id]) }}
         </small>
         <small v-else class="analysis-status">
           源码检测：不适用

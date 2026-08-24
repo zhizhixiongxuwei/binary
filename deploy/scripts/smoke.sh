@@ -75,9 +75,9 @@ import json
 import urllib.request
 
 cases = [
-    ("c-checker", "c", "unsafe.c", "int main(void) { char value[8]; gets(value); }", "C001"),
-    ("java-checker", "java", "Unsafe.java", "class Unsafe { void run() throws Exception { Runtime.getRuntime().exec(\"id\"); } }", "JAVA001"),
-    ("python-checker", "python", "unsafe.py", "eval(\"40 + 2\")", "PY001"),
+    ("c-checker", "c", "unsafe.c", "int main(void) { char value[8]; gets(value); }", "cwe-242-gets"),
+    ("java-checker", "java", "Unsafe.java", "class Unsafe { void run(String command) throws Exception { Runtime.getRuntime().exec(command); } }", "java-command-injection"),
+    ("python-checker", "python", "unsafe.py", "eval(\"40 + 2\")", "python-dynamic-code-execution"),
 ]
 for service, language, path, content, expected_rule in cases:
     project_id = "smoke-" + language
@@ -344,7 +344,7 @@ live_workflow_smoke() {
   smoke_curl --fail --output "$smoke_tmp/findings.json" --cookie "$smoke_cookie_file" \
     "$smoke_base_url/api/v1/tasks/$smoke_task_id/findings?runId=$smoke_check_run_id"
   jq -e --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
-      .findings | any(.ruleId == "PY001" and .sourceProjectId == $project
+      .findings | any(.ruleId == "python-dynamic-code-execution" and .sourceProjectId == $project
         and .sourceFileId == $file and (.path | length > 0)
         and .startLine >= 1 and .startColumn >= 1 and .endLine >= .startLine and .endColumn >= 1)
     ' "$smoke_tmp/findings.json" >/dev/null ||
@@ -387,7 +387,7 @@ live_workflow_smoke() {
       and .task.id == $task
       and .task.inputSha256 == $sha
       and (([.runs[].id] | sort) == ([$decompile, $check] | sort))
-      and any(.findings[]; .ruleId == "PY001" and .runId == $check
+      and any(.findings[]; .ruleId == "python-dynamic-code-execution" and .runId == $check
         and .sourceProjectId == $project and .sourceFileId == $file
         and (.sourceSha256 | test("^[0-9a-f]{64}$"))
         and .startLine >= 1 and .startColumn >= 1 and .endLine >= .startLine and .endColumn >= 1)

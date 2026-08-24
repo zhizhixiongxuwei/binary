@@ -14,33 +14,95 @@ class Analyzer(ast.NodeVisitor):
         self.path = path
         self.lines = content.split("\n")
         self.findings = []
+        self.module_aliases = {}
+        self.imported_symbols = {}
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            module = alias.name.split(".")[0]
+            local_name = alias.asname or module
+            self.module_aliases[local_name] = module
+            if module in {"pickle", "shelve"}:
+                self.add_finding(
+                    node,
+                    "python-unsafe-deserialization",
+                    "high",
+                    "CWE-502",
+                    "Unsafe deserialization module",
+                    f"importing {module} exposes object deserialization that may execute code",
+                    {"module": module},
+                )
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        module = (node.module or "").split(".")[0]
+        for alias in node.names:
+            self.imported_symbols[alias.asname or alias.name] = (module, alias.name)
+        if module in {"pickle", "shelve"}:
+            self.add_finding(
+                node,
+                "python-unsafe-deserialization",
+                "high",
+                "CWE-502",
+                "Unsafe deserialization module",
+                f"importing from {module} exposes object deserialization that may execute code",
+                {"module": module},
+            )
+        self.generic_visit(node)
 
     def visit_Call(self, node):
-        name = call_name(node.func)
+        name = self.resolved_call_name(node.func)
         rule = None
         if name in {"eval", "exec"}:
-            rule = ("PY001", "high", "CWE-95", "Dynamic code execution", f"{name} executes dynamic Python code")
-        elif name == "os.system":
-            rule = ("PY002", "high", "CWE-78", "Shell command execution", "os.system executes through the host shell")
-        elif name in {"subprocess.run", "subprocess.call", "subprocess.Popen"} and has_shell_true(node):
-            rule = ("PY003", "high", "CWE-78", "Subprocess shell enabled", "shell=True may execute attacker-controlled shell syntax")
-        elif name in {"pickle.load", "pickle.loads"}:
-            rule = ("PY004", "medium", "CWE-502", "Unsafe deserialization", "pickle may execute code while deserializing")
+            rule = ("python-dynamic-code-execution", "high", "CWE-95", "Dynamic code execution",
+                    f"{name} executes dynamic Python code")
+        elif name in {"os.system", "os.popen", "subprocess.call", "subprocess.check_call",
+                      "subprocess.check_output", "subprocess.run"}:
+            rule = ("python-command-injection", "high", "CWE-78", "Command injection",
+                    f"{name} executes an operating-system command")
+        elif name == "subprocess.Popen" and has_shell_true(node):
+            rule = ("python-command-injection", "high", "CWE-78", "Subprocess shell enabled",
+                    "subprocess.Popen with shell=True may execute attacker-controlled shell syntax")
+        elif name in {"pickle.load", "pickle.loads", "yaml.loads", "shelve.open"}:
+            rule = ("python-unsafe-deserialization", "high", "CWE-502", "Unsafe deserialization",
+                    f"{name} may construct attacker-controlled Python objects")
+        elif name in {"hashlib.md5", "hashlib.sha1"}:
+            algorithm = name.rsplit(".", 1)[1]
+            rule = ("python-weak-message-digest", "medium", "CWE-328", "Weak message digest",
+                    f"hashlib.{algorithm} selects a collision-prone digest algorithm")
+        elif name.startswith("requests.") and has_keyword_false(node, "verify"):
+            rule = ("python-insecure-request", "medium", "CWE-295", "TLS verification disabled",
+                    f"{name} disables certificate verification with verify=False")
         if rule:
             rule_id, severity, cwe, title, message = rule
-            line = getattr(node, "lineno", 1)
-            self.findings.append({
-                "ruleId": rule_id,
-                "severity": severity,
-                "cwe": cwe,
-                "path": self.path,
-                "line": line,
-                "column": utf16_column(self.lines, line, getattr(node, "col_offset", 0)),
-                "title": title,
-                "message": message,
-                "evidence": {"call": name},
-            })
+            self.add_finding(node, rule_id, severity, cwe, title, message, {"call": name})
         self.generic_visit(node)
+
+    def resolved_call_name(self, node):
+        raw = call_name(node)
+        if isinstance(node, ast.Name):
+            imported = self.imported_symbols.get(node.id)
+            return ".".join(imported) if imported else raw
+        if isinstance(node, ast.Attribute):
+            parts = raw.split(".")
+            if parts and parts[0] in self.module_aliases:
+                parts[0] = self.module_aliases[parts[0]]
+            return ".".join(parts)
+        return raw
+
+    def add_finding(self, node, rule_id, severity, cwe, title, message, evidence):
+        line = getattr(node, "lineno", 1)
+        self.findings.append({
+            "ruleId": rule_id,
+            "severity": severity,
+            "cwe": cwe,
+            "path": self.path,
+            "line": line,
+            "column": utf16_column(self.lines, line, getattr(node, "col_offset", 0)),
+            "title": title,
+            "message": message,
+            "evidence": evidence,
+        })
 
 
 def utf16_column(lines, line_number, utf8_byte_offset):
@@ -72,8 +134,32 @@ def call_name(node):
 
 
 def has_shell_true(node):
-    return any(keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True
-               for keyword in node.keywords)
+    return has_boolean_keyword(node, "shell", True)
+
+
+def has_keyword_false(node, name):
+    return has_boolean_keyword(node, name, False)
+
+
+def has_boolean_keyword(node, name, expected):
+    if any(keyword.arg == name and isinstance(keyword.value, ast.Constant)
+           and keyword.value.value is expected for keyword in node.keywords):
+        return True
+    # pycdc 3.9 renders keyword calls as positional values followed by a
+    # dictionary-unpack tuple, for example:
+    # requests.get(url, False, **('verify',))
+    for keyword in node.keywords:
+        if keyword.arg is not None or not isinstance(keyword.value, (ast.Tuple, ast.List)):
+            continue
+        names = [item.value for item in keyword.value.elts
+                 if isinstance(item, ast.Constant) and isinstance(item.value, str)]
+        if len(names) != len(keyword.value.elts) or len(node.args) < len(names):
+            continue
+        values = node.args[-len(names):]
+        for keyword_name, value in zip(names, values):
+            if keyword_name == name and isinstance(value, ast.Constant) and value.value is expected:
+                return True
+    return False
 
 
 def valid_path(path):

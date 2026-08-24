@@ -23,7 +23,7 @@
 - 构建 app、scanner、三个 decompiler 和三个 checker 产品镜像，目标平台均为 `linux/amd64`。
 - 用 x86-64 ELF 验证 Ghidra headless，成功产生类 C 源文件；用 Java 21 class 验证 Vineflower；用 Python 3.9 PYC 验证 pycdc。
 - 用最终 scanner 镜像在禁止数据库更新的参数下完成仓库依赖扫描，确认内置普通数据库和 Java 数据库可读。
-- 对三个最终 checker 镜像分别执行健康检查和 `checker-v1` 请求，命中 `C001`、`JAVA001`、`PY001` 代表性规则。
+- 对三个最终 checker 镜像分别执行健康检查和 `checker-v1` 请求，命中 `cwe-242-gets`、`java-command-injection`、`python-dynamic-code-execution` 代表性规则。
 - 用最终 scanner 镜像对八个产品镜像逐一做离线漏洞扫描，全部镜像均无数据库已给出修复版本的条目。Go 产品仍包含数据库未给出修复版本的 `GO-2026-5932`，Java/操作系统基础层也保留若干无修复版本条目；未添加忽略规则。Python checker 删除了运行时不需要的 pip/ensurepip，Ghidra runtime 删除了模块清单明确排除且 headless 流程不加载的 GhidraServer YAJSW 包装器，收口后再次通过真实检查与反编译。
 - 在仓库外生成 2.8 GB 的九镜像离线归档，从不同工作目录完成 SHA-256 校验，并由该归档成功重新加载全部九个生产镜像。
 
@@ -38,7 +38,7 @@
 - 九个服务全部健康，app direct TLS 的证书链和主机名由客户端 CA 校验通过；只有 app 发布宿主机端口，三个 checker 仍无数据库变量、业务卷和宿主机端口。
 - administrator、operator、reader 三个角色同时建立独立 session。reader 查询成功但上传得到 403；operator 完成整条分析流；管理员自降级被拒绝，停用 reader 后其 session 立即失效。登录、用户换密和管理员重置使用同一用户行锁串行化，避免旧密码并发登录在会话撤销后写入新 session。用户变更、登录、任务、run 和报告动作均可从管理审计接口读取，认证材料未出现在响应中。
 - 上传组合 ZIP 后只有 `scan` 和 `trivy_scan` 两个自动运行。手动导入后识别 ELF、JAR 和 Python 3.9 PYC，再分别由 Ghidra、Vineflower 和 pycdc 成功生成 C、Java、Python project。
-- 三个源码检查均由用户手动触发，代表性危险调用分别命中 `C005`、`JAVA002` 和 `PY001`。同一手动请求重放返回原 run ID，没有创建重复 run。
+- 三个源码检查均由用户手动触发，代表性危险调用分别命中 `cwe-78-command`、`java-command-injection` 和 `python-dynamic-code-execution`。同一手动请求重放返回原 run ID，没有创建重复 run。
 - 停止 `python-checker` 后 Python check 在第一次 attempt 失败时释放槽并回到延迟队列；同时 C、Java check 正常完成。scanner 也能在 Python checker 保持停止时独立冷启动并通过健康检查；恢复 checker 后原 Python run 成功收敛。另注入一个创建时间已超过 13 小时的 checker job，确认只执行 1 次即失败，没有越过 12 小时绝对期限继续重排队。
 - 对一个已发布 C check 注入“run/job/attempt 仍 running 且 lease 已过期”的崩溃状态。回收后 attempt 数仍为 1，run/job 为 `complete/succeeded`，资源槽释放，4 个 finding 和 19 个任务事件均未增加。
 - 对一个未发布、attempt 已耗尽的 scan job 注入过期 lease。回收后 task/run/job 同时变为 `failed`，attempt 变为 `lease_lost`、错误码为 `attempts_exhausted`，资源槽释放。
@@ -46,7 +46,7 @@
 - 实际备份位于 `/Users/chenzhe/Documents/binary-backup-phase4`。恢复脚本把 MySQL dump 与 storage 导入全新的数据根 `/Users/chenzhe/Documents/binary-restore-phase4-final9`，11 组 schema/业务计数和 4 个数据库到文件引用一致；即使调用环境故意设置其他 `COMPOSE_FILE`，脚本仍固定使用正式根 Compose。最终九镜像健康后自动移除演练容器，`work` 和 `tls` 未被恢复。
 - 最终队列静止后，活跃 job/slot、非活跃占槽、running attempt、已发布未完成和孤立 running attempt 五类一致性查询均为零。
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
-- 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `PY001`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
+- 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `python-dynamic-code-execution`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
 
 ## 纯 HTTP localhost 回归（2026-08-23）
 
