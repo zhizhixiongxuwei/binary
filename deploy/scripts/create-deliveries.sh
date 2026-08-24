@@ -171,8 +171,11 @@ mkdir -p \
 for bundle in "$deploy_stage" "$demo_stage"; do
   cp "$repo_dir/docker-compose.yml" "$bundle/docker-compose.yml"
   cp "$template_root/common/manage.sh" "$bundle/manage.sh"
+  cp "$template_root/common/manage.ps1" "$bundle/manage.ps1"
   cp "$template_root/common/load-images.sh" "$bundle/load-images.sh"
+  cp "$template_root/common/load-images.ps1" "$bundle/load-images.ps1"
   cp "$template_root/common/verify.sh" "$bundle/verify.sh"
+  cp "$template_root/common/verify.ps1" "$bundle/verify.ps1"
   chmod 0755 "$bundle/manage.sh" "$bundle/load-images.sh" "$bundle/verify.sh"
 done
 
@@ -184,6 +187,7 @@ git -C "$repo_dir" archive --format=tar HEAD app/backend app/frontend | tar -xf 
 cp "$template_root/demo/Dockerfile" "$demo_stage/app/Dockerfile"
 cp "$template_root/demo/.dockerignore" "$demo_stage/app/.dockerignore"
 cp "$template_root/demo/build-app.sh" "$demo_stage/build-app.sh"
+cp "$template_root/demo/build-app.ps1" "$demo_stage/build-app.ps1"
 chmod 0755 "$demo_stage/build-app.sh"
 
 dependency_manifest="$shared_stage/dependencies.sha256"

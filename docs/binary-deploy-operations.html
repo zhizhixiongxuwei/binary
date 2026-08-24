@@ -3,168 +3,218 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BinaryScan binary-deploy 离线部署操作说明</title>
+  <title>BinaryScan binary-deploy 跨平台离线部署操作说明</title>
   <style>
-    :root { color-scheme: light; --ink:#172033; --muted:#5e6a7d; --line:#dce3ec; --brand:#155eef; --soft:#f4f7fb; --ok:#067647; --warn:#b54708; --danger:#b42318; }
-    * { box-sizing: border-box; }
+    :root { color-scheme:light; --ink:#172033; --muted:#5e6a7d; --line:#dce3ec; --brand:#155eef; --soft:#f4f7fb; --ok:#067647; --warn:#b54708; --danger:#b42318; --win:#0b63ce; --linux:#7a4b00; --mac:#5b6575; }
+    * { box-sizing:border-box; }
     body { margin:0; background:#eef2f7; color:var(--ink); font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
-    main { width:min(1040px,calc(100% - 32px)); margin:32px auto 64px; background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 50px rgba(23,32,51,.08); overflow:hidden; }
+    main { width:min(1120px,calc(100% - 32px)); margin:32px auto 64px; overflow:hidden; border:1px solid var(--line); border-radius:18px; background:#fff; box-shadow:0 18px 50px rgba(23,32,51,.08); }
     header { padding:44px 52px 34px; background:linear-gradient(135deg,#102a56,#155eef); color:#fff; }
-    header p { max-width:780px; margin:10px 0 0; color:#dce8ff; }
+    header p { max-width:860px; margin:10px 0 0; color:#dce8ff; }
     article { padding:34px 52px 52px; }
     h1 { margin:0; font-size:32px; line-height:1.25; }
-    h2 { margin:38px 0 12px; padding-top:8px; font-size:22px; border-top:1px solid var(--line); }
-    h3 { margin:24px 0 8px; font-size:17px; }
-    p, ul, ol { margin:10px 0; }
+    h2 { margin:40px 0 14px; padding-top:10px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:8px 0 7px; font-size:17px; }
+    p,ul,ol { margin:10px 0; }
     li + li { margin-top:5px; }
-    code { font-family:"SFMono-Regular",Consolas,monospace; font-size:.92em; background:#eef3fb; border-radius:5px; padding:2px 5px; }
-    pre { margin:12px 0 18px; padding:16px 18px; overflow:auto; border:1px solid #23395d; border-radius:10px; background:#0d1b2f; color:#e8f0ff; line-height:1.55; }
+    code { padding:2px 5px; border-radius:5px; background:#eef3fb; font:13.5px "SFMono-Regular",Consolas,monospace; }
+    pre { margin:10px 0 4px; padding:15px 17px; overflow:auto; border:1px solid #23395d; border-radius:9px; background:#0d1b2f; color:#e8f0ff; line-height:1.55; }
     pre code { padding:0; background:transparent; color:inherit; }
-    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }
-    .pill { padding:5px 10px; border:1px solid rgba(255,255,255,.38); border-radius:999px; font-size:13px; }
-    .callout { margin:18px 0; padding:14px 16px; border-left:4px solid var(--brand); border-radius:7px; background:var(--soft); }
-    .callout.ok { border-color:var(--ok); background:#ecfdf3; }
-    .callout.warn { border-color:var(--warn); background:#fffaeb; }
-    .callout.danger { border-color:var(--danger); background:#fef3f2; }
-    table { width:100%; border-collapse:collapse; margin:14px 0 20px; }
-    th, td { padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    table { width:100%; margin:14px 0 20px; border-collapse:collapse; }
+    th,td { padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; }
     th { background:#f7f9fc; }
     nav { padding:18px 20px; border:1px solid var(--line); border-radius:10px; background:#fafbfc; }
     nav a { color:var(--brand); text-decoration:none; }
-    footer { margin-top:40px; color:var(--muted); font-size:13px; }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }
+    .pill { padding:5px 10px; border:1px solid rgba(255,255,255,.38); border-radius:999px; font-size:13px; }
+    .callout { margin:18px 0; padding:14px 16px; border-left:4px solid var(--brand); border-radius:7px; background:var(--soft); }
+    .callout.warn { border-color:var(--warn); background:#fffaeb; }
+    .callout.danger { border-color:var(--danger); background:#fef3f2; }
+    .os-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:16px 0 22px; }
+    .os-card { min-width:0; padding:16px; border:1px solid var(--line); border-top-width:5px; border-radius:11px; background:#fbfcfe; }
+    .os-card.windows { border-top-color:var(--win); }
+    .os-card.linux { border-top-color:var(--linux); }
+    .os-card.macos { border-top-color:var(--mac); }
+    .os-card p { color:var(--muted); font-size:13px; }
+    .os-card pre { font-size:12px; white-space:pre; }
+    .command-table code { white-space:nowrap; }
+    footer { margin-top:42px; color:var(--muted); font-size:13px; }
+    @media (max-width:900px) { .os-grid { grid-template-columns:1fr; } }
     @media (max-width:700px) { header,article { padding:28px 22px; } h1 { font-size:26px; } }
-    @media print { body { background:#fff; } main { width:100%; margin:0; border:0; box-shadow:none; } header { print-color-adjust:exact; } pre { white-space:pre-wrap; } }
+    @media print { body { background:#fff; } main { width:100%; margin:0; border:0; box-shadow:none; } header { print-color-adjust:exact; } .os-grid { grid-template-columns:1fr; } pre { white-space:pre-wrap; } }
   </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>binary-deploy 离线部署操作说明</h1>
-    <p>适用于直接使用已打包九个运行镜像进行交付、导入、启动、停止、状态检查和清空数据后重新初始化的场景。</p>
-    <div class="meta"><span class="pill">目标平台：linux/amd64</span><span class="pill">运行服务：9 个</span><span class="pill">运行时不拉取镜像</span><span class="pill">数据统一位于 data/</span></div>
+    <h1>binary-deploy 跨平台离线部署操作说明</h1>
+    <p>同一交付目录支持 Windows、Linux 和 macOS 主机。Windows 使用 PowerShell 脚本，Linux/macOS 使用 Shell 脚本；三种主机最终运行的都是交付包内固定的 Linux/AMD64 容器。</p>
+    <div class="meta"><span class="pill">Windows：PowerShell + Docker Desktop</span><span class="pill">Linux/macOS：Shell</span><span class="pill">9 个运行服务</span><span class="pill">数据统一位于 data/</span></div>
   </header>
   <article>
-    <nav>
-      <strong>推荐顺序：</strong>
-      <a href="#verify">封存验真</a> →
-      <a href="#load">导入镜像</a> →
-      <a href="#config">检查配置</a> →
-      <a href="#start">初始化并启动</a> →
-      <a href="#operate">日常运维</a>
-    </nav>
+    <nav><strong>操作顺序：</strong> <a href="#choose-os">选择系统</a> → <a href="#verify">封存验真</a> → <a href="#load">导入镜像</a> → <a href="#config">配置</a> → <a href="#start">启动</a> → <a href="#operate">日常运维</a></nav>
 
-    <h2 id="scope">1. 交付内容与适用范围</h2>
+    <h2 id="scope">1. 交付内容</h2>
     <table>
-      <thead><tr><th>路径</th><th>用途</th></tr></thead>
+      <thead><tr><th>路径</th><th>Windows</th><th>Linux / macOS</th><th>用途</th></tr></thead>
       <tbody>
-        <tr><td><code>images/runtime/</code></td><td>MySQL、App、scanner、三个反编译器、三个 checker 的离线 Docker 镜像归档及各自 SHA-256。</td></tr>
-        <tr><td><code>.env</code></td><td>Compose 项目名、镜像名、账号密码、端口、并发和资源限制。权限为 0600。</td></tr>
-        <tr><td><code>docker-compose.yml</code></td><td>九服务运行拓扑、健康检查、网络隔离、只读容器和数据挂载。</td></tr>
-        <tr><td><code>load-images.sh</code></td><td>先校验镜像 TAR 的 SHA-256，再逐个执行 Docker 导入。</td></tr>
-        <tr><td><code>manage.sh</code></td><td>初始化、检查、启停、更新容器、日志和受控数据重置。</td></tr>
-        <tr><td><code>verify.sh</code></td><td>校验交付包文件清单。</td></tr>
-        <tr><td><code>manifests/</code></td><td>完整文件哈希清单和镜像 ID/平台清单。</td></tr>
-        <tr><td><code>data/</code></td><td>唯一可变业务数据根目录；首次初始化后出现数据库、上传、反编译源码、报告和工作目录。</td></tr>
+        <tr><td><code>verify.ps1 / verify.sh</code></td><td><code>verify.ps1</code></td><td><code>verify.sh</code></td><td>校验完整交付文件清单。</td></tr>
+        <tr><td><code>load-images.ps1 / load-images.sh</code></td><td><code>load-images.ps1</code></td><td><code>load-images.sh</code></td><td>校验镜像 TAR 后导入 Docker。</td></tr>
+        <tr><td><code>manage.ps1 / manage.sh</code></td><td><code>manage.ps1</code></td><td><code>manage.sh</code></td><td>初始化、检查、启停、日志和安全重置。</td></tr>
+        <tr><td><code>images/runtime/</code></td><td colspan="3">MySQL、App、scanner、三个反编译器和三个 checker 的统一离线归档。</td></tr>
+        <tr><td><code>.env</code></td><td colspan="3">镜像名、密码、端口、并发和资源限制；不要改变 <code>BINARY_DATA_ROOT=./data</code>。</td></tr>
+        <tr><td><code>data/</code></td><td colspan="3">数据库、上传文件、原始二进制、反编译源码、finding、报告和工作目录。</td></tr>
       </tbody>
     </table>
-    <div class="callout">此目录用于“直接部署现成程序”，不含 App 源代码，也不用于证明现场修改能力。现场源代码编译验证请使用 <code>binary-demo</code>。</div>
 
-    <h2 id="prereq">2. 服务器前置条件</h2>
-    <ul>
-      <li>Linux x86_64/AMD64；镜像平台固定为 <code>linux/amd64</code>。</li>
-      <li>Docker Engine 可用，且安装 Docker Compose v2（命令形式为 <code>docker compose</code>）。</li>
-      <li>建议至少 16GB 内存；运行原生反编译时建议 24GB 或更多。</li>
-      <li>准备足够磁盘空间容纳镜像、MySQL、上传二进制、反编译源码和报告。</li>
-      <li>整个交付目录必须位于本地文件系统，不能让 <code>data/</code> 指向符号链接。</li>
-    </ul>
-    <pre><code>docker version
+    <h2 id="choose-os">2. 先按现场操作系统选择脚本</h2>
+    <div class="os-grid">
+      <section class="os-card windows">
+        <h3>Windows 10/11 x64</h3>
+        <ul>
+          <li>安装 Docker Desktop，启用 WSL2 backend。</li>
+          <li>必须使用 Linux containers，不能切换到 Windows containers。</li>
+          <li>使用 Windows PowerShell 5.1 或 PowerShell 7。</li>
+          <li>建议放到 <code>C:\BinaryScan\binary-deploy</code>，不要放 OneDrive、网络盘或压缩包内部。</li>
+        </ul>
+        <pre><code>cd C:\BinaryScan\binary-deploy
+docker info --format '{{.OSType}}/{{.Architecture}}'
+$PSVersionTable.PSVersion</code></pre>
+      </section>
+      <section class="os-card linux">
+        <h3>Linux x86_64</h3>
+        <ul>
+          <li>Docker Engine + Compose v2。</li>
+          <li>目标必须是 AMD64。</li>
+          <li>初始化、检查和重置建议统一使用 sudo。</li>
+          <li>当前账号若直接操作 Docker，需具备 Docker daemon 权限。</li>
+        </ul>
+        <pre><code>cd /opt/binary-deploy
+docker version
 docker compose version
 uname -m</code></pre>
+      </section>
+      <section class="os-card macos">
+        <h3>macOS</h3>
+        <ul>
+          <li>安装并启动 Docker Desktop。</li>
+          <li>Intel Mac 可直接运行 AMD64 镜像。</li>
+          <li>Apple Silicon 通过模拟运行，仅建议制备和现场演示，不作为高负载生产服务器。</li>
+          <li>使用 Terminal 执行 <code>*.sh</code>。</li>
+        </ul>
+        <pre><code>cd /交付路径/binary-deploy
+docker version
+docker compose version
+uname -m</code></pre>
+      </section>
+    </div>
+    <div class="callout danger"><strong>Windows 最重要的检查：</strong>Docker Desktop 托盘菜单如果显示“Switch to Linux containers”，说明当前仍在 Windows containers 模式，必须先切换；本交付不包含 Windows 容器镜像。</div>
 
-    <h2 id="verify">3. 先完成封存验真</h2>
-    <p>在修改 <code>.env</code> 或启动系统之前，进入交付目录校验所有封存文件：</p>
-    <pre><code>cd /交付路径/binary-deploy
-./verify.sh package</code></pre>
-    <p>还应将下列清单本身的 SHA-256 与用户封存时记录在交付目录之外的可信值比较：</p>
-    <pre><code>sha256sum manifests/package.sha256
-# macOS 制备机也可使用：
-shasum -a 256 manifests/package.sha256</code></pre>
-    <div class="callout warn">目录内的哈希清单和目录内的“根哈希文本”可以被一起替换，所以最终可信根必须由用户抄录到纸质记录、签字文件、可信 U 盘或其他独立介质。</div>
+    <h2 id="verify">3. 封存验真：每个系统执行什么</h2>
+    <div class="os-grid">
+      <section class="os-card windows"><h3>Windows PowerShell</h3><pre><code>cd C:\BinaryScan\binary-deploy
+Set-ExecutionPolicy -Scope Process Bypass -Force
+Get-ChildItem .\*.ps1 | Unblock-File
+.\verify.ps1 package
+(Get-FileHash .\manifests\package.sha256 -Algorithm SHA256).Hash</code></pre></section>
+      <section class="os-card linux"><h3>Linux</h3><pre><code>cd /opt/binary-deploy
+chmod +x ./*.sh
+./verify.sh package
+sha256sum manifests/package.sha256</code></pre></section>
+      <section class="os-card macos"><h3>macOS</h3><pre><code>cd /交付路径/binary-deploy
+chmod +x ./*.sh
+./verify.sh package
+shasum -a 256 manifests/package.sha256</code></pre></section>
+    </div>
+    <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。</div>
 
-    <h2 id="load">4. 离线导入全部镜像</h2>
-    <pre><code>cd /交付路径/binary-deploy
-./load-images.sh</code></pre>
-    <p>脚本会先验证每个 <code>*.tar.sha256</code>，校验成功才执行 <code>docker load</code>。完成后可检查：</p>
-    <pre><code>docker image ls --filter reference='binaryscan/*'
-docker image inspect mysql:9.7.1</code></pre>
+    <h2 id="load">4. 离线导入九个运行镜像</h2>
+    <div class="os-grid">
+      <section class="os-card windows"><h3>Windows</h3><pre><code>.\load-images.ps1
+docker image ls</code></pre></section>
+      <section class="os-card linux"><h3>Linux</h3><pre><code>sudo ./load-images.sh
+sudo docker image ls</code></pre></section>
+      <section class="os-card macos"><h3>macOS</h3><pre><code>./load-images.sh
+docker image ls</code></pre></section>
+    </div>
+    <p>导入脚本先使用 SHA-256 校验每个 <code>*.tar</code>，校验失败不会执行 <code>docker load</code>。全过程不需要访问镜像仓库。</p>
 
-    <h2 id="config">5. 配置地址和管理员账号</h2>
-    <p>默认只允许从服务器本机访问 <code>http://localhost:8080</code>。如需在单位内网访问，应在已完成封存验真后修改 <code>.env</code>：</p>
+    <h2 id="config">5. 配置访问地址和管理员账号</h2>
+    <p>默认只允许从服务器本机访问 <code>http://localhost:8080</code>。需要单位内网访问时，必须在完成封存验真后修改 <code>.env</code>：</p>
     <pre><code>APP_BIND_IP=0.0.0.0
 PUBLIC_BASE_URL=http://服务器固定内网IP:8080
 APP_ALLOWED_ORIGINS=http://服务器固定内网IP:8080</code></pre>
-    <p>首次管理员用户名和随机密码位于：</p>
-    <pre><code>grep '^INITIAL_ADMIN_' .env</code></pre>
-    <div class="callout danger">不要改动 <code>BINARY_DATA_ROOT=./data</code>。管理脚本只允许清理当前交付目录下经过哨兵文件确认的 <code>data/</code>，这是防止误删其他目录的安全边界。</div>
+    <div class="os-grid">
+      <section class="os-card windows"><h3>Windows 查看/编辑</h3><pre><code>notepad .env
+Select-String -Path .env -Pattern '^INITIAL_ADMIN_'</code></pre></section>
+      <section class="os-card linux"><h3>Linux 查看</h3><pre><code>sudo grep '^INITIAL_ADMIN_' .env</code></pre></section>
+      <section class="os-card macos"><h3>macOS 查看</h3><pre><code>grep '^INITIAL_ADMIN_' .env</code></pre></section>
+    </div>
+    <div class="callout danger">不要把 <code>BINARY_DATA_ROOT</code> 改成盘符根目录、用户目录或其他路径。脚本固定要求 <code>./data</code>，并拒绝把符号链接或 Windows junction 当作数据根目录。</div>
 
     <h2 id="start">6. 初始化并启动九个服务</h2>
-    <h3>Linux 推荐命令</h3>
-    <pre><code>cd /交付路径/binary-deploy
-sudo ./manage.sh init
+    <div class="os-grid">
+      <section class="os-card windows"><h3>Windows PowerShell</h3><pre><code>.\manage.ps1 init
+.\manage.ps1 doctor
+.\manage.ps1 start
+.\manage.ps1 status</code></pre></section>
+      <section class="os-card linux"><h3>Linux</h3><pre><code>sudo ./manage.sh init
 sudo ./manage.sh doctor
-sudo ./manage.sh start</code></pre>
-    <p><code>start</code> 会使用 <code>--pull never</code>，不会联网获取镜像，并等待健康检查完成。成功后访问 <code>PUBLIC_BASE_URL</code>。</p>
-    <p>服务组成如下：</p>
-    <ol>
-      <li>mysql</li><li>app</li><li>scanner</li><li>native-decompiler</li><li>jvm-decompiler</li><li>pyc-decompiler</li><li>c-checker</li><li>java-checker</li><li>python-checker</li>
-    </ol>
-    <p>App 外仅开放一个 HTTP 端口。数据库、worker 与 checker 均不映射宿主机端口。</p>
+sudo ./manage.sh start
+sudo ./manage.sh status</code></pre></section>
+      <section class="os-card macos"><h3>macOS</h3><pre><code>./manage.sh init
+./manage.sh doctor
+./manage.sh start
+./manage.sh status</code></pre></section>
+    </div>
+    <p>启动固定使用 <code>--pull never</code> 并等待健康检查。九个服务为 mysql、app、scanner、native-decompiler、jvm-decompiler、pyc-decompiler、c-checker、java-checker、python-checker。</p>
 
-    <h2 id="data">7. 数据落盘位置</h2>
+    <h2 id="data">7. data 目录在各系统中的位置</h2>
     <table>
-      <thead><tr><th>目录</th><th>内容</th></tr></thead>
+      <thead><tr><th>内容</th><th>Windows 示例</th><th>Linux 示例</th><th>容器内位置</th></tr></thead>
       <tbody>
-        <tr><td><code>data/mysql/</code></td><td>用户、任务、finding、审计和报告索引等数据库数据。</td></tr>
-        <tr><td><code>data/storage/uploads/</code></td><td>上传入口相关持久化内容。</td></tr>
-        <tr><td><code>data/storage/blobs/</code></td><td>按内容寻址保存的原始二进制。</td></tr>
-        <tr><td><code>data/storage/projects/native/</code></td><td>PE、ELF、Mach-O 等反编译生成的类 C 源码。</td></tr>
-        <tr><td><code>data/storage/projects/jvm/</code></td><td>CLASS、JAR、DEX、APK 反编译生成的 Java 源码。</td></tr>
-        <tr><td><code>data/storage/projects/pyc/</code></td><td>PYC 反编译生成的 Python 源码。</td></tr>
-        <tr><td><code>data/storage/artifacts/</code></td><td>分析制品。</td></tr>
-        <tr><td><code>data/storage/reports/</code></td><td>可下载或查看的报告文件。</td></tr>
-        <tr><td><code>data/work/</code></td><td>scanner 与反编译 worker 的可清理工作区。</td></tr>
+        <tr><td>数据库</td><td><code>C:\BinaryScan\binary-deploy\data\mysql</code></td><td><code>/opt/binary-deploy/data/mysql</code></td><td><code>/var/lib/mysql</code></td></tr>
+        <tr><td>原始二进制</td><td><code>data\storage\blobs</code></td><td><code>data/storage/blobs</code></td><td><code>/data/storage/blobs</code></td></tr>
+        <tr><td>类 C 源码</td><td><code>data\storage\projects\native</code></td><td><code>data/storage/projects/native</code></td><td><code>/data/storage/projects/native</code></td></tr>
+        <tr><td>Java 源码</td><td><code>data\storage\projects\jvm</code></td><td><code>data/storage/projects/jvm</code></td><td><code>/data/storage/projects/jvm</code></td></tr>
+        <tr><td>Python 源码</td><td><code>data\storage\projects\pyc</code></td><td><code>data/storage/projects/pyc</code></td><td><code>/data/storage/projects/pyc</code></td></tr>
+        <tr><td>报告</td><td><code>data\storage\reports</code></td><td><code>data/storage/reports</code></td><td><code>/data/storage/reports</code></td></tr>
       </tbody>
     </table>
-    <p>Monaco Editor 和漏洞详情通过 App 读取数据库记录所指向的 <code>storage/projects</code> 源码，不依赖容器临时文件系统。</p>
+    <p>Monaco Editor 和漏洞详情通过 App 读取数据库记录指向的持久化源码，不依赖容器临时文件系统。</p>
 
-    <h2 id="operate">8. 日常运维命令</h2>
-    <table>
-      <thead><tr><th>命令</th><th>行为</th></tr></thead>
+    <h2 id="operate">8. 日常命令对照表</h2>
+    <table class="command-table">
+      <thead><tr><th>行为</th><th>Windows PowerShell</th><th>Linux</th><th>macOS</th></tr></thead>
       <tbody>
-        <tr><td><code>./manage.sh status</code></td><td>查看九个服务状态。</td></tr>
-        <tr><td><code>./manage.sh logs -f app</code></td><td>持续查看 App 日志；服务名可替换。</td></tr>
-        <tr><td><code>./manage.sh stop</code></td><td>停止容器但保留容器和全部数据。</td></tr>
-        <tr><td><code>./manage.sh start</code></td><td>启动或补齐服务，不拉取镜像。</td></tr>
-        <tr><td><code>./manage.sh restart</code></td><td>强制重建九个容器，保留全部业务数据。</td></tr>
-        <tr><td><code>./manage.sh down</code></td><td>移除容器与网络，保留镜像和全部业务数据。</td></tr>
+        <tr><td>状态</td><td><code>.\manage.ps1 status</code></td><td><code>sudo ./manage.sh status</code></td><td><code>./manage.sh status</code></td></tr>
+        <tr><td>App 日志</td><td><code>.\manage.ps1 logs app</code></td><td><code>sudo ./manage.sh logs app</code></td><td><code>./manage.sh logs app</code></td></tr>
+        <tr><td>停止并保留容器</td><td><code>.\manage.ps1 stop</code></td><td><code>sudo ./manage.sh stop</code></td><td><code>./manage.sh stop</code></td></tr>
+        <tr><td>启动</td><td><code>.\manage.ps1 start</code></td><td><code>sudo ./manage.sh start</code></td><td><code>./manage.sh start</code></td></tr>
+        <tr><td>重建九个容器并保留数据</td><td><code>.\manage.ps1 restart</code></td><td><code>sudo ./manage.sh restart</code></td><td><code>./manage.sh restart</code></td></tr>
+        <tr><td>移除容器并保留数据</td><td><code>.\manage.ps1 down</code></td><td><code>sudo ./manage.sh down</code></td><td><code>./manage.sh down</code></td></tr>
       </tbody>
     </table>
 
-    <h2 id="reset">9. 清空全部挂载数据并重新启动</h2>
-    <div class="callout danger"><strong>不可恢复：</strong>此操作删除数据库、账号、上传文件、二进制 blob、反编译源码、漏洞结果、报告和工作目录。</div>
-    <pre><code>cd /交付路径/binary-deploy
-sudo ./manage.sh reset --yes</code></pre>
-    <p>脚本只有同时满足以下条件才执行删除：目标严格等于当前交付包的 <code>data/</code>、目标不是符号链接、存在匹配当前 Compose 项目名的哨兵文件、显式提供 <code>--yes</code>。随后它会重建目录、检查九个镜像并重新启动。</p>
+    <h2 id="reset">9. 清空全部数据并重新启动</h2>
+    <div class="callout danger"><strong>不可恢复：</strong>会删除数据库、账号、上传文件、二进制、反编译源码、finding、报告和工作目录。日常重启不要使用。</div>
+    <div class="os-grid">
+      <section class="os-card windows"><h3>Windows</h3><pre><code>.\manage.ps1 reset -Yes</code></pre></section>
+      <section class="os-card linux"><h3>Linux</h3><pre><code>sudo ./manage.sh reset --yes</code></pre></section>
+      <section class="os-card macos"><h3>macOS</h3><pre><code>./manage.sh reset --yes</code></pre></section>
+    </div>
+    <p>Windows 脚本要求 <code>-Yes</code>，Shell 脚本要求 <code>--yes</code>。两者都会验证目标严格等于当前交付目录的 <code>data</code>、不是符号链接/junction，并且哨兵与 Compose 项目名一致。</p>
 
-    <h2 id="trouble">10. 常见问题</h2>
+    <h2 id="trouble">10. Windows 常见问题与跨平台排查</h2>
     <ul>
-      <li><strong>提示 required image is not loaded：</strong>先执行 <code>./load-images.sh</code>。</li>
-      <li><strong>平台不匹配：</strong>目标服务器必须是 AMD64；ARM64 主机不能把本交付包当作原生生产部署使用。</li>
-      <li><strong>8080 被占用：</strong>完成封存验真后修改 <code>APP_PORT</code>，并同步修改公开 URL 中的端口。</li>
-      <li><strong>Linux 权限失败：</strong>初始化与重置使用 <code>sudo</code>；不要手工把业务目录改成 0777。</li>
-      <li><strong>服务未健康：</strong>执行 <code>./manage.sh status</code> 和 <code>./manage.sh logs 服务名</code>。</li>
+      <li><strong>PowerShell 提示禁止运行脚本：</strong>执行 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>，只影响当前窗口；必要时执行 <code>Get-ChildItem .\*.ps1 | Unblock-File</code>。</li>
+      <li><strong>提示 Docker Desktop must use Linux containers：</strong>在 Docker Desktop 菜单切换到 Linux containers，并确认 WSL2 engine 已启动。</li>
+      <li><strong>Windows 文件共享或挂载失败：</strong>把交付目录移动到本机 NTFS 盘的短路径，例如 <code>C:\BinaryScan</code>，不要使用网络盘、OneDrive 按需文件或压缩包内路径。</li>
+      <li><strong>平台不匹配：</strong>交付镜像是 <code>linux/amd64</code>；Windows ARM 设备不作为正式验证目标。</li>
+      <li><strong>镜像缺失：</strong>Windows 重新执行 <code>.\load-images.ps1</code>；Linux/macOS 重新执行 <code>./load-images.sh</code>。</li>
+      <li><strong>端口占用：</strong>完成封存验真后修改 <code>APP_PORT</code>，同时修改 <code>PUBLIC_BASE_URL</code>。</li>
     </ul>
-    <footer>BinaryScan binary-deploy 操作说明 · 生成于当前项目交付流程 · 本文档位于源仓库 docs/，不属于封存交付目录。</footer>
+    <footer>BinaryScan binary-deploy 跨平台操作说明 · HTML 位于源仓库 docs/，不复制进封存交付目录。</footer>
   </article>
 </main>
 </body>

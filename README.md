@@ -64,4 +64,4 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 
 业务持久化数据只位于 `BINARY_DATA_ROOT/mysql` 和 `BINARY_DATA_ROOT/storage`。`work` 可随时清理，Docker 自身日志与元数据不属于业务备份。
 
-完整说明见 `docs/architecture.md`、`docs/deployment.md`、`docs/data-and-backup.md` 和 `docs/build-and-operations.md`。其中 `docs/build-and-operations.md` 集中列出 APP/checker 构建、Compose 启动、全新初始化、暂停和停止命令；需要直接用浏览器查看时可打开 [HTML 版运维手册](docs/build-and-operations.html)。双交付包分别参考 [binary-deploy 离线部署说明](docs/binary-deploy-operations.html) 和 [binary-demo 源码验真与现场修改说明](docs/binary-demo-verification.html)。
+完整说明见 `docs/architecture.md`、`docs/deployment.md`、`docs/data-and-backup.md` 和 `docs/build-and-operations.md`。其中 `docs/build-and-operations.md` 集中列出 APP/checker 构建、Compose 启动、全新初始化、暂停和停止命令；需要直接用浏览器查看时可打开 [HTML 版运维手册](docs/build-and-operations.html)。支持 Windows PowerShell、Linux Shell 和 macOS Shell 的双交付流程分别参考 [binary-deploy 跨平台离线部署说明](docs/binary-deploy-operations.html) 和 [binary-demo 跨平台源码验真与现场修改说明](docs/binary-demo-verification.html)。
