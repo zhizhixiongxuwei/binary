@@ -5,6 +5,10 @@
       "artifact": "03-container/docker-save.tar",
       "format": "docker-tar"
     },
+    "docker-img": {
+      "artifact": "03-container/docker-save.img",
+      "format": "docker-tar"
+    },
     "oci-layout": {
       "artifact": "03-container/oci-layout.tar",
       "format": "oci-tar"

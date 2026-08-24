@@ -106,6 +106,7 @@ func TestAnalysisModeCapabilities(t *testing.T) {
 		{format: "apk", mode: AnalysisModeArchive, want: true},
 		{format: "iso9660", mode: AnalysisModeArchive, want: true},
 		{format: "iso9660", mode: AnalysisModeContainer, want: false},
+		{format: "ext4", mode: AnalysisModeArchive, want: true},
 		{format: "ext4", mode: AnalysisModeContainer, want: false},
 		{format: "docker-tar", mode: AnalysisModeArchive, want: true},
 		{format: "docker-tar", mode: AnalysisModeContainer, want: true},
@@ -118,7 +119,7 @@ func TestAnalysisModeCapabilities(t *testing.T) {
 	}
 
 	for format, want := range map[string]string{
-		"jar": "zip", "apk": "zip", "docker-tar": "tar", "oci-tar": "tar", "iso9660": "iso9660",
+		"jar": "zip", "apk": "zip", "docker-tar": "tar", "oci-tar": "tar", "iso9660": "iso9660", "ext4": "ext4",
 	} {
 		actual, ok := ArchiveFormat(format)
 		if !ok || actual != want {

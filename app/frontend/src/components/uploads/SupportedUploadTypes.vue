@@ -20,14 +20,14 @@ const groups = [
     icon: Archive,
     title: '归档导入',
     formats:
-      'ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO、JAR、APK',
+      'ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO、EXT4、JAR、APK',
   },
   {
     category: 'container',
     icon: Box,
     title: '容器/映像分析',
     formats:
-      'Docker/OCI TAR（可使用 .tar / .img）；ISO、EXT4 可识别但 Trivy 不适用',
+      'Docker/OCI TAR（可使用 .tar / .img）；ISO、EXT4 选择归档模式，Trivy 不适用',
   },
 ] as const
 

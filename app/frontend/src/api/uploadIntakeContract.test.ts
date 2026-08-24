@@ -25,6 +25,10 @@ describe('unified upload contract', () => {
       detected_format: 'ext4',
       analysis_options: [
         {
+          mode: 'archive',
+          supported: true,
+        },
+        {
           mode: 'container',
           supported: false,
           reason: 'Trivy 镜像扫描器不支持 ext4 格式',
@@ -34,7 +38,8 @@ describe('unified upload contract', () => {
 
     expect(parsed.detected_format).toBe('ext4')
     expect(parsed.tasks).toBeUndefined()
-    expect(parsed.analysis_options?.[0]?.supported).toBe(false)
+    expect(parsed.analysis_options?.find((option) => option.mode === 'archive')?.supported).toBe(true)
+    expect(parsed.analysis_options?.find((option) => option.mode === 'container')?.supported).toBe(false)
   })
 
   it('accepts an explicit not-applicable mode task', () => {

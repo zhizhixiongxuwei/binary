@@ -20,7 +20,7 @@ func TestAnalysisOptionsExposeSupportedAndNotApplicableModes(t *testing.T) {
 		{format: "jar", supported: map[string]bool{"binary": true, "archive": true, "container": false}},
 		{format: "docker-tar", supported: map[string]bool{"binary": false, "archive": true, "container": true}},
 		{format: "iso9660", supported: map[string]bool{"binary": false, "archive": true, "container": false}},
-		{format: "ext4", supported: map[string]bool{"binary": false, "archive": false, "container": false}},
+		{format: "ext4", supported: map[string]bool{"binary": false, "archive": true, "container": false}},
 	}
 	for _, test := range tests {
 		options := analysisOptions(test.format)

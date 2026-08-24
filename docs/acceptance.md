@@ -3,7 +3,7 @@
 发布前必须完成以下场景：
 
 1. administrator、operator 和 reader 通过单位 HTTP 地址同时登录，权限和审计互不串扰；入口只能位于受控内网，防火墙只放行授权网段。
-2. 上传组合归档后自动完成格式识别和 Trivy；用户手动导入归档文件树，且没有自动 decompile、check 或 report job。
+2. 上传后自动完成内容格式识别；用户选择分析模式。归档模式只读导入一层文件树，容器模式由用户手动触发 Trivy，且没有自动 decompile、check 或 report job。
 3. 手动完成 Native 反编译与 C 检查。
 4. 手动完成 JAR 或 APK 反编译，并对 Java 项目执行检查；正式文件矩阵还应各保留一个 DEX/APK 样本。
 5. 手动完成受支持 PYC 反编译与 Python 检查；`bytecode_only` 项目被拒绝检查。
@@ -13,7 +13,7 @@
 9. 断网重启九个容器后数据仍在，且没有 pull、更新或遥测请求。
 10. 完成一次 MySQL 与 storage 的一致性备份恢复。
 
-格式路由使用小型表驱动测试；每个真实工具只保留代表性 smoke，不维护全格式大型 corpus 或逐字节反编译 golden 输出。
+格式路由使用表驱动测试，并维护 10 个二进制、12 个归档/文件系统和 3 个容器文件的结果型 corpus；真实工具回归比较稳定规则族，不维护易受工具版本影响的逐字节反编译 golden 输出。
 
 ## 制备机验收记录（2026-08-22）
 
@@ -47,9 +47,9 @@
 - 最终队列静止后，活跃 job/slot、非活跃占槽、running attempt、已发布未完成和孤立 running attempt 五类一致性查询均为零。
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
 - 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `python-dynamic-code-execution`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
-- `deploy/scripts/decompiler-checker-regression.sh` 使用 `binary-repo/01-binary/expected-findings.json` 作为唯一预期清单，真实执行 Ghidra、Vineflower、pycdc 后再请求三个 checker；Native、CLASS、JAR、Python 分别严格命中 4、13、13、5 个预期规则族，额外或缺失规则都会使回归失败。
-- `deploy/scripts/trivy-image-regression.sh` 对 `binary-repo/03-container` 的 Docker Save TAR 与 OCI Layout TAR 使用当前离线 Trivy 数据库真实扫描；两种格式均识别合成的 `log4j-core 2.14.1` 元数据并命中 7 条漏洞，至少包含 `expected-trivy.json` 中固定的 4 个 Log4j CVE 基线。
-- ISO 9660 归入 02 归档导入而不是 03 容器扫描；`.iso` 与相同内容的 `.img` 均按文件系统 magic 识别为 `iso9660`，展开后 4 个成员全部可批量创建二进制任务。
+- `deploy/scripts/decompiler-checker-regression.sh` 使用 `binary-repo/01-binary/expected-findings.json` 作为唯一预期清单，真实执行 Ghidra、Vineflower、JADX、pycdc 后再请求三个 checker；覆盖 EXE、DLL、SYS、ELF、Mach-O、CLASS、JAR、DEX、APK、PYC，额外或缺失规则族都会使回归失败。
+- `deploy/scripts/trivy-image-regression.sh` 对 Docker Save TAR、字节相同但后缀为 IMG 的 Docker archive，以及 OCI Layout TAR 使用当前离线 Trivy 数据库真实扫描；三者均需至少包含 `expected-trivy.json` 中固定的 4 个 Log4j CVE 基线。
+- ISO 9660 与 EXT4 归入 02 归档导入；两者均只读枚举一层 ELF/PE 并批量创建二进制任务，不进入 Trivy。`03-container/docker-save.img` 依靠内部 Docker manifest 识别为 `docker-tar`。
 
 ## 纯 HTTP localhost 回归（2026-08-23）
 
@@ -60,4 +60,4 @@
 - 旧备份恢复到新的 `/Users/chenzhe/Documents/binary-restore-http-final`，数据库计数和 4 个数据库到 storage 引用一致；恢复根没有 `tls` 目录，九服务健康后演练容器和网络已全部移除。调用环境中的其他 `COMPOSE_FILE` 未改变正式拓扑。
 - 新九镜像离线包为 `binary-runtime-0.1.0-dev-amd64-http.tar`（2.8 GB），SHA-256 为 `5df7f3034c13f90043fb3812366675f84b84f60e76b5de481b71b67608508434`。旧 direct-TLS 包只保留为历史证据，不得用于当前部署。
 
-这次验收仍不替代目标单位现场检查。投产门槛剩余：实际 HTTP 访问地址、授权网段防火墙、按实际并发与大文件进行容量测试、物理断网后的 `--pull never` 再启动，以及 PE/Mach-O/DEX/APK 等单位实际文件矩阵。验收测试账号不得复制到生产环境。
+这次验收仍不替代目标单位现场检查。投产门槛剩余：实际 HTTP 访问地址、授权网段防火墙、按实际并发与大文件进行容量测试、物理断网后的 `--pull never` 再启动，以及单位提供的真实文件矩阵复测。验收测试账号不得复制到生产环境。

@@ -31,7 +31,7 @@ export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
   // native picker select them; preflightUploadFile still validates their contents.
   binary: undefined,
   archive:
-    '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,.iso,.img,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip,application/x-iso9660-image',
+    '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,.iso,.ext4,.img,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip,application/x-iso9660-image',
   container: '.tar,application/x-tar,application/octet-stream',
 }
 
@@ -155,6 +155,14 @@ function detectHead(bytes: Uint8Array): MagicMatch | null {
   }
   if (startsWith(bytes, [0xed, 0xab, 0xee, 0xdb])) {
     return { format: 'RPM', allowedCategories: ['archive'] }
+  }
+  const extMagicOffset = 1_024 + 0x38
+  if (
+    bytes.length >= extMagicOffset + 2 &&
+    bytes[extMagicOffset] === 0x53 &&
+    bytes[extMagicOffset + 1] === 0xef
+  ) {
+    return { format: 'EXT4', allowedCategories: ['archive'] }
   }
   const isoDescriptorOffset = 16 * 2_048
   if (

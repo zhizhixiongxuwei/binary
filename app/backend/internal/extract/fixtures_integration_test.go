@@ -11,32 +11,37 @@ import (
 )
 
 // This optional fixture test complements TestFixtureArchiveCorpus by proving
-// that every ZIP/ISO/IMG member is binary-task eligible and has the expected format.
+// that every advertised archive yields the expected binary-task candidates.
 func TestFixtureArchiveEligibility(t *testing.T) {
 	root := os.Getenv("BINARY_FIXTURE_ROOT")
 	if root == "" {
 		t.Skip("BINARY_FIXTURE_ROOT is not set")
 	}
-	zipExpected := map[string]string{
-		"VulnerableFixture.class": "java-class",
-		"vulnerable-macho":        "macho-thin",
-		"vulnerable.jar":          "jar",
-		"vulnerable.pyc":          "pyc",
+	pairExpected := map[string]string{
+		"vulnerable-elf": "elf64",
+		"vulnerable.exe": "pe32+",
 	}
 	isoExpected := map[string]string{
-		"VULNERABLE-MACHO":        "macho-thin",
-		"VULNERABLE.JAR":          "jar",
-		"VULNERABLE.PYC":          "pyc",
-		"VULNERABLEFIXTURE.CLASS": "java-class",
+		"VULNERABLE-ELF": "elf64",
+		"VULNERABLE.EXE": "pe32+",
 	}
 	tests := []struct {
 		name     string
 		format   string
 		expected map[string]string
 	}{
-		{name: "vulnerable-binaries.zip", format: "zip", expected: zipExpected},
+		{name: "vulnerable-binaries.zip", format: "zip", expected: pairExpected},
+		{name: "vulnerable-binaries.7z", format: "7z", expected: pairExpected},
+		{name: "vulnerable-binaries.rar", format: "rar", expected: pairExpected},
+		{name: "vulnerable-binaries.tar", format: "tar", expected: pairExpected},
+		{name: "vulnerable-elf.gz", format: "gzip", expected: map[string]string{"vulnerable-elf": "elf64"}},
+		{name: "vulnerable-elf.xz", format: "xz", expected: map[string]string{"vulnerable-elf": "elf64"}},
+		{name: "vulnerable-binaries.deb", format: "deb", expected: map[string]string{"vulnerable-elf": "elf64"}},
+		{name: "vulnerable-binaries.rpm", format: "rpm", expected: map[string]string{"vulnerable-elf": "elf64"}},
 		{name: "vulnerable-binaries.iso", format: "iso9660", expected: isoExpected},
-		{name: "vulnerable-binaries.img", format: "iso9660", expected: isoExpected},
+		{name: "vulnerable-binaries.ext4", format: "ext4", expected: pairExpected},
+		{name: "vulnerable-binaries.jar", format: "zip", expected: map[string]string{"VulnerableFixture$Cookie.class": "java-class", "VulnerableFixture.class": "java-class"}},
+		{name: "vulnerable-binaries.apk", format: "zip", expected: map[string]string{"classes.dex": "dex"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -66,7 +71,7 @@ func TestFixtureArchiveEligibility(t *testing.T) {
 						return err
 					}
 					if detected.Category != filetype.CategoryBinary {
-						t.Fatalf("%s category = %q, want %q", logicalPath, detected.Category, filetype.CategoryBinary)
+						return nil
 					}
 					actual[logicalPath] = detected.Format
 					return nil

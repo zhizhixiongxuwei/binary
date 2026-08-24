@@ -15,16 +15,17 @@ cd "$repo_dir"
 . ./.env
 
 docker_input="$fixture_root/03-container/docker-save.tar"
+docker_img_input="$fixture_root/03-container/docker-save.img"
 oci_input="$fixture_root/03-container/oci-layout.tar"
 expectations="$fixture_root/03-container/expected-trivy.json"
-for input in "$docker_input" "$oci_input" "$expectations"; do
+for input in "$docker_input" "$docker_img_input" "$oci_input" "$expectations"; do
   [ -f "$input" ] || {
     echo "missing fixture: $input" >&2
     exit 1
   }
 done
 
-mkdir -p "$work_dir/docker" "$work_dir/oci" "$work_dir/oci-layout"
+mkdir -p "$work_dir/docker" "$work_dir/docker-img" "$work_dir/oci" "$work_dir/oci-layout"
 tar -xf "$oci_input" -C "$work_dir/oci-layout"
 
 run_trivy() {
@@ -47,10 +48,11 @@ run_trivy() {
 }
 
 run_trivy docker "$docker_input" /input/image.tar
+run_trivy docker-img "$docker_img_input" /input/image.img
 run_trivy oci "$work_dir/oci-layout" /input/oci-layout
 
 python3 - "$expectations" "$work_dir/docker/report.json" \
-  "$work_dir/oci/report.json" <<'PY'
+  "$work_dir/docker-img/report.json" "$work_dir/oci/report.json" <<'PY'
 import json
 import pathlib
 import sys
@@ -63,7 +65,7 @@ if expectations.get("schema") != "binaryscan-trivy-image-fixtures-v1":
 required = set(expectations["requiredVulnerabilityIds"])
 minimum = expectations["minimumFindings"]
 package = expectations["package"]
-for target_name, report_name in zip(("docker-save", "oci-layout"), sys.argv[2:]):
+for target_name, report_name in zip(("docker-save", "docker-img", "oci-layout"), sys.argv[2:]):
     report = json.loads(pathlib.Path(report_name).read_text(encoding="utf-8"))
     findings = [
         finding

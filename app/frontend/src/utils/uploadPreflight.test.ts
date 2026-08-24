@@ -20,6 +20,7 @@ describe('inputCategoryAccept', () => {
     expect(inputCategoryAccept.archive).toContain('.zip')
     expect(inputCategoryAccept.archive).toContain('.iso')
     expect(inputCategoryAccept.archive).toContain('.img')
+    expect(inputCategoryAccept.archive).toContain('.ext4')
     expect(inputCategoryAccept.container).toContain('.tar')
     expect(nativePickerAcceptAttributes('archive')).toHaveProperty('accept')
     expect(nativePickerAcceptAttributes('container')).toHaveProperty('accept')
@@ -110,4 +111,17 @@ describe('preflightUploadFile', () => {
       expect(result).toEqual({ accepted: true, detectedFormat: 'ISO 9660' })
     },
   )
+
+  it('routes EXT4 content to the read-only archive workflow', async () => {
+    const body = new Uint8Array(2 * 1_024)
+    body[1_024 + 0x38] = 0x53
+    body[1_024 + 0x39] = 0xef
+
+    const result = await preflightUploadFile(
+      new File([body], 'vulnerable-binaries.ext4', { type: 'application/octet-stream' }),
+      'archive',
+    )
+
+    expect(result).toEqual({ accepted: true, detectedFormat: 'EXT4' })
+  })
 })

@@ -223,7 +223,7 @@ function inferredInputFormat(filename: string): string {
 
 function demoAnalysisOptions(format: string): import('@/api/types').UploadAnalysisOption[] {
   const binary = ['pe32+', 'elf64', 'macho-thin', 'class', 'jar', 'dex', 'apk', 'pyc']
-  const archive = ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'jar', 'apk']
+  const archive = ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'ext4', 'jar', 'apk']
   const container = ['docker-tar', 'oci-tar']
   const options: import('@/api/types').UploadAnalysisOption[] = [
     { mode: 'binary', supported: binary.includes(format) },
@@ -368,7 +368,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
             inferredInputFormat(upload.input.filename),
           )
         : analysisMode === 'archive'
-          ? ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'jar', 'apk'].includes(
+          ? ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'ext4', 'jar', 'apk'].includes(
               inferredInputFormat(upload.input.filename),
             )
           : ['docker-tar', 'oci-tar'].includes(inferredInputFormat(upload.input.filename))

@@ -16,9 +16,15 @@ EPOCH = 946684800  # 2000-01-01T00:00:00Z
 CREATED = "2000-01-01T00:00:00Z"
 IMAGE_REFERENCE = "binaryscan/vulnerable-fixture:latest"
 BINARY_NAMES = (
+    "vulnerable.exe",
+    "vulnerable.dll",
+    "vulnerable.sys",
+    "vulnerable-elf",
     "vulnerable-macho",
     "VulnerableFixture.class",
     "vulnerable.jar",
+    "vulnerable.dex",
+    "vulnerable.apk",
     "vulnerable.pyc",
 )
 
@@ -79,7 +85,13 @@ def build_layer(binary_dir: pathlib.Path) -> bytes:
         source = binary_dir / name
         if not source.is_file():
             raise SystemExit(f"missing binary fixture: {source}")
-        mode = 0o755 if name == "vulnerable-macho" else 0o644
+        mode = 0o755 if name in {
+            "vulnerable.exe",
+            "vulnerable.dll",
+            "vulnerable.sys",
+            "vulnerable-elf",
+            "vulnerable-macho",
+        } else 0o644
         entries.append((f"opt/binaryscan-fixtures/{name}", source.read_bytes(), mode))
     entries.append(
         (

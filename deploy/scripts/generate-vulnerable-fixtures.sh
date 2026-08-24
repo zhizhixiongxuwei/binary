@@ -3,6 +3,7 @@ set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 requested_fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
+fixture_builder_image=${FIXTURE_BUILDER_IMAGE:-binaryscan/fixture-builder:1.0.0}
 fixture_root=
 output_dir=
 archive_dir=
@@ -21,7 +22,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-for command in clang javac jar python3 zip shasum file hdiutil; do
+for command in clang javac jar python3 zip shasum file hdiutil docker go; do
   command -v "$command" >/dev/null 2>&1 || die "missing required command: $command"
 done
 
@@ -46,27 +47,74 @@ python_version=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 [ "$python_version" = "3.9" ] ||
   die "Python 3.9 is required for pycdc-compatible PYC fixtures (found $python_version)"
 
-# This repository is intentionally a result-producing corpus, not a broad
-# format corpus. Rebuild the three generated directories from scratch so retired
-# zero-finding fixtures cannot survive a later regeneration.
+# shellcheck disable=SC1091
+. "$repo_root/.env"
+docker image inspect "$fixture_builder_image" >/dev/null 2>&1 ||
+  docker build --pull=false -t "$fixture_builder_image" \
+    -f "$repo_root/deploy/tools/fixture-builder.Dockerfile" "$repo_root"
+
+# Rebuild only the three validated result directories. This corpus intentionally
+# excludes zero-finding and ambiguous placeholder files.
 rm -rf -- "$output_dir" "$archive_dir" "$container_dir"
-rm -f -- "$fixture_root/generate.go" "$fixture_root/manifest.json" \
-  "$fixture_root/SHA256SUMS"
 find "$fixture_root" -name .DS_Store -type f -delete
-build_dir=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-vulnerable-fixtures.XXXXXX")
+build_dir=$(mktemp -d "$repo_root/.fixture-build.XXXXXX")
 mkdir -p "$output_dir" "$archive_dir" "$container_dir" \
-  "$build_dir/java" "$build_dir/iso"
+  "$build_dir/native" "$build_dir/java" "$build_dir/apk" "$build_dir/iso" \
+  "$build_dir/rpmbuild/BUILD" "$build_dir/rpmbuild/BUILDROOT" \
+  "$build_dir/rpmbuild/RPMS" "$build_dir/rpmbuild/SOURCES" \
+  "$build_dir/rpmbuild/SPECS" "$build_dir/rpmbuild/SRPMS"
 
-clang -O0 -fno-inline -Wl,-no_uuid -o "$build_dir/vulnerable-macho" \
+# Native inputs: real Mach-O on the macOS host, plus Linux ELF and Windows
+# PE32+ EXE/DLL/SYS in the reproducible Linux builder.
+clang -O0 -fno-inline -Wl,-no_uuid -o "$output_dir/vulnerable-macho" \
   "$repo_root/test-fixtures/vulnerable/native.c"
-cp "$build_dir/vulnerable-macho" "$output_dir/vulnerable-macho"
+docker run --rm --pull never --platform "$BINARY_PLATFORM" \
+  -v "$repo_root/test-fixtures/vulnerable:/src:ro" \
+  -v "$build_dir/native:/out" "$fixture_builder_image" sh -ec '
+    gcc -O0 -fno-inline -fno-builtin -o /out/vulnerable-elf /src/native_portable.c
+    x86_64-w64-mingw32-gcc -O0 -fno-inline -fno-builtin \
+      -o /out/vulnerable.exe /src/native_portable.c
+    x86_64-w64-mingw32-gcc -O0 -fno-inline -fno-builtin -shared \
+      -Wl,--export-all-symbols -o /out/vulnerable.dll /src/native_portable.c
+    cp /out/vulnerable.exe /out/vulnerable.sys
+    python3 - /out/vulnerable.sys <<"PY"
+import pathlib
+import struct
+import sys
 
+path = pathlib.Path(sys.argv[1])
+body = bytearray(path.read_bytes())
+pe_offset = struct.unpack_from("<I", body, 0x3C)[0]
+if struct.unpack_from("<H", body, pe_offset + 24)[0] != 0x20B:
+    raise SystemExit("expected PE32+ optional header")
+struct.pack_into("<H", body, pe_offset + 24 + 68, 1)
+path.write_bytes(body)
+PY
+  '
+cp "$build_dir/native/vulnerable-elf" "$output_dir/vulnerable-elf"
+cp "$build_dir/native/vulnerable.exe" "$output_dir/vulnerable.exe"
+cp "$build_dir/native/vulnerable.dll" "$output_dir/vulnerable.dll"
+cp "$build_dir/native/vulnerable.sys" "$output_dir/vulnerable.sys"
+
+# JVM/Dalvik/Python inputs. CLASS and JAR use Vineflower; DEX and APK use JADX.
 javac --release 8 -g -encoding UTF-8 -d "$build_dir/java" \
   "$repo_root/test-fixtures/vulnerable/VulnerableFixture.java"
 cp "$build_dir/java/VulnerableFixture.class" "$output_dir/VulnerableFixture.class"
 jar --create --file "$output_dir/vulnerable.jar" \
   --date=2000-01-01T00:00:00Z -C "$build_dir/java" .
-
+docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
+  --entrypoint /opt/java/openjdk/bin/java \
+  -v "$repo_root/test-fixtures/vulnerable:/input:ro" -v "$output_dir:/output" \
+  "$JVM_DECOMPILER_IMAGE" -cp /opt/bytecode-tools/jadx/lib/jadx-all.jar \
+  com.android.tools.smali.smali.Main assemble /input/VulnerableDex.smali \
+  -o /output/vulnerable.dex
+cp "$repo_root/test-fixtures/vulnerable/AndroidManifest.xml" "$build_dir/apk/AndroidManifest.xml"
+cp "$output_dir/vulnerable.dex" "$build_dir/apk/classes.dex"
+find "$build_dir/apk" -exec touch -t 200001010000 {} +
+(
+  cd "$build_dir/apk"
+  TZ=UTC zip -X -9 -q "$output_dir/vulnerable.apk" AndroidManifest.xml classes.dex
+)
 python3 -c "import py_compile,sys; py_compile.compile(sys.argv[1], cfile=sys.argv[2], dfile='unsafe.py', doraise=True, invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH)" \
   "$repo_root/test-fixtures/vulnerable/unsafe.py" "$output_dir/vulnerable.pyc"
 
@@ -74,23 +122,39 @@ cp "$repo_root/test-fixtures/vulnerable/OUTPUT_README.md" "$output_dir/README.md
 cp "$repo_root/test-fixtures/vulnerable/expected-findings.json" "$output_dir/expected-findings.json"
 cp "$repo_root/test-fixtures/vulnerable/ARCHIVE_README.md" "$archive_dir/README.md"
 cp "$repo_root/test-fixtures/vulnerable/CONTAINER_README.md" "$container_dir/README.md"
-cp "$repo_root/test-fixtures/vulnerable/expected-trivy.json" \
-  "$container_dir/expected-trivy.json"
-TZ=UTC touch -t 200001010000 "$output_dir/vulnerable-macho" \
-  "$output_dir/VulnerableFixture.class" "$output_dir/vulnerable.jar" \
-  "$output_dir/vulnerable.pyc" "$output_dir/README.md" \
-  "$output_dir/expected-findings.json"
-rm -f "$archive_dir/vulnerable-binaries.zip"
-(
-  cd "$output_dir"
-  TZ=UTC zip -X -q "$archive_dir/vulnerable-binaries.zip" \
-    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc
-)
+cp "$repo_root/test-fixtures/vulnerable/expected-trivy.json" "$container_dir/expected-trivy.json"
+find "$output_dir" -mindepth 1 -maxdepth 1 -type f -exec touch -t 200001010000 {} +
 
-cp "$output_dir/vulnerable-macho" "$build_dir/iso/vulnerable-macho"
-cp "$output_dir/VulnerableFixture.class" "$build_dir/iso/VulnerableFixture.class"
-cp "$output_dir/vulnerable.jar" "$build_dir/iso/vulnerable.jar"
-cp "$output_dir/vulnerable.pyc" "$build_dir/iso/vulnerable.pyc"
+# One-layer archive fixtures. ZIP/TAR/7Z/RAR/ISO/EXT4 contain direct ELF and
+# PE members; stream/package formats contain an ELF; JAR/APK expose CLASS/DEX.
+python3 "$repo_root/deploy/scripts/build-archive-fixtures.py" \
+  --binary-dir "$output_dir" --output-dir "$archive_dir"
+docker run --rm --pull never --platform "$BINARY_PLATFORM" \
+  -v "$output_dir:/binary:ro" -v "$archive_dir:/archive" \
+  "$fixture_builder_image" sh -ec '
+    cd /binary
+    7z a -bd -y -t7z -mx=9 -mtc=off -mtm=off -mta=off \
+      /archive/vulnerable-binaries.7z vulnerable-elf vulnerable.exe >/dev/null
+  '
+python3 "$repo_root/deploy/scripts/build-rar-fixture.py" \
+  "$archive_dir/vulnerable-binaries.rar" \
+  vulnerable-elf "$output_dir/vulnerable-elf" \
+  vulnerable.exe "$output_dir/vulnerable.exe"
+
+cp "$output_dir/vulnerable-elf" "$build_dir/rpmbuild/SOURCES/vulnerable-elf"
+cp "$repo_root/test-fixtures/vulnerable/vulnerable-binaries.spec" \
+  "$build_dir/rpmbuild/SPECS/vulnerable-binaries.spec"
+docker run --rm --pull never --platform "$BINARY_PLATFORM" \
+  -v "$build_dir/rpmbuild:/root/rpmbuild" -v "$archive_dir:/archive" \
+  "$fixture_builder_image" sh -ec '
+    rpmbuild -bb --define "_topdir /root/rpmbuild" \
+      /root/rpmbuild/SPECS/vulnerable-binaries.spec >/dev/null
+    cp /root/rpmbuild/RPMS/x86_64/binaryscan-vulnerable-binaries-1.0-1.x86_64.rpm \
+      /archive/vulnerable-binaries.rpm
+  '
+
+cp "$output_dir/vulnerable-elf" "$build_dir/iso/vulnerable-elf"
+cp "$output_dir/vulnerable.exe" "$build_dir/iso/vulnerable.exe"
 find "$build_dir/iso" -exec touch -t 200001010000 {} +
 hdiutil makehybrid -quiet -iso -joliet -default-volume-name BINARYSCAN \
   -o "$archive_dir/vulnerable-binaries.iso" "$build_dir/iso"
@@ -169,39 +233,48 @@ for sector in range(16, 32):
         normalize_directory(root_extent, root_size)
 path.write_bytes(image)
 PY
-cp "$archive_dir/vulnerable-binaries.iso" "$archive_dir/vulnerable-binaries.img"
+(
+  cd "$repo_root/app/backend"
+  go run ../../deploy/scripts/build-ext4-fixture.go \
+    "$archive_dir/vulnerable-binaries.ext4" \
+    "$output_dir/vulnerable-elf" "$output_dir/vulnerable.exe"
+)
 
+# Real Docker-save and OCI-layout archives. The IMG is intentionally the exact
+# Docker-save byte stream with a different suffix, proving content-first routing.
 python3 "$repo_root/deploy/scripts/build-image-fixtures.py" \
   --binary-dir "$output_dir" --output-dir "$container_dir"
+cp "$container_dir/docker-save.tar" "$container_dir/docker-save.img"
 
 (
   cd "$output_dir"
-  shasum -a 256 vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc \
-    README.md expected-findings.json > SHA256SUMS
+  shasum -a 256 vulnerable.exe vulnerable.dll vulnerable.sys vulnerable-elf \
+    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.dex \
+    vulnerable.apk vulnerable.pyc README.md expected-findings.json > SHA256SUMS
 )
 (
   cd "$archive_dir"
-  shasum -a 256 vulnerable-binaries.zip vulnerable-binaries.iso \
-    vulnerable-binaries.img README.md > SHA256SUMS
+  shasum -a 256 vulnerable-binaries.zip vulnerable-binaries.7z \
+    vulnerable-binaries.rar vulnerable-binaries.tar vulnerable-elf.gz \
+    vulnerable-elf.xz vulnerable-binaries.deb vulnerable-binaries.rpm \
+    vulnerable-binaries.iso vulnerable-binaries.ext4 vulnerable-binaries.jar \
+    vulnerable-binaries.apk README.md > SHA256SUMS
 )
 (
   cd "$container_dir"
-  shasum -a 256 docker-save.tar oci-layout.tar README.md \
+  shasum -a 256 docker-save.tar oci-layout.tar docker-save.img README.md \
     expected-trivy.json > SHA256SUMS
 )
-TZ=UTC touch -t 200001010000 "$output_dir/SHA256SUMS" \
-  "$archive_dir/vulnerable-binaries.zip" \
-  "$archive_dir/vulnerable-binaries.iso" \
-  "$archive_dir/vulnerable-binaries.img" \
-  "$archive_dir/README.md" "$archive_dir/SHA256SUMS" \
-  "$container_dir/docker-save.tar" "$container_dir/oci-layout.tar" \
-  "$container_dir/README.md" "$container_dir/expected-trivy.json" \
-  "$container_dir/SHA256SUMS"
+find "$output_dir" "$archive_dir" "$container_dir" -mindepth 1 -maxdepth 1 \
+  -type f -exec touch -t 200001010000 {} +
 
-file "$output_dir/vulnerable-macho" "$output_dir/VulnerableFixture.class" \
-  "$output_dir/vulnerable.jar" "$output_dir/vulnerable.pyc" \
-  "$archive_dir/vulnerable-binaries.zip" \
-  "$archive_dir/vulnerable-binaries.iso" \
-  "$archive_dir/vulnerable-binaries.img" \
-  "$container_dir/docker-save.tar" "$container_dir/oci-layout.tar"
-echo "generated vulnerable fixtures in $output_dir"
+file "$output_dir"/vulnerable.exe "$output_dir"/vulnerable.dll \
+  "$output_dir"/vulnerable.sys "$output_dir"/vulnerable-elf \
+  "$output_dir"/vulnerable-macho "$output_dir"/VulnerableFixture.class \
+  "$output_dir"/vulnerable.jar "$output_dir"/vulnerable.dex \
+  "$output_dir"/vulnerable.apk "$output_dir"/vulnerable.pyc \
+  "$archive_dir"/vulnerable-binaries.iso \
+  "$archive_dir"/vulnerable-binaries.ext4 \
+  "$container_dir"/docker-save.tar "$container_dir"/docker-save.img \
+  "$container_dir"/oci-layout.tar
+echo "generated result-producing fixture corpus in $fixture_root"

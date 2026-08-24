@@ -3,10 +3,11 @@ set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-decompiler-checker.XXXXXX")
+binary_dir="$fixture_root/01-binary"
+work_dir=$(mktemp -d "$repo_dir/.decompiler-checker.XXXXXX")
 
 cleanup() {
-  rm -rf "$work_dir"
+  rm -rf -- "$work_dir"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -23,57 +24,57 @@ checker_network=$(docker network ls \
   exit 1
 }
 
-native_input="$fixture_root/01-binary/vulnerable-macho"
-jvm_class_input="$fixture_root/01-binary/VulnerableFixture.class"
-jvm_jar_input="$fixture_root/01-binary/vulnerable.jar"
-pyc_input="$fixture_root/01-binary/vulnerable.pyc"
-expectations="$fixture_root/01-binary/expected-findings.json"
-for input in "$native_input" "$jvm_class_input" "$jvm_jar_input" "$pyc_input" "$expectations"; do
-  [ -f "$input" ] || {
-    echo "missing fixture: $input" >&2
+expectations="$binary_dir/expected-findings.json"
+for name in vulnerable.exe vulnerable.dll vulnerable.sys vulnerable-elf \
+  vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.dex \
+  vulnerable.apk vulnerable.pyc expected-findings.json; do
+  [ -f "$binary_dir/$name" ] || {
+    echo "missing fixture: $binary_dir/$name" >&2
     exit 1
   }
 done
 
-mkdir -p "$work_dir/ghidra/project" "$work_dir/ghidra/source" \
-  "$work_dir/vineflower-class" "$work_dir/vineflower-jar" "$work_dir/pycdc"
+for name in vulnerable-macho vulnerable-elf vulnerable.exe vulnerable.dll vulnerable.sys; do
+  mkdir -p "$work_dir/native/$name/project" "$work_dir/native/$name/source"
+  if ! docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
+      --entrypoint /opt/ghidra/support/analyzeHeadless \
+      -v "$binary_dir:/fixtures:ro" -v "$work_dir/native/$name:/work" \
+      "$NATIVE_DECOMPILER_IMAGE" \
+      /work/project binaryscan -import "/fixtures/$name" \
+      -scriptPath /opt/binaryscan/ghidra \
+      -postScript ExportPseudoC.java /work/source 1000 134217728 -deleteProject \
+      >"$work_dir/native/$name.log" 2>&1; then
+    sed -n '1,260p' "$work_dir/native/$name.log" >&2
+    exit 1
+  fi
+done
 
-if ! docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
-    --entrypoint /opt/ghidra/support/analyzeHeadless \
-    -v "$native_input:/input/vulnerable-macho:ro" \
-    -v "$work_dir/ghidra:/work" \
-    "$NATIVE_DECOMPILER_IMAGE" \
-    /work/project binaryscan -import /input/vulnerable-macho \
-    -scriptPath /opt/binaryscan/ghidra \
-    -postScript ExportPseudoC.java /work/source 1000 134217728 -deleteProject \
-    >"$work_dir/ghidra.log" 2>&1; then
-  sed -n '1,260p' "$work_dir/ghidra.log" >&2
-  exit 1
-fi
-
+mkdir -p "$work_dir/jvm/class" "$work_dir/jvm/jar" \
+  "$work_dir/dalvik/dex" "$work_dir/dalvik/apk" "$work_dir/python"
 docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
   --entrypoint /opt/java/openjdk/bin/java \
-  -v "$jvm_class_input:/input/VulnerableFixture.class:ro" \
-  -v "$work_dir/vineflower-class:/output" \
-  "$JVM_DECOMPILER_IMAGE" \
-  -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
+  -v "$binary_dir:/fixtures:ro" -v "$work_dir/jvm/class:/output" \
+  "$JVM_DECOMPILER_IMAGE" -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
   -jar /opt/bytecode-tools/vineflower/vineflower.jar \
-  --silent --folder /input/VulnerableFixture.class /output
-
+  --silent --folder /fixtures/VulnerableFixture.class /output
 docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
   --entrypoint /opt/java/openjdk/bin/java \
-  -v "$jvm_jar_input:/input/vulnerable.jar:ro" \
-  -v "$work_dir/vineflower-jar:/output" \
-  "$JVM_DECOMPILER_IMAGE" \
-  -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
+  -v "$binary_dir:/fixtures:ro" -v "$work_dir/jvm/jar:/output" \
+  "$JVM_DECOMPILER_IMAGE" -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
   -jar /opt/bytecode-tools/vineflower/vineflower.jar \
-  --silent --folder /input/vulnerable.jar /output
-
+  --silent --folder /fixtures/vulnerable.jar /output
+for name in dex apk; do
+  docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
+    --entrypoint /opt/java/openjdk/bin/java \
+    -v "$binary_dir:/fixtures:ro" -v "$work_dir/dalvik/$name:/output" \
+    "$JVM_DECOMPILER_IMAGE" -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
+    -cp /opt/bytecode-tools/jadx/lib/jadx-all.jar jadx.cli.JadxCLI \
+    --no-res -d /output "/fixtures/vulnerable.$name"
+done
 docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
   --entrypoint /opt/bytecode-tools/pycdc/pycdc \
-  -v "$pyc_input:/input/vulnerable.pyc:ro" \
-  "$PYC_DECOMPILER_IMAGE" /input/vulnerable.pyc \
-  >"$work_dir/pycdc/decompiled.py"
+  -v "$binary_dir:/fixtures:ro" "$PYC_DECOMPILER_IMAGE" \
+  /fixtures/vulnerable.pyc >"$work_dir/python/decompiled.py"
 
 docker run --rm --pull never --platform "$BINARY_PLATFORM" \
   --network "$checker_network" --read-only \
@@ -91,10 +92,16 @@ with open("/fixtures/expected-findings.json", encoding="utf-8") as source:
     manifest = json.load(source)
 
 cases = [
-    ("native-ghidra", "native-ghidra", "c-checker", "/decompiled/ghidra/source/*.c"),
-    ("jvm-class-vineflower", "jvm-vineflower", "java-checker", "/decompiled/vineflower-class/**/*.java"),
-    ("jvm-jar-vineflower", "jvm-vineflower", "java-checker", "/decompiled/vineflower-jar/**/*.java"),
-    ("python-pycdc", "python-pycdc", "python-checker", "/decompiled/pycdc/*.py"),
+    ("native-macho", "native-macho-ghidra", "c-checker", "/decompiled/native/vulnerable-macho/source/*.c"),
+    ("native-elf", "native-elf-ghidra", "c-checker", "/decompiled/native/vulnerable-elf/source/*.c"),
+    ("native-exe", "native-exe-ghidra", "c-checker", "/decompiled/native/vulnerable.exe/source/*.c"),
+    ("native-dll", "native-dll-ghidra", "c-checker", "/decompiled/native/vulnerable.dll/source/*.c"),
+    ("native-sys", "native-sys-ghidra", "c-checker", "/decompiled/native/vulnerable.sys/source/*.c"),
+    ("jvm-class", "jvm-vineflower", "java-checker", "/decompiled/jvm/class/**/*.java"),
+    ("jvm-jar", "jvm-vineflower", "java-checker", "/decompiled/jvm/jar/**/*.java"),
+    ("dalvik-dex", "dalvik-jadx", "java-checker", "/decompiled/dalvik/dex/**/*.java"),
+    ("dalvik-apk", "dalvik-jadx", "java-checker", "/decompiled/dalvik/apk/**/*.java"),
+    ("python-pyc", "python-pycdc", "python-checker", "/decompiled/python/*.py"),
 ]
 
 for case_name, target_name, service, pattern in cases:
@@ -121,7 +128,7 @@ for case_name, target_name, service, pattern in cases:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with urllib.request.urlopen(request, timeout=60) as response:
         result = json.load(response)
     actual = {finding["ruleId"] for finding in result["findings"]}
     missing = expected - actual

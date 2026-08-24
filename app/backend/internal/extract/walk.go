@@ -18,6 +18,7 @@ import (
 
 	"github.com/bodgit/sevenzip"
 	diskfile "github.com/diskfs/go-diskfs/backend/file"
+	"github.com/diskfs/go-diskfs/filesystem/ext4"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	"github.com/klauspost/compress/zstd"
 	"github.com/nwaples/rardecode/v2"
@@ -65,6 +66,8 @@ func Walk(ctx context.Context, filename, sourceName, format string, maxEntries i
 		return walkRPM(ctx, filename, maxEntries, visit)
 	case "iso9660":
 		return walkISO9660(ctx, filename, maxEntries, visit)
+	case "ext4":
+		return walkEXT4(ctx, filename, maxEntries, visit)
 	default:
 		return fmt.Errorf("unsupported archive format %q", format)
 	}
@@ -352,8 +355,36 @@ func walkISO9660(ctx context.Context, filename string, maxEntries int, visit Vis
 	}
 	defer filesystem.Close()
 
+	if err := walkFilesystem(ctx, filesystem, maxEntries, visit); err != nil {
+		return fmt.Errorf("walk ISO 9660 filesystem: %w", err)
+	}
+	return nil
+}
+
+func walkEXT4(ctx context.Context, filename string, maxEntries int, visit Visitor) error {
+	storage, err := diskfile.OpenFromPath(filename, true)
+	if err != nil {
+		return fmt.Errorf("open EXT4 image: %w", err)
+	}
+	defer storage.Close()
+	info, err := storage.Stat()
+	if err != nil {
+		return fmt.Errorf("stat EXT4 image: %w", err)
+	}
+	filesystem, err := ext4.Read(storage, info.Size(), 0, 0)
+	if err != nil {
+		return fmt.Errorf("read EXT4 filesystem: %w", err)
+	}
+	defer filesystem.Close()
+	if err := walkFilesystem(ctx, filesystem, maxEntries, visit); err != nil {
+		return fmt.Errorf("walk EXT4 filesystem: %w", err)
+	}
+	return nil
+}
+
+func walkFilesystem(ctx context.Context, filesystem iofs.FS, maxEntries int, visit Visitor) error {
 	ordinal := 0
-	err = iofs.WalkDir(filesystem, ".", func(name string, directoryEntry iofs.DirEntry, walkErr error) error {
+	return iofs.WalkDir(filesystem, ".", func(name string, directoryEntry iofs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -391,10 +422,6 @@ func walkISO9660(ctx context.Context, filename string, maxEntries int, visit Vis
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("walk ISO 9660 filesystem: %w", err)
-	}
-	return nil
 }
 
 func call(ctx context.Context, visit Visitor, entry Entry, reader io.Reader) error {

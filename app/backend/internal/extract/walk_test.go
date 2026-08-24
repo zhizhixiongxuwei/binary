@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	diskfile "github.com/diskfs/go-diskfs/backend/file"
+	ext4fs "github.com/diskfs/go-diskfs/filesystem/ext4"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	"github.com/ulikunitz/xz"
 )
@@ -111,6 +112,39 @@ func TestWalkCommonArchives(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertWalk(t, filename, "sample.iso", "iso9660", "demo.pyc", "iso-data")
+	})
+
+	t.Run("EXT4 filesystem", func(t *testing.T) {
+		filename := filepath.Join(t.TempDir(), "sample.ext4")
+		const imageSize = int64(16 << 20)
+		storage, err := diskfile.CreateFromPath(filename, imageSize)
+		if err != nil {
+			t.Fatal(err)
+		}
+		filesystem, err := ext4fs.Create(storage, imageSize, 0, 512, &ext4fs.Params{
+			VolumeName: "BINARYSCAN",
+		})
+		if err != nil {
+			_ = storage.Close()
+			t.Fatal(err)
+		}
+		member, err := filesystem.OpenFile("demo.elf", os.O_CREATE|os.O_RDWR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := member.Write([]byte("ext4-data")); err != nil {
+			t.Fatal(err)
+		}
+		if err := member.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := filesystem.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.Close(); err != nil {
+			t.Fatal(err)
+		}
+		assertWalk(t, filename, "sample.ext4", "ext4", "demo.elf", "ext4-data")
 	})
 }
 

@@ -93,7 +93,7 @@ func SupportsAnalysisMode(format string, mode AnalysisMode) bool {
 // one-layer archive reader they are physically compatible with.
 func ArchiveFormat(format string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660":
+	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660", "ext4":
 		return strings.ToLower(strings.TrimSpace(format)), true
 	case "jar", "war", "ear", "apk":
 		return "zip", true

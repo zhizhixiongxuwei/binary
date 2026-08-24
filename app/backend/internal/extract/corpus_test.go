@@ -10,33 +10,35 @@ import (
 	"testing"
 )
 
-// TestFixtureArchiveCorpus verifies that ZIP and ISO 9660 variants expose
-// exactly the four binaries whose decompiled source produces checker findings.
+// TestFixtureArchiveCorpus verifies every advertised one-layer reader against
+// a real fixture. Eligibility is checked separately below the extraction layer.
 func TestFixtureArchiveCorpus(t *testing.T) {
 	root := os.Getenv("BINARY_FIXTURE_ROOT")
 	if root == "" {
 		t.Skip("BINARY_FIXTURE_ROOT is not set")
 	}
-	zipExpected := []string{
-		"VulnerableFixture.class",
-		"vulnerable-macho",
-		"vulnerable.jar",
-		"vulnerable.pyc",
-	}
+	pairExpected := []string{"vulnerable-elf", "vulnerable.exe"}
 	isoExpected := []string{
-		"VULNERABLE-MACHO",
-		"VULNERABLE.JAR",
-		"VULNERABLE.PYC",
-		"VULNERABLEFIXTURE.CLASS",
+		"VULNERABLE-ELF",
+		"VULNERABLE.EXE",
 	}
 	tests := []struct {
 		name     string
 		format   string
 		expected []string
 	}{
-		{name: "vulnerable-binaries.zip", format: "zip", expected: zipExpected},
+		{name: "vulnerable-binaries.zip", format: "zip", expected: pairExpected},
+		{name: "vulnerable-binaries.7z", format: "7z", expected: pairExpected},
+		{name: "vulnerable-binaries.rar", format: "rar", expected: pairExpected},
+		{name: "vulnerable-binaries.tar", format: "tar", expected: pairExpected},
+		{name: "vulnerable-elf.gz", format: "gzip", expected: []string{"vulnerable-elf"}},
+		{name: "vulnerable-elf.xz", format: "xz", expected: []string{"vulnerable-elf"}},
+		{name: "vulnerable-binaries.deb", format: "deb", expected: []string{"usr/bin/vulnerable-elf"}},
+		{name: "vulnerable-binaries.rpm", format: "rpm", expected: []string{"usr/bin/vulnerable-elf"}},
 		{name: "vulnerable-binaries.iso", format: "iso9660", expected: isoExpected},
-		{name: "vulnerable-binaries.img", format: "iso9660", expected: isoExpected},
+		{name: "vulnerable-binaries.ext4", format: "ext4", expected: pairExpected},
+		{name: "vulnerable-binaries.jar", format: "zip", expected: []string{"META-INF/MANIFEST.MF", "VulnerableFixture$Cookie.class", "VulnerableFixture.class"}},
+		{name: "vulnerable-binaries.apk", format: "zip", expected: []string{"AndroidManifest.xml", "classes.dex"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
