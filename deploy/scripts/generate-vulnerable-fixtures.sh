@@ -2,25 +2,56 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
-output_dir="$fixture_root/01-binary/vulnerable"
-archive_dir="$fixture_root/02-archive"
-build_dir=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-vulnerable-fixtures.XXXXXX")
+requested_fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
+fixture_root=
+output_dir=
+archive_dir=
+build_dir=
+
+die() {
+  echo "error: $*" >&2
+  exit 1
+}
 
 cleanup() {
-  rm -rf "$build_dir"
+  if [ -n "$build_dir" ] && [ -d "$build_dir" ]; then
+    rm -rf -- "$build_dir"
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 
-for command in clang javac jar python3 zip shasum; do
-  command -v "$command" >/dev/null 2>&1 || {
-    echo "missing required command: $command" >&2
-    exit 1
-  }
+for command in clang javac jar python3 zip shasum file; do
+  command -v "$command" >/dev/null 2>&1 || die "missing required command: $command"
 done
 
+case "$requested_fixture_root" in
+  "" | / | //) die "refusing unsafe fixture root: $requested_fixture_root" ;;
+esac
+[ -d "$requested_fixture_root" ] ||
+  die "fixture repository does not exist: $requested_fixture_root"
+fixture_root=$(CDPATH= cd -- "$requested_fixture_root" && pwd -P)
+[ "$(basename -- "$fixture_root")" = "binary-repo" ] ||
+  die "refusing to rebuild unexpected directory: $fixture_root"
+[ -f "$fixture_root/generate.sh" ] || die "missing fixture repository generator"
+[ -f "$fixture_root/README.md" ] || die "missing fixture repository README"
+output_dir="$fixture_root/01-binary"
+archive_dir="$fixture_root/02-archive"
+[ "$output_dir" = "$fixture_root/01-binary" ] || die "invalid binary output path"
+[ "$archive_dir" = "$fixture_root/02-archive" ] || die "invalid archive output path"
+
+python_version=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+[ "$python_version" = "3.9" ] ||
+  die "Python 3.9 is required for pycdc-compatible PYC fixtures (found $python_version)"
+
+# This repository is intentionally a result-producing corpus, not a broad
+# format corpus. Rebuild the two generated directories from scratch so retired
+# zero-finding fixtures cannot survive a later regeneration.
+rm -rf -- "$output_dir" "$archive_dir" "$fixture_root/03-container"
+rm -f -- "$fixture_root/generate.go" "$fixture_root/manifest.json" \
+  "$fixture_root/SHA256SUMS"
+find "$fixture_root" -name .DS_Store -type f -delete
+build_dir=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-vulnerable-fixtures.XXXXXX")
 mkdir -p "$output_dir" "$archive_dir" "$build_dir/java"
-rm -rf "$output_dir/vulnerable-macho.dSYM"
 
 clang -O0 -fno-inline -Wl,-no_uuid -o "$build_dir/vulnerable-macho" \
   "$repo_root/test-fixtures/vulnerable/native.c"
@@ -45,14 +76,15 @@ rm -f "$archive_dir/vulnerable-binaries.zip"
 (
   cd "$output_dir"
   TZ=UTC zip -X -q "$archive_dir/vulnerable-binaries.zip" \
-    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc \
-    README.md expected-findings.json
+    vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc
 )
 (
   cd "$output_dir"
   shasum -a 256 vulnerable-macho VulnerableFixture.class vulnerable.jar vulnerable.pyc \
     README.md expected-findings.json > SHA256SUMS
 )
+TZ=UTC touch -t 200001010000 "$output_dir/SHA256SUMS" \
+  "$archive_dir/vulnerable-binaries.zip"
 
 file "$output_dir/vulnerable-macho" "$output_dir/VulnerableFixture.class" \
   "$output_dir/vulnerable.jar" "$output_dir/vulnerable.pyc" \

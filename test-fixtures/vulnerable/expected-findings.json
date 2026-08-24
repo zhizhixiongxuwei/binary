@@ -3,7 +3,7 @@
   "targets": {
     "native-ghidra": {
       "artifacts": [
-        "01-binary/vulnerable/vulnerable-macho"
+        "01-binary/vulnerable-macho"
       ],
       "decompiler": "ghidra",
       "language": "c",
@@ -18,8 +18,8 @@
     },
     "jvm-vineflower": {
       "artifacts": [
-        "01-binary/vulnerable/VulnerableFixture.class",
-        "01-binary/vulnerable/vulnerable.jar"
+        "01-binary/VulnerableFixture.class",
+        "01-binary/vulnerable.jar"
       ],
       "decompiler": "vineflower",
       "language": "java",
@@ -42,7 +42,7 @@
     },
     "python-pycdc": {
       "artifacts": [
-        "01-binary/vulnerable/vulnerable.pyc"
+        "01-binary/vulnerable.pyc"
       ],
       "decompiler": "pycdc",
       "language": "python",

@@ -23,11 +23,12 @@ checker_network=$(docker network ls \
   exit 1
 }
 
-native_input="$fixture_root/01-binary/vulnerable/vulnerable-macho"
-jvm_input="$fixture_root/01-binary/vulnerable/vulnerable.jar"
-pyc_input="$fixture_root/01-binary/vulnerable/vulnerable.pyc"
-expectations="$fixture_root/01-binary/vulnerable/expected-findings.json"
-for input in "$native_input" "$jvm_input" "$pyc_input" "$expectations"; do
+native_input="$fixture_root/01-binary/vulnerable-macho"
+jvm_class_input="$fixture_root/01-binary/VulnerableFixture.class"
+jvm_jar_input="$fixture_root/01-binary/vulnerable.jar"
+pyc_input="$fixture_root/01-binary/vulnerable.pyc"
+expectations="$fixture_root/01-binary/expected-findings.json"
+for input in "$native_input" "$jvm_class_input" "$jvm_jar_input" "$pyc_input" "$expectations"; do
   [ -f "$input" ] || {
     echo "missing fixture: $input" >&2
     exit 1
@@ -35,7 +36,7 @@ for input in "$native_input" "$jvm_input" "$pyc_input" "$expectations"; do
 done
 
 mkdir -p "$work_dir/ghidra/project" "$work_dir/ghidra/source" \
-  "$work_dir/vineflower" "$work_dir/pycdc"
+  "$work_dir/vineflower-class" "$work_dir/vineflower-jar" "$work_dir/pycdc"
 
 if ! docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
     --entrypoint /opt/ghidra/support/analyzeHeadless \
@@ -52,8 +53,17 @@ fi
 
 docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
   --entrypoint /opt/java/openjdk/bin/java \
-  -v "$jvm_input:/input/vulnerable.jar:ro" \
-  -v "$work_dir/vineflower:/output" \
+  -v "$jvm_class_input:/input/VulnerableFixture.class:ro" \
+  -v "$work_dir/vineflower-class:/output" \
+  "$JVM_DECOMPILER_IMAGE" \
+  -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
+  -jar /opt/bytecode-tools/vineflower/vineflower.jar \
+  --silent --folder /input/VulnerableFixture.class /output
+
+docker run --rm --pull never --platform "$BINARY_PLATFORM" --user root \
+  --entrypoint /opt/java/openjdk/bin/java \
+  -v "$jvm_jar_input:/input/vulnerable.jar:ro" \
+  -v "$work_dir/vineflower-jar:/output" \
   "$JVM_DECOMPILER_IMAGE" \
   -Xms128m -Xmx3g -XX:+ExitOnOutOfMemoryError \
   -jar /opt/bytecode-tools/vineflower/vineflower.jar \
@@ -81,12 +91,13 @@ with open("/fixtures/expected-findings.json", encoding="utf-8") as source:
     manifest = json.load(source)
 
 cases = [
-    ("native-ghidra", "c-checker", "/decompiled/ghidra/source/*.c"),
-    ("jvm-vineflower", "java-checker", "/decompiled/vineflower/**/*.java"),
-    ("python-pycdc", "python-checker", "/decompiled/pycdc/*.py"),
+    ("native-ghidra", "native-ghidra", "c-checker", "/decompiled/ghidra/source/*.c"),
+    ("jvm-class-vineflower", "jvm-vineflower", "java-checker", "/decompiled/vineflower-class/**/*.java"),
+    ("jvm-jar-vineflower", "jvm-vineflower", "java-checker", "/decompiled/vineflower-jar/**/*.java"),
+    ("python-pycdc", "python-pycdc", "python-checker", "/decompiled/pycdc/*.py"),
 ]
 
-for target_name, service, pattern in cases:
+for case_name, target_name, service, pattern in cases:
     target = manifest["targets"][target_name]
     expected = set(target["expectedRuleIds"])
     files = []
@@ -97,10 +108,10 @@ for target_name, service, pattern in cases:
                 "content": source.read(),
             })
     if not files:
-        raise SystemExit(target_name + " produced no source files")
+        raise SystemExit(case_name + " produced no source files")
     body = json.dumps({
         "version": "checker-v1",
-        "projectId": "decompiler-regression-" + target["language"],
+        "projectId": "decompiler-regression-" + case_name,
         "language": target["language"],
         "files": files,
     }).encode("utf-8")
@@ -117,9 +128,9 @@ for target_name, service, pattern in cases:
     unexpected = actual - expected
     if result.get("status") != "complete" or missing or unexpected:
         raise SystemExit(
-            target_name + " failed; missing=" + repr(sorted(missing))
+            case_name + " failed; missing=" + repr(sorted(missing))
             + " unexpected=" + repr(sorted(unexpected))
             + " diagnostics=" + repr(result.get("diagnostics"))
         )
-    print(target_name + ": " + str(len(actual)) + " expected rule families observed")
+    print(case_name + ": " + str(len(actual)) + " expected rule families observed")
 '

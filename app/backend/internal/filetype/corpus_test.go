@@ -7,8 +7,8 @@ import (
 )
 
 // TestFixtureCorpus is optional in normal CI. Set BINARY_FIXTURE_ROOT to the
-// generated binary-repo directory to exercise the detector against all 18
-// reproducible upload fixtures, rather than only minimal in-memory headers.
+// generated binary-repo directory to exercise the detector against the four
+// decompiler/checker regression binaries and their one-layer ZIP bundle.
 func TestFixtureCorpus(t *testing.T) {
 	root := os.Getenv("BINARY_FIXTURE_ROOT")
 	if root == "" {
@@ -19,24 +19,11 @@ func TestFixtureCorpus(t *testing.T) {
 		format   string
 		category Category
 	}{
-		{"01-binary/safe-zero-findings-pe.exe", "pe32+", CategoryBinary},
-		{"01-binary/safe-zero-findings-elf", "elf64", CategoryBinary},
-		{"01-binary/safe-zero-findings-macho", "macho-thin", CategoryBinary},
-		{"01-binary/SafeZeroFindingsFixture.class", "java-class", CategoryBinary},
-		{"01-binary/safe-zero-findings.jar", "jar", CategoryBinary},
-		{"01-binary/safe-zero-findings.dex", "dex", CategoryBinary},
-		{"01-binary/safe-zero-findings.apk", "apk", CategoryBinary},
-		{"01-binary/safe-zero-findings.pyc", "pyc", CategoryBinary},
-		{"02-archive/sample.zip", "zip", CategoryArchive},
-		{"02-archive/sample.7z", "7z", CategoryArchive},
-		{"02-archive/sample.rar", "rar", CategoryArchive},
-		{"02-archive/sample.tar", "tar", CategoryArchive},
-		{"02-archive/sample.tar.gz", "gzip", CategoryArchive},
-		{"02-archive/sample.tar.xz", "xz", CategoryArchive},
-		{"02-archive/sample.deb", "deb", CategoryArchive},
-		{"02-archive/sample.rpm", "rpm", CategoryArchive},
-		{"03-container/docker-save.tar", "docker-tar", CategoryContainer},
-		{"03-container/oci-layout.tar", "oci-tar", CategoryContainer},
+		{"01-binary/vulnerable-macho", "macho-thin", CategoryBinary},
+		{"01-binary/VulnerableFixture.class", "java-class", CategoryBinary},
+		{"01-binary/vulnerable.jar", "jar", CategoryBinary},
+		{"01-binary/vulnerable.pyc", "pyc", CategoryBinary},
+		{"02-archive/vulnerable-binaries.zip", "zip", CategoryArchive},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {
