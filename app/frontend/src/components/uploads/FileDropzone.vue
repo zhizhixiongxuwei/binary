@@ -4,8 +4,8 @@ import { onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 
 import type { InputCategory } from '@/api/types'
 import {
-  inputCategoryAccept,
   inputCategoryLabels,
+  nativePickerAcceptAttributes,
   preflightUploadFile,
 } from '@/utils/uploadPreflight'
 
@@ -102,8 +102,7 @@ onScopeDispose(() => {
       class="sr-only"
       type="file"
       multiple
-      :accept="inputCategoryAccept[category]"
-      :data-accept-hint="inputCategoryAccept[category]"
+      v-bind="nativePickerAcceptAttributes(category)"
       :disabled="disabled || prechecking"
       tabindex="-1"
       aria-label="选择待检测文件"

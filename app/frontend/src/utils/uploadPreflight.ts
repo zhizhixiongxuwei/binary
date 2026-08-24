@@ -2,6 +2,21 @@ import type { InputCategory } from '@/api/types'
 
 const HEAD_LIMIT = 4_096
 const TAIL_LIMIT = 65_557
+const BINARY_FILENAME_EXTENSIONS = [
+  '.exe',
+  '.dll',
+  '.sys',
+  '.elf',
+  '.so',
+  '.dylib',
+  '.class',
+  '.jar',
+  '.war',
+  '.ear',
+  '.dex',
+  '.apk',
+  '.pyc',
+] as const
 
 export const inputCategoryLabels: Record<InputCategory, string> = {
   binary: '01 二进制格式',
@@ -9,12 +24,26 @@ export const inputCategoryLabels: Record<InputCategory, string> = {
   container: '03 容器镜像格式',
 }
 
-export const inputCategoryAccept: Record<InputCategory, string> = {
-  binary:
-    '.exe,.dll,.sys,.elf,.so,.dylib,.class,.jar,.war,.ear,.dex,.apk,.pyc,application/octet-stream,application/java-archive,application/vnd.android.package-archive',
+export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
+  // ELF and Mach-O executables commonly have neither a conventional extension nor
+  // application/octet-stream as their platform MIME type. Omitting accept lets the
+  // native picker select them; preflightUploadFile still validates their contents.
+  binary: undefined,
   archive:
     '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip',
   container: '.tar,application/x-tar,application/octet-stream',
+}
+
+export function nativePickerAcceptAttributes(
+  category: InputCategory,
+): Record<string, string> {
+  const accept = inputCategoryAccept[category]
+  return accept ? { accept, 'data-accept-hint': accept } : {}
+}
+
+function hasSupportedBinaryFilename(filename: string): boolean {
+  const normalized = filename.toLowerCase()
+  return BINARY_FILENAME_EXTENSIONS.some((extension) => normalized.endsWith(extension))
 }
 
 interface MagicMatch {
@@ -188,6 +217,12 @@ export async function preflightUploadFile(
       accepted: false,
       detectedFormat: match.format,
       message: `${file.name}：当前流程暂不支持 ${match.format}，请使用界面列出的格式`,
+    }
+  }
+  if (!match && category === 'binary' && !hasSupportedBinaryFilename(file.name)) {
+    return {
+      accepted: false,
+      message: `${file.name}：无法识别为当前支持的二进制格式`,
     }
   }
   if (!match || match.allowedCategories.includes(category)) {

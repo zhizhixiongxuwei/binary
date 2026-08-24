@@ -32,7 +32,7 @@ func TestFixtureArchiveCorpus(t *testing.T) {
 		{"sample.deb", "deb", "usr/share/binaryscan-fixture/"},
 		{"sample.rpm", "rpm", "usr/share/binaryscan-fixture/"},
 	}
-	expectedBase := []string{"Fixture.class", "README.txt", "nested.zip", "sample-elf", "sample.pyc"}
+	expectedBase := []string{"README.txt", "SafeZeroFindingsFixture.class", "nested.zip", "safe-zero-findings-elf", "safe-zero-findings.pyc"}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			var names []string

@@ -18,6 +18,10 @@ import {
   parseUploadSession,
   UploadIntakeContractError,
 } from '@/api/uploadIntakeContract'
+import {
+  mapLiveAnalysisRunMetadata,
+  type LiveAnalysisRunMetadata,
+} from '@/api/live/analysisRunMetadata'
 import type * as Model from '@/api/types'
 
 interface LiveUser {
@@ -48,15 +52,13 @@ interface LiveFile {
   sha256: string
 }
 
-interface LiveRun {
+interface LiveRun extends LiveAnalysisRunMetadata {
   id: string
   kind: string
   status: string
   subjectType: string
   subjectId: string
   resultQuality: string | null
-  toolName: string | null
-  toolVersion: string | null
   errorCode: string | null
   errorMessage: string | null
   createdAt: string
@@ -405,7 +407,7 @@ async function mapCAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Mo
   return {
     id: run.id, task_id: detail.task.id, source_project_id: project.id,
     source_project: projectSummary(project), job_id: run.id, status: runStatus(run.status),
-    analyzer_name: run.toolName ?? 'c-checker', analyzer_version: run.toolVersion ?? '', ruleset_version: '',
+    ...mapLiveAnalysisRunMetadata(run, 'c-checker'),
     source_sha256: '', source_size_bytes: project.source_size_bytes, finding_count: count, diagnostic_count: 0,
     coverage: { total_functions: project.source_file_count, parsed_functions: project.source_file_count, failed_functions: 0 },
     severity_counts: severityCounts(findings), findings_truncated: false, diagnostics_truncated: false,
@@ -422,8 +424,8 @@ async function mapJavaAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise
   const count = findings.length
   return {
     id: run.id, task_id: detail.task.id, source_project_id: project.id, source_project: projectSummary(project),
-    job_id: run.id, status: runStatus(run.status), analyzer_name: run.toolName ?? 'java-checker',
-    analyzer_version: run.toolVersion ?? '', ruleset_version: '', source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
+    job_id: run.id, status: runStatus(run.status), ...mapLiveAnalysisRunMetadata(run, 'java-checker'),
+    source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
     source_size_bytes: project.source_size_bytes, source_file_count: project.source_file_count,
     finding_count: count, diagnostic_count: 0,
     coverage: { total_files: project.source_file_count, analyzed_files: project.source_file_count, parsed_files: project.source_file_count, recovered_files: 0, failed_files: 0 },

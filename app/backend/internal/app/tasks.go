@@ -52,6 +52,14 @@ type queuedRun struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+const taskRunsQuery = `SELECT id, kind, status, subject_type, subject_id, result_quality,
+        tool_name, tool_version, ruleset_version, error_code, error_message, created_at, started_at, completed_at
+        FROM runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 100`
+
+type taskRunRowScanner interface {
+	Scan(dest ...any) error
+}
+
 func newTaskService(cfg config.Config, db *sql.DB) (*taskService, error) {
 	blobs, err := storage.NewBlobStore(path.Join(cfg.App.StorageRoot, "blobs"))
 	if err != nil {
@@ -642,30 +650,37 @@ func (s *taskService) queryFiles(ctx *gin.Context, taskID string) ([]gin.H, erro
 }
 
 func (s *taskService) queryRuns(ctx *gin.Context, taskID string) ([]gin.H, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, status, subject_type, subject_id, result_quality,
-        tool_name, tool_version, error_code, error_message, created_at, started_at, completed_at
-        FROM runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 100`, taskID)
+	rows, err := s.db.QueryContext(ctx, taskRunsQuery, taskID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	result := make([]gin.H, 0)
 	for rows.Next() {
-		var id, kind, status, subjectType, subjectID string
-		var quality, toolName, toolVersion, errorCode, errorMessage sql.NullString
-		var created time.Time
-		var started, completed sql.NullTime
-		if err := rows.Scan(&id, &kind, &status, &subjectType, &subjectID, &quality, &toolName,
-			&toolVersion, &errorCode, &errorMessage, &created, &started, &completed); err != nil {
+		run, err := scanTaskRun(rows)
+		if err != nil {
 			return nil, err
 		}
-		result = append(result, gin.H{"id": id, "kind": kind, "status": status,
-			"subjectType": subjectType, "subjectId": subjectID, "resultQuality": nullableString(quality),
-			"toolName": nullableString(toolName), "toolVersion": nullableString(toolVersion),
-			"errorCode": nullableString(errorCode), "errorMessage": nullableString(errorMessage),
-			"createdAt": created, "startedAt": nullableTime(started), "completedAt": nullableTime(completed)})
+		result = append(result, run)
 	}
 	return result, rows.Err()
+}
+
+func scanTaskRun(row taskRunRowScanner) (gin.H, error) {
+	var id, kind, status, subjectType, subjectID string
+	var quality, toolName, toolVersion, rulesetVersion, errorCode, errorMessage sql.NullString
+	var created time.Time
+	var started, completed sql.NullTime
+	if err := row.Scan(&id, &kind, &status, &subjectType, &subjectID, &quality, &toolName,
+		&toolVersion, &rulesetVersion, &errorCode, &errorMessage, &created, &started, &completed); err != nil {
+		return nil, err
+	}
+	return gin.H{"id": id, "kind": kind, "status": status,
+		"subjectType": subjectType, "subjectId": subjectID, "resultQuality": nullableString(quality),
+		"toolName": nullableString(toolName), "toolVersion": nullableString(toolVersion),
+		"rulesetVersion": nullableString(rulesetVersion), "errorCode": nullableString(errorCode),
+		"errorMessage": nullableString(errorMessage), "createdAt": created,
+		"startedAt": nullableTime(started), "completedAt": nullableTime(completed)}, nil
 }
 
 func (s *taskService) queryProjects(ctx *gin.Context, taskID string) ([]gin.H, error) {

@@ -19,14 +19,14 @@ func TestFixtureCorpus(t *testing.T) {
 		format   string
 		category Category
 	}{
-		{"01-binary/sample-pe.exe", "pe32+", CategoryBinary},
-		{"01-binary/sample-elf", "elf64", CategoryBinary},
-		{"01-binary/sample-macho", "macho-thin", CategoryBinary},
-		{"01-binary/Fixture.class", "java-class", CategoryBinary},
-		{"01-binary/sample.jar", "jar", CategoryBinary},
-		{"01-binary/sample.dex", "dex", CategoryBinary},
-		{"01-binary/sample.apk", "apk", CategoryBinary},
-		{"01-binary/sample.pyc", "pyc", CategoryBinary},
+		{"01-binary/safe-zero-findings-pe.exe", "pe32+", CategoryBinary},
+		{"01-binary/safe-zero-findings-elf", "elf64", CategoryBinary},
+		{"01-binary/safe-zero-findings-macho", "macho-thin", CategoryBinary},
+		{"01-binary/SafeZeroFindingsFixture.class", "java-class", CategoryBinary},
+		{"01-binary/safe-zero-findings.jar", "jar", CategoryBinary},
+		{"01-binary/safe-zero-findings.dex", "dex", CategoryBinary},
+		{"01-binary/safe-zero-findings.apk", "apk", CategoryBinary},
+		{"01-binary/safe-zero-findings.pyc", "pyc", CategoryBinary},
 		{"02-archive/sample.zip", "zip", CategoryArchive},
 		{"02-archive/sample.7z", "7z", CategoryArchive},
 		{"02-archive/sample.rar", "rar", CategoryArchive},
