@@ -132,6 +132,10 @@ function cloneSession(session: UploadSession): UploadSession {
   return {
     ...session,
     uploaded_parts: [...session.uploaded_parts],
+    ...(session.analysis_options
+      ? { analysis_options: session.analysis_options.map((option) => ({ ...option })) }
+      : {}),
+    ...(session.tasks ? { tasks: session.tasks.map((task) => ({ ...task })) } : {}),
   }
 }
 
@@ -192,20 +196,45 @@ function createdNodeId(counter: number): string {
 function inferredInputFormat(filename: string): string {
   const extension = filename.split('.').pop()?.toLowerCase()
   const formats: Record<string, string> = {
+    '7z': '7z',
     apk: 'apk',
     class: 'class',
+    deb: 'deb',
+    dex: 'dex',
     dll: 'pe32+',
+    elf: 'elf64',
     exe: 'pe32+',
+    ext4: 'ext4',
     gz: 'gzip',
-    img: 'img',
+    img: 'docker-tar',
     iso: 'iso9660',
     jar: 'jar',
+    macho: 'macho-thin',
     pyc: 'pyc',
+    rar: 'rar',
+    rpm: 'rpm',
     sys: 'pe32+',
     tar: 'tar',
+    xz: 'xz',
     zip: 'zip',
   }
   return extension ? (formats[extension] ?? extension) : 'unknown'
+}
+
+function demoAnalysisOptions(format: string): import('@/api/types').UploadAnalysisOption[] {
+  const binary = ['pe32+', 'elf64', 'macho-thin', 'class', 'jar', 'dex', 'apk', 'pyc']
+  const archive = ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'jar', 'apk']
+  const container = ['docker-tar', 'oci-tar']
+  const options: import('@/api/types').UploadAnalysisOption[] = [
+    { mode: 'binary', supported: binary.includes(format) },
+    { mode: 'archive', supported: archive.includes(format) },
+    { mode: 'container', supported: container.includes(format) },
+  ]
+  return options.map((option) =>
+    option.supported
+      ? option
+      : { ...option, reason: `示例检测引擎不支持 ${format} 的${option.mode}模式` },
+  )
 }
 
 /**
@@ -273,18 +302,17 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
   function ensureDirectUploadTask(
     upload: DemoUpload,
     user: CurrentUser,
+    analysisMode: import('@/api/types').AnalysisMode = 'binary',
   ): string {
     if (!upload.completed) {
       throw new ApiError('示例文件尚未完成上传', 409, {
         code: 'upload_not_completed',
       })
     }
-    if (upload.completed.task_id) return upload.completed.task_id
-    if (upload.input.input_category === 'archive') {
-      throw new ApiError('示例归档上传不能创建外层任务', 409, {
-        code: 'task_conflict',
-      })
-    }
+    const existing = upload.completed.tasks?.find(
+      (task) => task.analysis_mode === analysisMode,
+    )
+    if (existing) return existing.task_id
 
     taskCounter += 1
     const id = createdTaskId(taskCounter)
@@ -293,6 +321,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       id,
       name: upload.input.filename,
       input_type: inferredInputFormat(upload.input.filename),
+      analysis_mode: analysisMode,
       status: 'QUEUED',
       risk_level: 'UNKNOWN',
       progress: 0,
@@ -333,7 +362,27 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         source_parent: null,
       },
     ])
-    upload.completed = { ...upload.completed, task_id: id }
+    const supported =
+      analysisMode === 'binary'
+        ? ['pe32+', 'elf64', 'macho-thin', 'java-class', 'jar', 'apk', 'pyc'].includes(
+            inferredInputFormat(upload.input.filename),
+          )
+        : analysisMode === 'archive'
+          ? ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660', 'jar', 'apk'].includes(
+              inferredInputFormat(upload.input.filename),
+            )
+          : ['docker-tar', 'oci-tar'].includes(inferredInputFormat(upload.input.filename))
+    const task = {
+      task_id: id,
+      analysis_mode: analysisMode,
+      status: supported ? (analysisMode === 'archive' ? 'queued' : 'ready') : 'partial',
+      supported,
+    }
+    upload.completed = {
+      ...upload.completed,
+      tasks: [...(upload.completed.tasks ?? []), task],
+      ...(analysisMode !== 'archive' ? { task_id: id } : {}),
+    }
     upload.session = upload.completed
     return id
   }
@@ -1228,7 +1277,6 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         input.filename,
         input.size,
         input.content_type,
-        input.input_category,
       ])
       const known = uploadByIdempotencyKey.get(intentKey)
       if (known) {
@@ -1249,12 +1297,13 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       const id = `demo-upload-${String(uploadCounter).padStart(4, '0')}`
       const session: UploadSession = {
         id,
+        filename: input.filename,
+        content_type: input.content_type,
         part_size: DEMO_PART_SIZE,
         size_bytes: input.size,
         status: 'created',
         uploaded_parts: [],
         expires_at: '2026-08-01T00:00:00+08:00',
-        input_category: input.input_category,
         validation_status: 'pending',
       }
       uploads.set(id, {
@@ -1265,6 +1314,16 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       })
       uploadByIdempotencyKey.set(intentKey, { fingerprint, uploadId: id })
       return cloneSession(session)
+    },
+
+    async listUploads() {
+      await delay()
+      requireUser()
+      return {
+        items: [...uploads.values()]
+          .map((upload) => cloneSession(upload.completed ?? upload.session))
+          .reverse(),
+      }
     },
 
     async getUpload(uploadId) {
@@ -1319,76 +1378,101 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         uploaded_parts: [...upload.parts].sort((left, right) => left - right),
         sha256: String(uploadCounter).padStart(64, '0'),
         size_bytes: upload.input.size,
-        input_category: upload.input.input_category,
         validation_status: 'valid',
-        detected_category: upload.input.input_category,
-        detected_format:
-          upload.input.input_category === 'archive'
-            ? 'zip'
-            : upload.input.input_category === 'container'
-              ? 'docker-tar'
-              : 'elf64',
+        detected_category: inferredInputFormat(upload.input.filename) === 'docker-tar'
+          || inferredInputFormat(upload.input.filename) === 'ext4'
+          ? 'container'
+          : ['zip', '7z', 'rar', 'tar', 'gzip', 'xz', 'deb', 'rpm', 'iso9660'].includes(
+                inferredInputFormat(upload.input.filename),
+              )
+            ? 'archive'
+            : 'binary',
+        detected_format: inferredInputFormat(upload.input.filename),
+        analysis_options: demoAnalysisOptions(inferredInputFormat(upload.input.filename)),
+        tasks: [],
       }
-      if (upload.input.input_category === 'archive') {
-        const importId = `demo-archive-${String(uploadCounter).padStart(4, '0')}`
-        completed.archive_import_id = importId
+      upload.completed = completed
+      upload.session = completed
+      void user
+      return {
+        ...upload.completed,
+        uploaded_parts: [...upload.completed.uploaded_parts],
+      }
+    },
+
+    async createUploadAnalysisTask(uploadId, input) {
+      await delay()
+      const user = requireUser()
+      const upload = findUpload(uploadId)
+      if (!upload.completed) {
+        throw new ApiError('示例文件尚未完成上传', 409, {
+          code: 'upload_not_completed',
+        })
+      }
+      const existing = upload.completed.tasks?.find(
+        (task) => task.analysis_mode === input.analysis_mode,
+      )
+      if (existing) return { ...existing }
+      const taskId = ensureDirectUploadTask(upload, user, input.analysis_mode)
+      const task = upload.completed.tasks?.find(
+        (candidate) => candidate.task_id === taskId,
+      )
+      if (!task) {
+        throw new ApiError('示例任务创建失败', 500, { code: 'TASK_CREATE_FAILED' })
+      }
+      if (input.analysis_mode === 'archive') {
+        const importId = `demo-archive-${String(taskCounter).padStart(4, '0')}`
+        task.archive_import_id = importId
+        upload.completed.archive_import_id = importId
         const now = '2026-07-30T10:00:00+08:00'
         archiveImports.set(importId, {
           value: {
             id: importId,
             upload_id: uploadId,
             filename: upload.input.filename,
-            status: 'ready',
-            scanned_entries: 3,
-            total_entries: 3,
-            eligible_entries: 2,
-            skipped_entries: 1,
+            status: task.supported ? 'ready' : 'unsupported',
+            scanned_entries: task.supported ? 2 : 0,
+            total_entries: task.supported ? 2 : 0,
+            eligible_entries: task.supported ? 1 : 0,
+            skipped_entries: task.supported ? 1 : 0,
             created_tasks: 0,
+            ...(!task.supported
+              ? {
+                  error_code: 'analysis_mode_not_applicable',
+                  error_message: `归档解析器不支持 ${upload.completed.detected_format ?? 'unknown'} 格式`,
+                }
+              : {}),
             created_at: now,
             updated_at: now,
           },
-          entries: [
-            {
-              id: `${importId}-entry-1`,
-              path: 'bin/application',
-              size_bytes: Math.max(1, Math.min(upload.input.size, 1_048_576)),
-              sha256: '1'.repeat(64),
-              detected_format: 'elf64',
-              detected_category: 'binary',
-              status: 'eligible',
-            },
-            {
-              id: `${importId}-entry-2`,
-              path: 'images/service-image.tar',
-              size_bytes: Math.max(1, Math.min(upload.input.size, 2_097_152)),
-              sha256: '2'.repeat(64),
-              detected_format: 'docker-tar',
-              detected_category: 'container',
-              status: 'eligible',
-            },
-            {
-              id: `${importId}-entry-3`,
-              path: 'nested/source.zip',
-              size_bytes: 512,
-              sha256: null,
-              detected_format: null,
-              detected_category: null,
-              status: 'skipped',
-              skip_reason: '成员压缩包不递归展开',
-            },
-          ],
+          entries: task.supported
+            ? [
+                {
+                  id: '1',
+                  path: 'bin/application',
+                  size_bytes: Math.max(1, Math.min(upload.input.size, 1_048_576)),
+                  sha256: '1'.repeat(64),
+                  detected_format: 'elf64',
+                  detected_category: 'binary',
+                  status: 'eligible',
+                },
+                {
+                  id: '2',
+                  path: 'nested/source.zip',
+                  size_bytes: 512,
+                  sha256: null,
+                  detected_format: 'zip',
+                  detected_category: null,
+                  status: 'skipped',
+                  skip_reason: '嵌套归档仅列出，不递归展开',
+                },
+              ]
+            : [],
           batchResults: new Map(),
         })
       }
-      upload.completed = completed
-      upload.session = completed
-      if (upload.input.input_category !== 'archive') {
-        ensureDirectUploadTask(upload, user)
-      }
-      return {
-        ...upload.completed,
-        uploaded_parts: [...upload.completed.uploaded_parts],
-      }
+      upload.session = upload.completed
+      return { ...task }
     },
 
     async deleteUpload(uploadId) {
@@ -1470,8 +1554,8 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
           code: 'ARCHIVE_IMPORT_NOT_FOUND',
         })
       }
-      if (input.entry_ids.length === 0 || input.entry_ids.length > 20) {
-        throw new ApiError('示例批量请求必须选择 1 到 20 个条目', 400, {
+      if (input.entry_ids.length === 0 || input.entry_ids.length > 10) {
+        throw new ApiError('示例批量请求必须选择 1 到 10 个条目', 400, {
           code: 'INVALID_ARCHIVE_TASK_BATCH',
         })
       }

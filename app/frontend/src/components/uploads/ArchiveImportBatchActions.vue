@@ -33,7 +33,7 @@ const summary = computed(() => ({
   <div class="batch-actions">
     <div class="batch-actions__selection" aria-live="polite">
       <Layers3 :size="17" aria-hidden="true" />
-      <strong>已选 {{ selectedCount }} / 20</strong>
+      <strong>已选 {{ selectedCount }} / 10</strong>
       <button
         v-if="selectedCount"
         type="button"
@@ -48,7 +48,7 @@ const summary = computed(() => ({
     <el-button
       type="primary"
       :loading="submitting"
-      :disabled="disabled || selectedCount === 0 || selectedCount > 20"
+      :disabled="disabled || selectedCount === 0 || selectedCount > 10"
       @click="emit('create')"
     >
       批量创建 {{ selectedCount }} 个任务

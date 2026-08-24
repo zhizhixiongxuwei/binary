@@ -156,6 +156,13 @@ function changePageSize(value: unknown): void {
             </span>
           </template>
         </el-table-column>
+        <el-table-column label="分析模式" min-width="115">
+          <template #default="{ row }: { row: ScanTask }">
+            <span class="table-token">
+              {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '压缩包' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column label="执行状态" min-width="106">
           <template #default="{ row }: { row: ScanTask }">
             <StatusBadge :value="row.status" kind="status" />

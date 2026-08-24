@@ -203,8 +203,21 @@ paths:
         "400": { description: Invalid pagination }
         "403": { description: Administrator access required }
   /api/v1/uploads:
+    get:
+      description: Lists resumable uploads and completed assets so mode selection survives a page refresh.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Recent upload assets
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadPage" }
     post:
-      description: Creates an idempotent resumable upload session. The server validates the declared category only after all parts are assembled.
+      description: Creates an idempotent resumable upload asset. Analysis mode is deliberately selected only after server-side content detection.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/CSRFToken"
@@ -216,12 +229,11 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [filename, size, content_type, input_category]
+              required: [filename, size, content_type]
               properties:
                 filename: { type: string, minLength: 1, maxLength: 512 }
                 size: { type: integer, format: int64, minimum: 1 }
                 content_type: { type: string, minLength: 1, maxLength: 128 }
-                input_category: { $ref: "#/components/schemas/InputCategory" }
       responses:
         "201":
           description: Upload session created
@@ -248,7 +260,7 @@ paths:
               schema: { $ref: "#/components/schemas/UploadSession" }
         "404": { description: Upload not found for the current user }
     delete:
-      description: Cancels an incomplete upload, or removes a completed archive intake before child tasks exist.
+      description: Cancels an incomplete upload, or removes a completed upload asset before any live mode task exists.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/UploadID"
@@ -285,20 +297,52 @@ paths:
         "422": { description: Chunk SHA-256 does not match the request body }
   /api/v1/uploads/{uploadID}/complete:
     post:
-      description: Assembles and validates the upload. Binary and container inputs become ready tasks; archives create an internal parent task and queue one-layer import.
+      description: Assembles, stores and detects the physical format. No analysis task is created until the user selects a mode.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/UploadID"
         - $ref: "#/components/parameters/CSRFToken"
       responses:
         "200":
-          description: Upload completed; returns task_id for binary/container or archive_import_id for an archive
+          description: Upload asset completed and ready for analysis-mode selection
           content:
             application/json:
               schema: { $ref: "#/components/schemas/CompletedUpload" }
         "409": { description: Upload is incomplete or in an invalid state }
         "410": { description: Upload session expired }
-        "422": { description: Unsupported content or declared category does not match server detection }
+        "422": { description: Unsupported physical file format }
+  /api/v1/uploads/{uploadID}/tasks:
+    post:
+      description: Creates one mode-specific task over an existing upload asset. Unsupported combinations create an explicit unsupported run instead of a zero-finding result.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/UploadID"
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [analysis_mode]
+              properties:
+                analysis_mode: { $ref: "#/components/schemas/InputCategory" }
+      responses:
+        "200":
+          description: Existing upload/mode task
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadAnalysisTask" }
+        "201":
+          description: Mode-specific task created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadAnalysisTask" }
+        "400": { description: Invalid analysis mode or idempotency key }
+        "404": { description: Upload asset not found }
+        "409": { description: Upload has not completed content detection }
   /api/v1/tasks:
     get:
       security: [{ sessionCookie: [] }]
@@ -514,7 +558,7 @@ paths:
         "404": { description: Archive import not found }
   /api/v1/archive-imports/{importID}/task-batches:
     post:
-      description: Creates up to 20 binary child tasks from eligible materialized entries. Category eligibility is always revalidated by the server.
+      description: Creates up to 10 binary child tasks from eligible materialized entries. Category eligibility is always revalidated by the server.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/ArchiveImportID"
@@ -532,7 +576,7 @@ paths:
                 entry_ids:
                   type: array
                   minItems: 1
-                  maxItems: 20
+                  maxItems: 10
                   uniqueItems: true
                   items: { type: string, pattern: "^[1-9][0-9]*$" }
       responses:
@@ -691,6 +735,7 @@ components:
         status: { type: string }
         inputSha256: { $ref: "#/components/schemas/SHA256Digest" }
         inputCategory: { $ref: "#/components/schemas/InputCategory" }
+        analysisMode: { $ref: "#/components/schemas/InputCategory" }
         detectedCategory: { $ref: "#/components/schemas/InputCategory" }
         detectedFormat: { type: string }
         createdAt: { type: string, format: date-time }
@@ -734,9 +779,11 @@ components:
     UploadSession:
       type: object
       additionalProperties: false
-      required: [id, part_size, status, uploaded_parts, expires_at, input_category, validation_status]
+      required: [id, filename, content_type, part_size, status, uploaded_parts, expires_at, validation_status]
       properties:
         id: { type: string, format: uuid }
+        filename: { type: string, minLength: 1, maxLength: 512 }
+        content_type: { type: string, minLength: 1, maxLength: 128 }
         part_size: { type: integer, format: int64, minimum: 1 }
         sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
         size_bytes: { type: integer, format: int64, minimum: 0 }
@@ -759,6 +806,41 @@ components:
             message: { type: string }
         archive_import_id: { type: string, format: uuid }
         task_id: { type: string, format: uuid }
+        analysis_options:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/UploadAnalysisOption" }
+        tasks:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/UploadAnalysisTask" }
+    UploadAnalysisOption:
+      type: object
+      additionalProperties: false
+      required: [mode, supported]
+      properties:
+        mode: { $ref: "#/components/schemas/InputCategory" }
+        supported: { type: boolean }
+        reason: { type: string }
+    UploadAnalysisTask:
+      type: object
+      additionalProperties: false
+      required: [task_id, analysis_mode, status, supported]
+      properties:
+        task_id: { type: string, format: uuid }
+        analysis_mode: { $ref: "#/components/schemas/InputCategory" }
+        status: { type: string }
+        supported: { type: boolean }
+        archive_import_id: { type: string, format: uuid }
+    UploadPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/UploadSession" }
     CompletedUpload:
       allOf:
         - $ref: "#/components/schemas/UploadSession"
@@ -772,7 +854,7 @@ components:
         id: { type: string, format: uuid }
         upload_id: { type: string, format: uuid }
         filename: { type: string }
-        status: { enum: [queued, running, ready, failed, deleting, deleted] }
+        status: { enum: [queued, running, ready, failed, unsupported, deleting, deleted] }
         scanned_entries: { type: integer, minimum: 0 }
         total_entries: { type: integer, minimum: 0 }
         eligible_entries: { type: integer, minimum: 0 }

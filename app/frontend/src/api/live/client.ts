@@ -15,6 +15,8 @@ import {
 import {
   parseCompletedUpload,
   parseCreatedUploadSession,
+  parseUploadAnalysisTask,
+  parseUploadPage,
   parseUploadSession,
   UploadIntakeContractError,
 } from '@/api/uploadIntakeContract'
@@ -38,6 +40,7 @@ interface LiveTask {
   status: string
   inputSha256?: string
   detectedFormat?: string
+  analysisMode?: Model.AnalysisMode
   createdAt: string
   updatedAt: string
 }
@@ -194,10 +197,13 @@ function errorMessage(code: string, status: number): string {
     upload_incomplete: '上传分片尚未完整到达服务端',
     upload_conflict: '上传分片或会话内容发生冲突',
     upload_invalid_state: '上传状态已变化，请刷新后重试',
+    upload_not_completed: '文件尚未完成上传和格式识别',
     upload_expired: '上传会话已过期，请重新选择文件',
     chunk_sha256_mismatch: '上传分片校验失败，请重试',
     input_category_mismatch: '文件实际类别与所选上传入口不一致',
     unsupported_input_format: '服务端无法识别或暂不支持该文件格式',
+    invalid_analysis_mode: '请选择二进制、压缩包或容器/映像分析模式',
+    task_creation_failed: '分析任务创建失败，请重试',
     archive_import_not_found: '归档导入不存在或已删除',
     idempotency_key_required: '请求标识无效，请刷新页面后重试',
     report_run_not_finished: '仍有处理流程未结束，暂时不能生成报告',
@@ -252,6 +258,7 @@ function mapTask(value: LiveTask): Model.ScanTask {
     id: value.id,
     name: value.displayName,
     input_type: value.detectedFormat || 'binary',
+    ...(value.analysisMode ? { analysis_mode: value.analysisMode } : {}),
     status: taskStatus(value.status),
     risk_level: 'UNKNOWN',
     progress: progress.progress,
@@ -270,7 +277,9 @@ function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
   const root = value.files.find((file) => file.parentId === null) ?? value.files[0]
   const active = value.runs.find((run) => run.status === 'running' || run.status === 'queued')
   const base = mapTask(value.task)
-  const failed = value.runs.find((run) => run.status === 'failed')
+  const failed = value.runs.find(
+    (run) => run.status === 'failed' || run.status === 'unsupported',
+  )
   return {
     ...base,
     original_filename: root?.path ?? value.task.displayName,
@@ -921,8 +930,19 @@ export function createLiveApiClient(): ApiClient {
             body: JSON.stringify(input),
             headers: { 'Idempotency-Key': idempotencyKey },
           }),
-          input.input_category,
         )
+      } catch (error) {
+        if (error instanceof UploadIntakeContractError) {
+          throw new ApiError('上传响应不符合接口契约', 502, {
+            code: 'INVALID_UPLOAD_RESPONSE',
+          })
+        }
+        throw error
+      }
+    },
+    async listUploads() {
+      try {
+        return parseUploadPage(await request<unknown>('/uploads'))
       } catch (error) {
         if (error instanceof UploadIntakeContractError) {
           throw new ApiError('上传响应不符合接口契约', 502, {
@@ -972,6 +992,24 @@ export function createLiveApiClient(): ApiClient {
       } catch (error) {
         if (error instanceof UploadIntakeContractError) {
           throw new ApiError('上传响应不符合接口契约', 502, {
+            code: 'INVALID_UPLOAD_RESPONSE',
+          })
+        }
+        throw error
+      }
+    },
+    async createUploadAnalysisTask(uploadId, input, idempotencyKey) {
+      try {
+        return parseUploadAnalysisTask(
+          await request<unknown>(`/uploads/${encode(uploadId)}/tasks`, {
+            method: 'POST',
+            body: JSON.stringify(input),
+            headers: { 'Idempotency-Key': idempotencyKey },
+          }),
+        )
+      } catch (error) {
+        if (error instanceof UploadIntakeContractError) {
+          throw new ApiError('任务创建响应不符合接口契约', 502, {
             code: 'INVALID_UPLOAD_RESPONSE',
           })
         }

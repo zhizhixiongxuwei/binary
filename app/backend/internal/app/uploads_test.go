@@ -7,7 +7,41 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"binaryscan.local/backend/internal/filetype"
 )
+
+func TestAnalysisOptionsExposeSupportedAndNotApplicableModes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		format    string
+		supported map[string]bool
+	}{
+		{format: "jar", supported: map[string]bool{"binary": true, "archive": true, "container": false}},
+		{format: "docker-tar", supported: map[string]bool{"binary": false, "archive": true, "container": true}},
+		{format: "iso9660", supported: map[string]bool{"binary": false, "archive": true, "container": false}},
+		{format: "ext4", supported: map[string]bool{"binary": false, "archive": false, "container": false}},
+	}
+	for _, test := range tests {
+		options := analysisOptions(test.format)
+		if len(options) != 3 {
+			t.Fatalf("analysisOptions(%q) returned %d options, want 3", test.format, len(options))
+		}
+		for _, option := range options {
+			want := test.supported[option.Mode]
+			if option.Supported != want {
+				t.Errorf("analysisOptions(%q)[%q].Supported = %v, want %v", test.format, option.Mode, option.Supported, want)
+			}
+			if !option.Supported && option.Reason == "" {
+				t.Errorf("analysisOptions(%q)[%q] has no not-applicable reason", test.format, option.Mode)
+			}
+		}
+	}
+
+	if message := unsupportedAnalysisMessage(filetype.AnalysisModeContainer, "ext4"); message == "" {
+		t.Fatal("container not-applicable message is empty")
+	}
+}
 
 func TestParseContentRange(t *testing.T) {
 	t.Parallel()

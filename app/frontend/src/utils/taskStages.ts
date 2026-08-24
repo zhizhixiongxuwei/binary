@@ -54,7 +54,7 @@ export type TaskStageSource = Pick<
   | 'current_stage'
   | 'progress'
   | 'progress_indeterminate'
-> & { input_type?: string }
+> & { input_type?: string; analysis_mode?: string }
 
 type AnalyzerWorkflow = Exclude<TaskWorkflowKind, 'task'>
 type StageDefinition = Pick<TaskStageItem, 'id' | 'label'>
@@ -156,6 +156,8 @@ function workflowFromTask(
   entries: readonly TaskExecutionLogEntry[],
 ): AnalyzerWorkflow {
   const inputType = normalizedInputType(source.input_type)
+  if (source.analysis_mode === 'container') return 'image-scan'
+  if (source.analysis_mode === 'binary') return 'decompile'
   if (containerFormats.has(inputType) || vmImageFormats.has(inputType)) {
     return 'image-scan'
   }

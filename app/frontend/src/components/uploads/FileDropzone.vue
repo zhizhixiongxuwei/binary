@@ -15,7 +15,6 @@ const props = withDefaults(
     disabled?: boolean
   }>(),
   {
-    category: 'binary',
     disabled: false,
   },
 )
@@ -112,7 +111,7 @@ onScopeDispose(() => {
       <FileUp :size="25" aria-hidden="true" />
     </span>
     <div class="dropzone__copy">
-      <strong>{{ inputCategoryLabels[category] }}</strong>
+      <strong>{{ category ? inputCategoryLabels[category] : '统一文件上传' }}</strong>
       <span>单文件上限 2 GiB</span>
     </div>
     <el-button

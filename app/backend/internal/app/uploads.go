@@ -34,10 +34,13 @@ const (
 )
 
 type createUploadRequest struct {
-	Filename      string `json:"filename"`
-	Size          int64  `json:"size"`
-	ContentType   string `json:"content_type"`
-	InputCategory string `json:"input_category"`
+	Filename    string `json:"filename"`
+	Size        int64  `json:"size"`
+	ContentType string `json:"content_type"`
+}
+
+type createUploadTaskRequest struct {
+	AnalysisMode string `json:"analysis_mode"`
 }
 
 type uploadValidationMessage struct {
@@ -69,19 +72,37 @@ type uploadRecord struct {
 
 type uploadSessionResponse struct {
 	ID               string                   `json:"id"`
+	Filename         string                   `json:"filename"`
+	ContentType      string                   `json:"content_type"`
 	PartSize         int64                    `json:"part_size"`
 	SHA256           string                   `json:"sha256,omitempty"`
 	SizeBytes        *int64                   `json:"size_bytes,omitempty"`
 	Status           string                   `json:"status"`
 	UploadedParts    []uint32                 `json:"uploaded_parts"`
 	ExpiresAt        time.Time                `json:"expires_at"`
-	InputCategory    string                   `json:"input_category"`
+	InputCategory    string                   `json:"input_category,omitempty"`
 	ValidationStatus string                   `json:"validation_status"`
 	DetectedCategory string                   `json:"detected_category,omitempty"`
 	DetectedFormat   string                   `json:"detected_format,omitempty"`
 	ValidationError  *uploadValidationMessage `json:"validation_error,omitempty"`
 	ArchiveImportID  string                   `json:"archive_import_id,omitempty"`
 	TaskID           string                   `json:"task_id,omitempty"`
+	AnalysisOptions  []uploadAnalysisOption   `json:"analysis_options,omitempty"`
+	Tasks            []uploadTaskResponse     `json:"tasks,omitempty"`
+}
+
+type uploadAnalysisOption struct {
+	Mode      string `json:"mode"`
+	Supported bool   `json:"supported"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+type uploadTaskResponse struct {
+	TaskID          string `json:"task_id"`
+	AnalysisMode    string `json:"analysis_mode"`
+	Status          string `json:"status"`
+	Supported       bool   `json:"supported"`
+	ArchiveImportID string `json:"archive_import_id,omitempty"`
 }
 
 type contentRange struct {
@@ -129,11 +150,6 @@ func (s *taskService) createUpload(c *gin.Context) {
 		c.JSON(status, gin.H{"error": code})
 		return
 	}
-	category, ok := filetype.ParseCategory(request.InputCategory)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_input_category"})
-		return
-	}
 	contentType := strings.TrimSpace(request.ContentType)
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -148,7 +164,7 @@ func (s *taskService) createUpload(c *gin.Context) {
 		return
 	} else if found {
 		if existing.OriginalName != name || existing.DeclaredSize != request.Size ||
-			existing.ContentType != contentType || existing.InputCategory != string(category) {
+			existing.ContentType != contentType {
 			c.JSON(http.StatusConflict, gin.H{"error": "upload_conflict"})
 			return
 		}
@@ -164,14 +180,14 @@ func (s *taskService) createUpload(c *gin.Context) {
 	expiresAt := time.Now().UTC().Add(uploadSessionTTL)
 	_, err = s.db.ExecContext(c, `INSERT INTO uploads
 		(id, created_by, original_name, content_type, input_category, declared_size, received_size,
-		 status, idempotency_key, validation_status, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, 0, 'open', ?, 'pending', ?)`,
-		uploadID, user.ID, name, contentType, category, request.Size, idempotencyKey, expiresAt)
+			 status, idempotency_key, validation_status, expires_at)
+		VALUES (?, ?, ?, ?, NULL, ?, 0, 'open', ?, 'pending', ?)`,
+		uploadID, user.ID, name, contentType, request.Size, idempotencyKey, expiresAt)
 	if err != nil {
 		// A concurrent retry may have won the unique idempotency-key insert.
 		if existing, found, queryErr := s.loadUploadByIdempotency(c, user.ID, idempotencyKey); queryErr == nil && found {
 			if existing.OriginalName == name && existing.DeclaredSize == request.Size &&
-				existing.ContentType == contentType && existing.InputCategory == string(category) {
+				existing.ContentType == contentType {
 				s.writeUploadSession(c, existing, http.StatusOK)
 				return
 			}
@@ -182,9 +198,54 @@ func (s *taskService) createUpload(c *gin.Context) {
 		return
 	}
 	record := uploadRecord{ID: uploadID, CreatedBy: user.ID, OriginalName: name, ContentType: contentType,
-		InputCategory: string(category), DeclaredSize: request.Size, Status: "open",
+		DeclaredSize: request.Size, Status: "open",
 		ValidationStatus: "pending", ExpiresAt: expiresAt, CreatedAt: time.Now().UTC()}
 	s.writeUploadSession(c, record, http.StatusCreated)
+}
+
+func (s *taskService) listUploads(c *gin.Context) {
+	limit := 50
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value <= 100 {
+			limit = value
+		}
+	}
+	rows, err := s.db.QueryContext(c, `SELECT id FROM uploads
+		WHERE created_by = ? AND status <> 'aborted' ORDER BY created_at DESC LIMIT ?`,
+		mustCurrentUser(c).ID, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+		return
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+			return
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+		return
+	}
+	items := make([]uploadSessionResponse, 0, len(ids))
+	for _, id := range ids {
+		record, found, err := s.loadOwnedUpload(c, id, mustCurrentUser(c).ID, false)
+		if err != nil || !found {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+			return
+		}
+		item, err := s.buildUploadSession(c, record)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+			return
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 func (s *taskService) getUpload(c *gin.Context) {
@@ -198,6 +259,60 @@ func (s *taskService) getUpload(c *gin.Context) {
 		return
 	}
 	s.writeUploadSession(c, record, http.StatusOK)
+}
+
+func (s *taskService) createUploadTask(c *gin.Context) {
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if !validIdempotencyKey(idempotencyKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "idempotency_key_required"})
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadJSONBytes)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	var request createUploadTaskRequest
+	if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_analysis_mode"})
+		return
+	}
+	mode, ok := filetype.ParseAnalysisMode(request.AnalysisMode)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_analysis_mode"})
+		return
+	}
+	record, found, err := s.loadOwnedUpload(c, c.Param("uploadID"), mustCurrentUser(c).ID, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "upload_not_found"})
+		return
+	}
+	if record.Status != "complete" || record.ValidationStatus != "valid" || !record.BlobID.Valid || !record.DetectedFormat.Valid {
+		c.JSON(http.StatusConflict, gin.H{"error": "upload_not_completed"})
+		return
+	}
+	if existing, found, err := s.loadUploadTaskResponse(c, record.ID, mode); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_creation_failed"})
+		return
+	} else if found {
+		c.JSON(http.StatusOK, existing)
+		return
+	}
+	result, err := s.persistUploadAnalysisTask(c, record, mode, idempotencyKey)
+	if err != nil {
+		// A concurrent request may have won the unique upload/mode insert.
+		if existing, found, queryErr := s.loadUploadTaskResponse(c, record.ID, mode); queryErr == nil && found {
+			c.JSON(http.StatusOK, existing)
+			return
+		}
+		slog.Error("create upload analysis task failed", "request_id", c.GetString("requestID"),
+			"upload_id", record.ID, "analysis_mode", mode, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_creation_failed"})
+		return
+	}
+	c.JSON(http.StatusCreated, result)
 }
 
 func (s *taskService) putUploadPart(c *gin.Context) {
@@ -464,6 +579,12 @@ func (s *taskService) completeUpload(c *gin.Context) {
 		return
 	}
 	finalized = true
+	// The content-addressed blob is now durable. Upload parts are no longer
+	// needed and would otherwise duplicate every completed sample on disk.
+	if removeErr := os.RemoveAll(uploadDirectory); removeErr != nil {
+		slog.Warn("cleanup completed upload parts failed", "request_id", c.GetString("requestID"),
+			"upload_id", record.ID, "error", removeErr)
+	}
 	if validationErr != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{
 			"error": validationErr.code,
@@ -514,9 +635,21 @@ func (s *taskService) deleteUpload(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "upload_not_found"})
 		return
 	}
-	if currentStatus == "complete" && category.String != string(filetype.CategoryArchive) {
+	if currentStatus == "complete" && category.Valid && category.String != "" && category.String != string(filetype.CategoryArchive) {
 		c.JSON(http.StatusConflict, gin.H{"error": "upload_invalid_state"})
 		return
+	}
+	if currentStatus == "complete" && (!category.Valid || category.String == "") {
+		var liveTasks int
+		if err := tx.QueryRowContext(c, `SELECT COUNT(*) FROM tasks
+			WHERE upload_id = ? AND deleted_at IS NULL`, record.ID).Scan(&liveTasks); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_deletion_failed"})
+			return
+		}
+		if liveTasks != 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "upload_invalid_state"})
+			return
+		}
 	}
 	if currentStatus == "complete" && category.String == string(filetype.CategoryArchive) {
 		var taskID string
@@ -595,6 +728,186 @@ func (s *taskService) releaseUploadAssembly(
 	return err
 }
 
+func (s *taskService) persistUploadAnalysisTask(
+	ctx *gin.Context, record uploadRecord, mode filetype.AnalysisMode, idempotencyKey string,
+) (uploadTaskResponse, error) {
+	taskID, err := identity.UUID()
+	if err != nil {
+		return uploadTaskResponse{}, err
+	}
+	fileID, err := identity.UUID()
+	if err != nil {
+		return uploadTaskResponse{}, err
+	}
+	runID, err := identity.UUID()
+	if err != nil {
+		return uploadTaskResponse{}, err
+	}
+	supported := filetype.SupportsAnalysisMode(record.DetectedFormat.String, mode)
+	taskStatus := "ready"
+	if !supported {
+		taskStatus = "partial"
+	} else if mode == filetype.AnalysisModeArchive {
+		taskStatus = "queued"
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return uploadTaskResponse{}, err
+	}
+	defer tx.Rollback()
+	var status, validationStatus, blobID, detectedFormat string
+	var detectedCategory sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT status, validation_status, blob_id, detected_category, detected_format
+		FROM uploads WHERE id = ? AND created_by = ? FOR UPDATE`, record.ID, record.CreatedBy).Scan(
+		&status, &validationStatus, &blobID, &detectedCategory, &detectedFormat); err != nil {
+		return uploadTaskResponse{}, err
+	}
+	if status != "complete" || validationStatus != "valid" || blobID == "" || detectedFormat == "" {
+		return uploadTaskResponse{}, fmt.Errorf("upload is not ready for analysis")
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO tasks
+		(id, created_by, upload_id, blob_id, display_name, input_category, analysis_mode,
+		 detected_category, detected_format, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)`, taskID, record.CreatedBy, record.ID,
+		blobID, record.OriginalName, mode, mode, detectedCategory.String, detectedFormat, taskStatus); err != nil {
+		return uploadTaskResponse{}, fmt.Errorf("create analysis task: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO file_nodes
+		(id, task_id, blob_id, logical_path, node_kind, detected_format, size_bytes)
+		VALUES (?, ?, ?, ?, 'file', ?, ?)`, fileID, taskID, blobID, record.OriginalName,
+		detectedFormat, record.ReceivedSize); err != nil {
+		return uploadTaskResponse{}, fmt.Errorf("create analysis root file: %w", err)
+	}
+
+	response := uploadTaskResponse{TaskID: taskID, AnalysisMode: string(mode), Status: taskStatus, Supported: supported}
+	message := "已按" + analysisModeLabel(mode) + "创建任务"
+	if mode == filetype.AnalysisModeArchive && supported {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO runs
+			(id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
+			VALUES (?, 'archive_import', 'queued', ?, 'file_node', ?, ?, ?,
+			 JSON_OBJECT('source', 'analysis-mode', 'analysisMode', ?, 'detectedFormat', ?))`,
+			runID, taskID, fileID, record.CreatedBy, idempotencyKey, mode, detectedFormat); err != nil {
+			return uploadTaskResponse{}, fmt.Errorf("create archive analysis run: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (run_id, kind, status, max_attempts)
+			VALUES (?, ?, 'queued', 3)`, runID, job.KindArchiveImport); err != nil {
+			return uploadTaskResponse{}, fmt.Errorf("enqueue archive analysis: %w", err)
+		}
+		response.ArchiveImportID = runID
+		message += "，归档一层解析已排队"
+	} else if !supported {
+		kind := job.KindScan
+		subjectType, subjectID := "file_node", fileID
+		if mode == filetype.AnalysisModeArchive {
+			kind = job.KindArchiveImport
+			response.ArchiveImportID = runID
+		} else if mode == filetype.AnalysisModeContainer {
+			kind = job.KindTrivyScan
+		}
+		reason := unsupportedAnalysisMessage(mode, detectedFormat)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO runs
+			(id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request,
+			 error_code, error_message, completed_at)
+			VALUES (?, ?, 'unsupported', ?, ?, ?, ?, ?,
+			 JSON_OBJECT('source', 'analysis-mode', 'analysisMode', ?, 'detectedFormat', ?),
+			 'analysis_mode_not_applicable', ?, UTC_TIMESTAMP(6))`, runID, kind, taskID, subjectType,
+			subjectID, record.CreatedBy, idempotencyKey, mode, detectedFormat, reason); err != nil {
+			return uploadTaskResponse{}, fmt.Errorf("record unsupported analysis: %w", err)
+		}
+		message = "未执行检测：" + reason
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
+		(task_id, event_type, message) VALUES (?, ?, ?)`, taskID,
+		map[bool]string{true: "analysis.ready", false: "analysis.unsupported"}[supported], message); err != nil {
+		return uploadTaskResponse{}, fmt.Errorf("record analysis task event: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs
+		(actor_user_id, action, object_type, object_id, request_id, client_ip, outcome, details)
+		VALUES (?, 'task.create', 'task', ?, ?, ?, 'success',
+		JSON_OBJECT('uploadId', ?, 'analysisMode', ?, 'detectedFormat', ?, 'supported', ?))`,
+		record.CreatedBy, taskID, ctx.GetString("requestID"), ctx.ClientIP(), record.ID, mode,
+		detectedFormat, supported); err != nil {
+		return uploadTaskResponse{}, fmt.Errorf("audit analysis task creation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return uploadTaskResponse{}, err
+	}
+	return response, nil
+}
+
+func (s *taskService) loadUploadTaskResponse(
+	ctx context.Context, uploadID string, mode filetype.AnalysisMode,
+) (uploadTaskResponse, bool, error) {
+	var response uploadTaskResponse
+	var detectedFormat string
+	err := s.db.QueryRowContext(ctx, `SELECT id, COALESCE(analysis_mode, input_category, ''), status,
+		COALESCE(detected_format, '') FROM tasks
+		WHERE upload_id = ? AND COALESCE(analysis_mode, input_category, '') = ? AND deleted_at IS NULL
+		ORDER BY created_at LIMIT 1`, uploadID, mode).Scan(
+		&response.TaskID, &response.AnalysisMode, &response.Status, &detectedFormat)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uploadTaskResponse{}, false, nil
+	}
+	if err != nil {
+		return uploadTaskResponse{}, false, err
+	}
+	response.Supported = filetype.SupportsAnalysisMode(detectedFormat, mode)
+	if mode == filetype.AnalysisModeArchive {
+		var runID sql.NullString
+		if err := s.db.QueryRowContext(ctx, `SELECT id FROM runs WHERE task_id = ? AND kind = 'archive_import'
+			ORDER BY created_at DESC LIMIT 1`, response.TaskID).Scan(&runID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return uploadTaskResponse{}, false, err
+		}
+		response.ArchiveImportID = runID.String
+	}
+	return response, true, nil
+}
+
+func analysisModeLabel(mode filetype.AnalysisMode) string {
+	switch mode {
+	case filetype.AnalysisModeBinary:
+		return "二进制模式"
+	case filetype.AnalysisModeArchive:
+		return "压缩包模式"
+	case filetype.AnalysisModeContainer:
+		return "容器/映像模式"
+	default:
+		return "所选模式"
+	}
+}
+
+func unsupportedAnalysisMessage(mode filetype.AnalysisMode, format string) string {
+	switch mode {
+	case filetype.AnalysisModeBinary:
+		return fmt.Sprintf("二进制反编译器不支持 %s 格式", format)
+	case filetype.AnalysisModeArchive:
+		return fmt.Sprintf("一层归档解析器不支持 %s 格式", format)
+	case filetype.AnalysisModeContainer:
+		return fmt.Sprintf("Trivy 镜像扫描器不支持 %s 格式", format)
+	default:
+		return fmt.Sprintf("当前分析引擎不支持 %s 格式", format)
+	}
+}
+
+func analysisOptions(format string) []uploadAnalysisOption {
+	modes := []filetype.AnalysisMode{
+		filetype.AnalysisModeBinary,
+		filetype.AnalysisModeArchive,
+		filetype.AnalysisModeContainer,
+	}
+	options := make([]uploadAnalysisOption, 0, len(modes))
+	for _, mode := range modes {
+		supported := filetype.SupportsAnalysisMode(format, mode)
+		option := uploadAnalysisOption{Mode: string(mode), Supported: supported}
+		if !supported {
+			option.Reason = unsupportedAnalysisMessage(mode, format)
+		}
+		options = append(options, option)
+	}
+	return options
+}
+
 func (s *taskService) finalizeUpload(
 	ctx *gin.Context, record uploadRecord, blob storage.Blob, detected filetype.Result, assemblyToken string,
 ) (uploadRecord, *uploadValidationFailure, error) {
@@ -626,17 +939,12 @@ func (s *taskService) finalizeUpload(
 		return uploadRecord{}, nil, fmt.Errorf("resolve upload blob: %w", err)
 	}
 
-	requestedCategory, _ := filetype.ParseCategory(record.InputCategory)
 	var validationFailure *uploadValidationFailure
 	validationStatus := "valid"
 	if detected.Category == "" || detected.Format == "unknown" {
 		validationStatus = "unsupported"
 		validationFailure = &uploadValidationFailure{code: "unsupported_input_format",
 			message: "unsupported input format", detected: detected}
-	} else if detected.Category != requestedCategory {
-		validationStatus = "mismatch"
-		validationFailure = &uploadValidationFailure{code: "input_category_mismatch",
-			message: "input category does not match detected content", detected: detected}
 	}
 	if validationFailure != nil {
 		errorBody, _ := json.Marshal(uploadValidationMessage{Code: validationFailure.code, Message: validationFailure.message})
@@ -653,45 +961,6 @@ func (s *taskService) finalizeUpload(
 		return uploadRecord{}, validationFailure, nil
 	}
 
-	taskID, err := identity.UUID()
-	fileID, runID := "", ""
-	if err == nil {
-		fileID, err = identity.UUID()
-	}
-	if err == nil && requestedCategory == filetype.CategoryArchive {
-		runID, err = identity.UUID()
-	}
-	if err != nil {
-		return uploadRecord{}, nil, err
-	}
-	taskStatus := "ready"
-	if requestedCategory == filetype.CategoryArchive {
-		taskStatus = "queued"
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO tasks
-		(id, created_by, upload_id, blob_id, display_name, input_category, detected_category, detected_format, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, taskID, record.CreatedBy, record.ID, blobID,
-		record.OriginalName, requestedCategory, detected.Category, detected.Format, taskStatus); err != nil {
-		return uploadRecord{}, nil, fmt.Errorf("create upload task: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO file_nodes
-		(id, task_id, blob_id, logical_path, node_kind, detected_format, size_bytes)
-		VALUES (?, ?, ?, ?, 'file', ?, ?)`, fileID, taskID, blobID, record.OriginalName,
-		detected.Format, blob.SizeBytes); err != nil {
-		return uploadRecord{}, nil, fmt.Errorf("create upload root file: %w", err)
-	}
-	if requestedCategory == filetype.CategoryArchive {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO runs
-			(id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
-			VALUES (?, 'archive_import', 'queued', ?, 'file_node', ?, ?, ?, JSON_OBJECT('source', 'upload'))`,
-			runID, taskID, fileID, record.CreatedBy, "auto-archive:"+record.ID); err != nil {
-			return uploadRecord{}, nil, fmt.Errorf("create automatic archive import: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs (run_id, kind, status, max_attempts)
-			VALUES (?, ?, 'queued', 3)`, runID, job.KindArchiveImport); err != nil {
-			return uploadRecord{}, nil, fmt.Errorf("enqueue automatic archive import: %w", err)
-		}
-	}
 	if _, err := tx.ExecContext(ctx, `UPDATE uploads SET status = 'complete', blob_id = ?, received_size = ?,
 		validation_status = 'valid', detected_category = ?, detected_format = ?, validation_error = NULL,
 		assembly_started_at = NULL, assembly_token = NULL,
@@ -699,19 +968,11 @@ func (s *taskService) finalizeUpload(
 		detected.Format, record.ID); err != nil {
 		return uploadRecord{}, nil, fmt.Errorf("complete upload: %w", err)
 	}
-	message := "上传完成，识别格式：" + detected.Format
-	if requestedCategory == filetype.CategoryArchive {
-		message += "，归档一层解析已排队"
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
-		(task_id, event_type, message) VALUES (?, 'upload.complete', ?)`, taskID, message); err != nil {
-		return uploadRecord{}, nil, fmt.Errorf("record upload completion: %w", err)
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_logs
 		(actor_user_id, action, object_type, object_id, request_id, client_ip, outcome, details)
 		VALUES (?, 'upload.complete', 'upload', ?, ?, ?, 'success',
-		JSON_OBJECT('taskId', ?, 'inputCategory', ?, 'detectedFormat', ?))`, record.CreatedBy,
-		record.ID, ctx.GetString("requestID"), ctx.ClientIP(), taskID, requestedCategory, detected.Format); err != nil {
+		JSON_OBJECT('detectedCategory', ?, 'detectedFormat', ?))`, record.CreatedBy,
+		record.ID, ctx.GetString("requestID"), ctx.ClientIP(), detected.Category, detected.Format); err != nil {
 		return uploadRecord{}, nil, fmt.Errorf("audit upload completion: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -730,12 +991,21 @@ func (s *taskService) finalizeUpload(
 }
 
 func (s *taskService) writeUploadSession(c *gin.Context, record uploadRecord, status int) {
-	parts, err := s.uploadedPartNumbers(c, record.ID)
+	response, err := s.buildUploadSession(c, record)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
 		return
 	}
-	response := uploadSessionResponse{ID: record.ID, PartSize: uploadPartSize, Status: uploadAPIStatus(record),
+	c.JSON(status, response)
+}
+
+func (s *taskService) buildUploadSession(ctx context.Context, record uploadRecord) (uploadSessionResponse, error) {
+	parts, err := s.uploadedPartNumbers(ctx, record.ID)
+	if err != nil {
+		return uploadSessionResponse{}, err
+	}
+	response := uploadSessionResponse{ID: record.ID, Filename: record.OriginalName, ContentType: record.ContentType,
+		PartSize: uploadPartSize, Status: uploadAPIStatus(record),
 		UploadedParts: parts, ExpiresAt: record.ExpiresAt, InputCategory: record.InputCategory,
 		ValidationStatus: record.ValidationStatus, DetectedCategory: record.DetectedCategory.String,
 		DetectedFormat: record.DetectedFormat.String}
@@ -748,30 +1018,61 @@ func (s *taskService) writeUploadSession(c *gin.Context, record uploadRecord, st
 	if record.Status == "complete" {
 		response.SizeBytes = &record.ReceivedSize
 		var digest []byte
-		if err := s.db.QueryRowContext(c, `SELECT sha256 FROM blobs WHERE id = ? AND state = 'ready'`,
-			record.BlobID.String).Scan(&digest); err != nil || len(digest) != sha256.Size {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
-			return
+		if err := s.db.QueryRowContext(ctx, `SELECT sha256 FROM blobs WHERE id = ? AND state = 'ready'`,
+			record.BlobID.String).Scan(&digest); err != nil {
+			return uploadSessionResponse{}, fmt.Errorf("load upload digest: %w", err)
+		}
+		if len(digest) != sha256.Size {
+			return uploadSessionResponse{}, fmt.Errorf("load upload digest: invalid SHA-256 length")
 		}
 		response.SHA256 = hex.EncodeToString(digest)
-		var taskID string
-		if err := s.db.QueryRowContext(c, `SELECT id FROM tasks WHERE upload_id = ? ORDER BY created_at LIMIT 1`,
-			record.ID).Scan(&taskID); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
-				return
+		response.AnalysisOptions = analysisOptions(record.DetectedFormat.String)
+		rows, err := s.db.QueryContext(ctx, `SELECT id, COALESCE(analysis_mode, input_category, ''), status,
+			COALESCE(detected_format, '') FROM tasks
+			WHERE upload_id = ? AND deleted_at IS NULL ORDER BY created_at`, record.ID)
+		if err != nil {
+			return uploadSessionResponse{}, err
+		}
+		for rows.Next() {
+			var task uploadTaskResponse
+			var detectedFormat string
+			if err := rows.Scan(&task.TaskID, &task.AnalysisMode, &task.Status, &detectedFormat); err != nil {
+				rows.Close()
+				return uploadSessionResponse{}, err
 			}
-		} else if record.InputCategory == string(filetype.CategoryArchive) {
-			if err := s.db.QueryRowContext(c, `SELECT id FROM runs WHERE task_id = ? AND kind = 'archive_import'
-				ORDER BY created_at DESC LIMIT 1`, taskID).Scan(&response.ArchiveImportID); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
-				return
+			mode, ok := filetype.ParseAnalysisMode(task.AnalysisMode)
+			if ok {
+				task.Supported = filetype.SupportsAnalysisMode(detectedFormat, mode)
 			}
-		} else {
-			response.TaskID = taskID
+			response.Tasks = append(response.Tasks, task)
+		}
+		if err := rows.Close(); err != nil {
+			return uploadSessionResponse{}, err
+		}
+		if err := rows.Err(); err != nil {
+			return uploadSessionResponse{}, err
+		}
+		for index := range response.Tasks {
+			if response.Tasks[index].AnalysisMode != string(filetype.AnalysisModeArchive) {
+				continue
+			}
+			var runID sql.NullString
+			if err := s.db.QueryRowContext(ctx, `SELECT id FROM runs WHERE task_id = ? AND kind = 'archive_import'
+				ORDER BY created_at DESC LIMIT 1`, response.Tasks[index].TaskID).Scan(&runID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return uploadSessionResponse{}, err
+			}
+			response.Tasks[index].ArchiveImportID = runID.String
+		}
+		// Keep the legacy single-task fields populated for old API consumers.
+		if len(response.Tasks) == 1 {
+			if response.Tasks[0].AnalysisMode == string(filetype.AnalysisModeArchive) {
+				response.ArchiveImportID = response.Tasks[0].ArchiveImportID
+			} else {
+				response.TaskID = response.Tasks[0].TaskID
+			}
 		}
 	}
-	c.JSON(status, response)
+	return response, nil
 }
 
 func (s *taskService) writeUploadStateError(c *gin.Context, record uploadRecord) {
@@ -817,13 +1118,6 @@ func (s *taskService) loadOwnedUpload(
 		record.ContentType = "application/octet-stream"
 	}
 	record.InputCategory = inputCategory.String
-	if record.InputCategory == "" {
-		if category, ok := filetype.ParseCategory(record.DetectedCategory.String); ok {
-			record.InputCategory = string(category)
-		} else if category, ok := filetype.CategoryForFormat(record.DetectedFormat.String); ok {
-			record.InputCategory = string(category)
-		}
-	}
 	record.ValidationStatus = validationStatus.String
 	if record.ValidationStatus == "" {
 		record.ValidationStatus = "pending"
@@ -851,7 +1145,7 @@ func (s *taskService) loadUploadByIdempotency(
 	return s.loadOwnedUpload(ctx, id, userID, false)
 }
 
-func (s *taskService) uploadedPartNumbers(ctx *gin.Context, uploadID string) ([]uint32, error) {
+func (s *taskService) uploadedPartNumbers(ctx context.Context, uploadID string) ([]uint32, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT part_number FROM upload_parts WHERE upload_id = ? ORDER BY part_number`, uploadID)
 	if err != nil {
 		return nil, err

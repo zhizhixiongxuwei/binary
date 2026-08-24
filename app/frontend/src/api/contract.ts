@@ -31,6 +31,7 @@ import type {
   CreatedTask,
   CreateArchiveTaskBatchInput,
   CreateTaskInput,
+  CreateUploadAnalysisTaskInput,
   CreateUploadInput,
   CurrentUser,
   CreateFileDecompileRequestInput,
@@ -66,6 +67,8 @@ import type {
   ResetAdminUserPasswordInput,
   UpdateAdminUserInput,
   UploadPartInput,
+  UploadAnalysisTask,
+  UploadPage,
   UploadSession,
   VulnerabilityFinding,
   VulnerabilityFindingPage,
@@ -243,9 +246,15 @@ export interface ApiClient {
     input: CreateUploadInput,
     idempotencyKey: string,
   ): Promise<UploadSession>
+  listUploads(): Promise<UploadPage>
   getUpload(uploadId: string): Promise<UploadSession>
   uploadPart(uploadId: string, input: UploadPartInput): Promise<void>
   completeUpload(uploadId: string): Promise<CompletedUpload>
+  createUploadAnalysisTask(
+    uploadId: string,
+    input: CreateUploadAnalysisTaskInput,
+    idempotencyKey: string,
+  ): Promise<UploadAnalysisTask>
   deleteUpload(uploadId: string): Promise<void>
   listArchiveImports(query?: ArchiveImportListQuery): Promise<ArchiveImportPage>
   getArchiveImport(importId: string): Promise<ArchiveImport>

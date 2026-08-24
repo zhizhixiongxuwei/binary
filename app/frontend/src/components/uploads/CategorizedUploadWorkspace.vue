@@ -45,6 +45,7 @@ const archiveStatusLabels = {
   running: '正在解析',
   ready: '解析完成',
   failed: '解析失败',
+  unsupported: '不适用/无结果',
   deleting: '正在删除',
   deleted: '已删除',
 } as const

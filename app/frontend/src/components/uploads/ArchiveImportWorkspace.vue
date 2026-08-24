@@ -46,6 +46,7 @@ const statusLabels = {
   running: '正在解析',
   ready: '解析完成',
   failed: '解析失败',
+  unsupported: '不适用/无结果',
   deleting: '正在删除',
   deleted: '已删除',
 } as const
@@ -193,14 +194,14 @@ watch(
     </div>
 
     <div
-      v-if="model.archiveImport.value?.status === 'failed'"
+      v-if="model.archiveImport.value?.status === 'failed' || model.archiveImport.value?.status === 'unsupported'"
       class="archive-import__failure"
       role="alert"
     >
       <CircleAlert :size="17" aria-hidden="true" />
       <div>
-        <strong>{{ model.archiveImport.value.error_code ?? 'ARCHIVE_IMPORT_FAILED' }}</strong>
-        <span>{{ model.archiveImport.value.error_message ?? '归档无法完成安全解析' }}</span>
+        <strong>{{ model.archiveImport.value.error_code ?? (model.archiveImport.value.status === 'unsupported' ? 'ANALYSIS_MODE_NOT_APPLICABLE' : 'ARCHIVE_IMPORT_FAILED') }}</strong>
+        <span>{{ model.archiveImport.value.error_message ?? (model.archiveImport.value.status === 'unsupported' ? '当前格式不适用于压缩包分析，未执行检测。' : '归档无法完成安全解析') }}</span>
       </div>
     </div>
 

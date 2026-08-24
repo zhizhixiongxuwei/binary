@@ -1,6 +1,9 @@
 import type {
   CompletedUpload,
   InputCategory,
+  UploadAnalysisOption,
+  UploadAnalysisTask,
+  UploadPage,
   UploadSession,
   UploadValidationError,
   UploadValidationStatus,
@@ -108,6 +111,11 @@ function integer(
   return value
 }
 
+function boolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') throw new UploadIntakeContractError(field)
+  return value
+}
+
 function timestamp(value: unknown, field: string): string {
   const parsed = text(value, field, 64)
   if (!Number.isFinite(Date.parse(parsed))) {
@@ -136,12 +144,58 @@ function validationError(
   }
 }
 
+function analysisOption(value: unknown, field: string): UploadAnalysisOption {
+  const option = record(value, field)
+  exactKeys(option, ['mode', 'supported'], ['reason'], field)
+  return {
+    mode: enumValue(option.mode, inputCategories, `${field}.mode`),
+    supported: boolean(option.supported, `${field}.supported`),
+    ...(option.reason !== undefined
+      ? { reason: text(option.reason, `${field}.reason`, 2_048) }
+      : {}),
+  }
+}
+
+function analysisTask(value: unknown, field: string): UploadAnalysisTask {
+  const task = record(value, field)
+  exactKeys(
+    task,
+    ['task_id', 'analysis_mode', 'status', 'supported'],
+    ['archive_import_id'],
+    field,
+  )
+  const taskId = text(task.task_id, `${field}.task_id`, 36)
+  if (!canonicalUUIDPattern.test(taskId)) {
+    throw new UploadIntakeContractError(`${field}.task_id`)
+  }
+  return {
+    task_id: taskId,
+    analysis_mode: enumValue(
+      task.analysis_mode,
+      inputCategories,
+      `${field}.analysis_mode`,
+    ),
+    status: text(task.status, `${field}.status`, 64),
+    supported: boolean(task.supported, `${field}.supported`),
+    ...(task.archive_import_id !== undefined
+      ? {
+          archive_import_id: identifier(
+            task.archive_import_id,
+            `${field}.archive_import_id`,
+          ),
+        }
+      : {}),
+  }
+}
+
 function sessionValue(value: unknown, completed: boolean): UploadSession {
   const session = record(value, 'data')
   exactKeys(
     session,
     ['id', 'part_size', 'status', 'uploaded_parts', 'expires_at'],
     [
+      'filename',
+      'content_type',
       'sha256',
       'size_bytes',
       'input_category',
@@ -151,6 +205,8 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
       'validation_error',
       'archive_import_id',
       'task_id',
+      'analysis_options',
+      'tasks',
     ],
     'data',
   )
@@ -177,6 +233,12 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
   if (new Set(parsed.uploaded_parts).size !== parsed.uploaded_parts.length) {
     throw new UploadIntakeContractError('data.uploaded_parts')
   }
+  if (session.filename !== undefined) {
+    parsed.filename = text(session.filename, 'data.filename', 512)
+  }
+  if (session.content_type !== undefined) {
+    parsed.content_type = text(session.content_type, 'data.content_type', 128)
+  }
   if (session.size_bytes !== undefined) {
     parsed.size_bytes = integer(session.size_bytes, 'data.size_bytes', {
       maximum: 2 * 1024 ** 3,
@@ -195,12 +257,6 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
       validationStatuses,
       'data.validation_status',
     )
-  }
-  if (
-    (parsed.input_category === undefined) !==
-    (parsed.validation_status === undefined)
-  ) {
-    throw new UploadIntakeContractError('data.validation_status')
   }
   if (session.detected_category !== undefined) {
     parsed.detected_category = enumValue(
@@ -242,34 +298,30 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
     }
     parsed.sha256 = sha256
   }
+  if (session.analysis_options !== undefined) {
+    if (!Array.isArray(session.analysis_options) || session.analysis_options.length > 3) {
+      throw new UploadIntakeContractError('data.analysis_options')
+    }
+    parsed.analysis_options = session.analysis_options.map((option, index) =>
+      analysisOption(option, `data.analysis_options[${index}]`),
+    )
+  }
+  if (session.tasks !== undefined) {
+    if (!Array.isArray(session.tasks) || session.tasks.length > 3) {
+      throw new UploadIntakeContractError('data.tasks')
+    }
+    parsed.tasks = session.tasks.map((task, index) =>
+      analysisTask(task, `data.tasks[${index}]`),
+    )
+  }
 
   if (
     parsed.validation_status === 'valid' &&
     (parsed.detected_category === undefined ||
-      parsed.detected_format === undefined ||
-      parsed.detected_category !== parsed.input_category)
+      parsed.detected_format === undefined)
   ) {
     throw new UploadIntakeContractError('data.validation_status')
   }
-  if (
-    parsed.archive_import_id !== undefined &&
-    (parsed.input_category !== 'archive' ||
-      parsed.validation_status !== 'valid' ||
-      parsed.status !== 'completed')
-  ) {
-    throw new UploadIntakeContractError('data.archive_import_id')
-  }
-  if (
-    parsed.task_id !== undefined &&
-    (parsed.input_category === undefined ||
-      parsed.input_category === 'archive' ||
-      parsed.validation_status !== 'valid' ||
-      parsed.status !== 'completed' ||
-      parsed.archive_import_id !== undefined)
-  ) {
-    throw new UploadIntakeContractError('data.task_id')
-  }
-
   if (completed) {
     if (
       parsed.status !== 'completed' ||
@@ -299,15 +351,10 @@ export function parseUploadSession(
 
 export function parseCreatedUploadSession(
   value: unknown,
-  expectedCategory?: InputCategory,
 ): UploadSession {
   const parsed = sessionValue(value, false)
-  if (
-    parsed.input_category === undefined ||
-    parsed.validation_status === undefined ||
-    (expectedCategory !== undefined && parsed.input_category !== expectedCategory)
-  ) {
-    throw new UploadIntakeContractError('data.input_category')
+  if (parsed.validation_status === undefined) {
+    throw new UploadIntakeContractError('data.validation_status')
   }
   return parsed
 }
@@ -319,16 +366,24 @@ export function parseCompletedUpload(
   const parsed = sessionValue(value, true)
   assertExpectedId(parsed, expectedId)
   if (
-    parsed.input_category === undefined ||
     parsed.validation_status !== 'valid' ||
     parsed.detected_category === undefined ||
-    parsed.detected_format === undefined ||
-    parsed.detected_category !== parsed.input_category ||
-    (parsed.input_category === 'archive'
-      ? parsed.archive_import_id === undefined || parsed.task_id !== undefined
-      : parsed.task_id === undefined || parsed.archive_import_id !== undefined)
+    parsed.detected_format === undefined
   ) {
     throw new UploadIntakeContractError('data.validation_status')
   }
   return parsed as CompletedUpload
+}
+
+export function parseUploadPage(value: unknown): UploadPage {
+  const page = record(value, 'data')
+  exactKeys(page, ['items'], [], 'data')
+  if (!Array.isArray(page.items) || page.items.length > 100) {
+    throw new UploadIntakeContractError('data.items')
+  }
+  return { items: page.items.map((item) => sessionValue(item, false)) }
+}
+
+export function parseUploadAnalysisTask(value: unknown): UploadAnalysisTask {
+  return analysisTask(value, 'data')
 }

@@ -264,7 +264,10 @@ const sampleDeleted = computed(
   () => sampleRetention.value.status === 'deleted',
 )
 const visibleResultTabs = computed(() =>
-  taskResultTabsForInputType(task.value?.input_type ?? ''),
+  taskResultTabsForInputType(
+    task.value?.input_type ?? '',
+    task.value?.analysis_mode,
+  ),
 )
 const isCreator = computed(
   () =>
@@ -1153,6 +1156,7 @@ function handleReportState(state: TaskResultState): void {
             <dl>
               <div><dt>文件名</dt><dd>{{ task.original_filename || task.name }}</dd></div>
               <div><dt>输入类型</dt><dd>{{ task.input_type }}</dd></div>
+              <div><dt>分析模式</dt><dd>{{ task.analysis_mode === 'binary' ? '二进制分析' : task.analysis_mode === 'archive' ? '压缩包分析' : task.analysis_mode === 'container' ? '容器/映像分析' : '历史任务' }}</dd></div>
               <div><dt>文件大小</dt><dd>{{ formatBytes(task.size_bytes) }}</dd></div>
               <div><dt>SHA-256</dt><dd class="mono hash">{{ task.sha256 || '—' }}</dd></div>
             </dl>

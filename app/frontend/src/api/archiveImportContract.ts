@@ -15,6 +15,7 @@ const importStatuses = new Set<ArchiveImportStatus>([
   'running',
   'ready',
   'failed',
+  'unsupported',
   'deleting',
   'deleted',
 ])
@@ -312,7 +313,7 @@ export function parseArchiveTaskBatchResult(
 ): ArchiveTaskBatchResult {
   const result = record(value, 'data')
   exactKeys(result, ['items'], [], 'data')
-  if (!Array.isArray(result.items) || result.items.length > 20) {
+  if (!Array.isArray(result.items) || result.items.length > 10) {
     throw new ArchiveImportContractError('data.items')
   }
   const parsed: ArchiveTaskBatchResult = {

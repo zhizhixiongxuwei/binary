@@ -29,6 +29,7 @@ func TestDetectCanonicalFormats(t *testing.T) {
 		{name: "XZ", filename: "demo.xz", body: []byte{0xfd, '7', 'z', 'X', 'Z', 0}, format: "xz", category: CategoryArchive},
 		{name: "RPM", filename: "demo.rpm", body: []byte{0xed, 0xab, 0xee, 0xdb}, format: "rpm", category: CategoryArchive},
 		{name: "ISO 9660", filename: "demo.img", body: iso9660Body(), format: "iso9660", category: CategoryArchive},
+		{name: "EXT4 image", filename: "rootfs.ext4", body: ext4Body(), format: "ext4", category: CategoryContainer},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -45,6 +46,12 @@ func TestDetectCanonicalFormats(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ext4Body() []byte {
+	body := make([]byte, 2*1024)
+	binary.LittleEndian.PutUint16(body[1024+0x38:], 0xef53)
+	return body
 }
 
 func iso9660Body() []byte {
@@ -84,7 +91,40 @@ func TestDetectContainerTAR(t *testing.T) {
 		"config.json":   `{}`,
 		"layer.tar":     "layer",
 	})
-	assertDetected(t, "image.tar", body, "docker-tar", CategoryContainer)
+	assertDetected(t, "image.img", body, "docker-tar", CategoryContainer)
+}
+
+func TestAnalysisModeCapabilities(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		format string
+		mode   AnalysisMode
+		want   bool
+	}{
+		{format: "pe32", mode: AnalysisModeBinary, want: true},
+		{format: "jar", mode: AnalysisModeArchive, want: true},
+		{format: "apk", mode: AnalysisModeArchive, want: true},
+		{format: "iso9660", mode: AnalysisModeArchive, want: true},
+		{format: "iso9660", mode: AnalysisModeContainer, want: false},
+		{format: "ext4", mode: AnalysisModeContainer, want: false},
+		{format: "docker-tar", mode: AnalysisModeArchive, want: true},
+		{format: "docker-tar", mode: AnalysisModeContainer, want: true},
+		{format: "oci-tar", mode: AnalysisModeContainer, want: true},
+	}
+	for _, test := range tests {
+		if actual := SupportsAnalysisMode(test.format, test.mode); actual != test.want {
+			t.Errorf("SupportsAnalysisMode(%q, %q) = %v, want %v", test.format, test.mode, actual, test.want)
+		}
+	}
+
+	for format, want := range map[string]string{
+		"jar": "zip", "apk": "zip", "docker-tar": "tar", "oci-tar": "tar", "iso9660": "iso9660",
+	} {
+		actual, ok := ArchiveFormat(format)
+		if !ok || actual != want {
+			t.Errorf("ArchiveFormat(%q) = %q, %v, want %q, true", format, actual, ok, want)
+		}
+	}
 }
 
 func TestDetectClassifiesMalformedInputSeparatelyFromStorageFailure(t *testing.T) {

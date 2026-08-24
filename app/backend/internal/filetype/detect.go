@@ -18,10 +18,16 @@ import (
 
 type Category string
 
+type AnalysisMode string
+
 const (
 	CategoryBinary    Category = "binary"
 	CategoryArchive   Category = "archive"
 	CategoryContainer Category = "container"
+
+	AnalysisModeBinary    AnalysisMode = "binary"
+	AnalysisModeArchive   AnalysisMode = "archive"
+	AnalysisModeContainer AnalysisMode = "container"
 )
 
 type Result struct {
@@ -48,6 +54,56 @@ func ParseCategory(value string) (Category, bool) {
 	}
 }
 
+func ParseAnalysisMode(value string) (AnalysisMode, bool) {
+	switch AnalysisMode(strings.ToLower(strings.TrimSpace(value))) {
+	case AnalysisModeBinary:
+		return AnalysisModeBinary, true
+	case AnalysisModeArchive:
+		return AnalysisModeArchive, true
+	case AnalysisModeContainer:
+		return AnalysisModeContainer, true
+	default:
+		return "", false
+	}
+}
+
+// SupportsAnalysisMode reports whether the current engine can execute the
+// selected workflow. A caller may still create an unsupported task so the
+// audit trail can distinguish "not applicable" from a successful zero-finding
+// result.
+func SupportsAnalysisMode(format string, mode AnalysisMode) bool {
+	format = strings.ToLower(strings.TrimSpace(format))
+	switch mode {
+	case AnalysisModeBinary:
+		switch format {
+		case "pe32", "pe32+", "elf32", "elf64", "macho-thin", "macho-fat", "java-class",
+			"jar", "war", "ear", "dex", "apk", "pyc", "pe", "elf", "mach-o", "macho", "class":
+			return true
+		}
+	case AnalysisModeArchive:
+		_, ok := ArchiveFormat(format)
+		return ok
+	case AnalysisModeContainer:
+		return format == containerarchive.FormatDockerTAR || format == containerarchive.FormatOCITAR
+	}
+	return false
+}
+
+// ArchiveFormat normalizes application packages and container TARs to the
+// one-layer archive reader they are physically compatible with.
+func ArchiveFormat(format string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660":
+		return strings.ToLower(strings.TrimSpace(format)), true
+	case "jar", "war", "ear", "apk":
+		return "zip", true
+	case containerarchive.FormatDockerTAR, containerarchive.FormatOCITAR:
+		return "tar", true
+	default:
+		return "", false
+	}
+}
+
 func CategoryForFormat(format string) (Category, bool) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "pe32", "pe32+", "elf32", "elf64", "macho-thin", "macho-fat", "java-class", "jar", "dex", "apk", "pyc",
@@ -57,6 +113,8 @@ func CategoryForFormat(format string) (Category, bool) {
 		return CategoryArchive, true
 	case "iso9660":
 		return CategoryArchive, true
+	case "ext4":
+		return CategoryContainer, true
 	case containerarchive.FormatDockerTAR, containerarchive.FormatOCITAR:
 		return CategoryContainer, true
 	default:
@@ -140,6 +198,15 @@ func Detect(filename, logicalPath string) (Result, error) {
 			return result(format), nil
 		}
 		return result("tar"), nil
+	}
+	// The EXT superblock starts at byte 1024 and s_magic is the little-endian
+	// value 0xEF53 at offset 0x38 within that superblock. Check it after TAR so
+	// a Docker/OCI archive renamed to .img cannot be misclassified because of
+	// coincidental layer bytes. Trivy remains explicitly not applicable to raw
+	// filesystem images until a rootfs materializer is added.
+	const extMagicOffset = 1024 + 0x38
+	if len(header) >= extMagicOffset+2 && binary.LittleEndian.Uint16(header[extMagicOffset:extMagicOffset+2]) == 0xef53 {
+		return result("ext4"), nil
 	}
 	return Result{Format: "unknown"}, nil
 }

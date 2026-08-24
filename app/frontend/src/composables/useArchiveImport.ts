@@ -17,7 +17,7 @@ import { createIdempotencyKey } from '@/utils/idempotency'
 
 const POLL_INTERVAL_MS = 1_500
 const PAGE_SIZE = 50
-const MAX_BATCH_SIZE = 20
+const MAX_BATCH_SIZE = 10
 
 export interface UseArchiveImportOptions {
   importId: string

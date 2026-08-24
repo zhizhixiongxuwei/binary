@@ -27,6 +27,29 @@ describe('inputCategoryAccept', () => {
 })
 
 describe('preflightUploadFile', () => {
+  it('keeps the unified picker open for server-side content detection', async () => {
+    const result = await preflightUploadFile(
+      new File(['server decides'], 'disk.ext4', {
+        type: 'application/octet-stream',
+      }),
+    )
+
+    expect(result).toEqual({ accepted: true })
+  })
+
+  it('still rejects explicitly known unsupported signatures in unified mode', async () => {
+    const result = await preflightUploadFile(
+      binaryFile(
+        'package.cab',
+        [0x4d, 0x53, 0x43, 0x46],
+        'application/octet-stream',
+      ),
+    )
+
+    expect(result.accepted).toBe(false)
+    expect(result.detectedFormat).toBe('CAB')
+  })
+
   it.each([
     {
       name: 'sample-elf',

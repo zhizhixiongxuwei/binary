@@ -61,6 +61,7 @@ export interface ScanTask {
   id: string
   name: string
   input_type: string
+  analysis_mode?: AnalysisMode
   status: TaskStatus
   risk_level: RiskLevel
   progress: number
@@ -965,6 +966,7 @@ export interface AuditLogPage {
 }
 
 export type InputCategory = 'binary' | 'archive' | 'container'
+export type AnalysisMode = InputCategory
 
 export type UploadValidationStatus =
   | 'pending'
@@ -979,6 +981,8 @@ export interface UploadValidationError {
 
 export interface UploadSession {
   id: string
+  filename?: string
+  content_type?: string
   part_size: number
   sha256?: string
   size_bytes?: number
@@ -992,6 +996,26 @@ export interface UploadSession {
   validation_error?: UploadValidationError
   archive_import_id?: string
   task_id?: string
+  analysis_options?: UploadAnalysisOption[]
+  tasks?: UploadAnalysisTask[]
+}
+
+export interface UploadAnalysisOption {
+  mode: AnalysisMode
+  supported: boolean
+  reason?: string
+}
+
+export interface UploadAnalysisTask {
+  task_id: string
+  analysis_mode: AnalysisMode
+  status: string
+  supported: boolean
+  archive_import_id?: string
+}
+
+export interface UploadPage {
+  items: UploadSession[]
 }
 
 export interface CompletedUpload extends UploadSession {
@@ -1017,7 +1041,12 @@ export interface CreateUploadInput {
   filename: string
   size: number
   content_type: string
-  input_category: InputCategory
+  /** @deprecated Unified intake chooses analysis_mode after upload. */
+  input_category?: InputCategory
+}
+
+export interface CreateUploadAnalysisTaskInput {
+  analysis_mode: AnalysisMode
 }
 
 export interface CreatedTask {
@@ -1029,6 +1058,7 @@ export type ArchiveImportStatus =
   | 'running'
   | 'ready'
   | 'failed'
+  | 'unsupported'
   | 'deleting'
   | 'deleted'
 

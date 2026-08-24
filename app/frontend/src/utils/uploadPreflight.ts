@@ -36,8 +36,9 @@ export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
 }
 
 export function nativePickerAcceptAttributes(
-  category: InputCategory,
+  category?: InputCategory,
 ): Record<string, string> {
+  if (!category) return {}
   const accept = inputCategoryAccept[category]
   return accept ? { accept, 'data-accept-hint': accept } : {}
 }
@@ -201,7 +202,7 @@ function readBlob(blob: Blob): Promise<ArrayBuffer> {
 
 export async function preflightUploadFile(
   file: File,
-  category: InputCategory,
+  category?: InputCategory,
 ): Promise<UploadPreflightResult> {
   const headSlice = file.slice(0, Math.min(file.size, HEAD_LIMIT))
   const tailStart = Math.max(0, file.size - TAIL_LIMIT)
@@ -226,6 +227,12 @@ export async function preflightUploadFile(
       accepted: false,
       detectedFormat: match.format,
       message: `${file.name}：当前流程暂不支持 ${match.format}，请使用界面列出的格式`,
+    }
+  }
+  if (!category) {
+    return {
+      accepted: true,
+      ...(match ? { detectedFormat: match.format } : {}),
     }
   }
   if (!match && category === 'binary' && !hasSupportedBinaryFilename(file.name)) {

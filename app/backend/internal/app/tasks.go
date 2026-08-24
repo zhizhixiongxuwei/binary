@@ -39,6 +39,7 @@ type taskSummary struct {
 	Status           string    `json:"status"`
 	InputSHA256      string    `json:"inputSha256,omitempty"`
 	InputCategory    string    `json:"inputCategory,omitempty"`
+	AnalysisMode     string    `json:"analysisMode,omitempty"`
 	DetectedCategory string    `json:"detectedCategory,omitempty"`
 	DetectedFormat   string    `json:"detectedFormat,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
@@ -221,9 +222,9 @@ func (s *taskService) persistUpload(
 		return taskSummary{}, fmt.Errorf("persist upload: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO tasks
-		(id, created_by, upload_id, blob_id, display_name, input_category, detected_category, detected_format, status)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')`,
-		taskID, userID, uploadID, blobID, name, inputCategory, detected.Category, detected.Format); err != nil {
+		(id, created_by, upload_id, blob_id, display_name, input_category, analysis_mode, detected_category, detected_format, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')`,
+		taskID, userID, uploadID, blobID, name, inputCategory, inputCategory, detected.Category, detected.Format); err != nil {
 		return taskSummary{}, fmt.Errorf("create task: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO file_nodes
@@ -256,7 +257,7 @@ func (s *taskService) persistUpload(
 	if err := tx.Commit(); err != nil {
 		return taskSummary{}, fmt.Errorf("commit upload: %w", err)
 	}
-	return taskSummary{ID: taskID, DisplayName: name, Status: "queued", InputCategory: string(inputCategory),
+	return taskSummary{ID: taskID, DisplayName: name, Status: "queued", InputCategory: string(inputCategory), AnalysisMode: string(inputCategory),
 		InputSHA256: fmt.Sprintf("%x", blob.SHA256), DetectedCategory: string(detected.Category), DetectedFormat: detected.Format,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
 }
@@ -269,9 +270,9 @@ func (s *taskService) list(c *gin.Context) {
 		}
 	}
 	rows, err := s.db.QueryContext(c, `SELECT t.id, t.display_name, t.status, HEX(b.sha256),
-		t.input_category, t.detected_category, t.detected_format, t.created_at, t.updated_at
+		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category, t.detected_format, t.created_at, t.updated_at
 		FROM tasks t JOIN blobs b ON b.id = t.blob_id
-		WHERE t.deleted_at IS NULL AND COALESCE(t.input_category, 'binary') <> 'archive'
+		WHERE t.deleted_at IS NULL AND COALESCE(t.analysis_mode, t.input_category, 'binary') <> 'archive'
 		ORDER BY t.created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
@@ -281,14 +282,15 @@ func (s *taskService) list(c *gin.Context) {
 	tasks := make([]taskSummary, 0)
 	for rows.Next() {
 		var item taskSummary
-		var inputCategory, detectedCategory, detected sql.NullString
+		var inputCategory, analysisMode, detectedCategory, detected sql.NullString
 		if err := rows.Scan(&item.ID, &item.DisplayName, &item.Status, &item.InputSHA256,
-			&inputCategory, &detectedCategory,
+			&inputCategory, &analysisMode, &detectedCategory,
 			&detected, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
 			return
 		}
 		item.InputCategory = inputCategory.String
+		item.AnalysisMode = analysisMode.String
 		item.DetectedCategory = detectedCategory.String
 		item.DetectedFormat = detected.String
 		item.InputSHA256 = strings.ToLower(item.InputSHA256)
@@ -304,12 +306,12 @@ func (s *taskService) list(c *gin.Context) {
 func (s *taskService) get(c *gin.Context) {
 	taskID := c.Param("taskID")
 	var task taskSummary
-	var inputCategory, detectedCategory, detected sql.NullString
+	var inputCategory, analysisMode, detectedCategory, detected sql.NullString
 	if err := s.db.QueryRowContext(c, `SELECT t.id, t.display_name, t.status, HEX(b.sha256),
-		t.input_category, t.detected_category, t.detected_format, t.created_at, t.updated_at
+		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category, t.detected_format, t.created_at, t.updated_at
 		FROM tasks t JOIN blobs b ON b.id = t.blob_id
 		WHERE t.id = ? AND t.deleted_at IS NULL`, taskID).Scan(
-		&task.ID, &task.DisplayName, &task.Status, &task.InputSHA256, &inputCategory, &detectedCategory,
+		&task.ID, &task.DisplayName, &task.Status, &task.InputSHA256, &inputCategory, &analysisMode, &detectedCategory,
 		&detected, &task.CreatedAt, &task.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -320,6 +322,7 @@ func (s *taskService) get(c *gin.Context) {
 		return
 	}
 	task.InputCategory = inputCategory.String
+	task.AnalysisMode = analysisMode.String
 	task.DetectedCategory = detectedCategory.String
 	task.DetectedFormat = detected.String
 	task.InputSHA256 = strings.ToLower(task.InputSHA256)
@@ -728,12 +731,8 @@ func decompileKind(format string) (job.Kind, bool) {
 }
 
 func archiveImportSupported(format string) bool {
-	switch format {
-	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660":
-		return true
-	default:
-		return false
-	}
+	_, ok := filetype.ArchiveFormat(format)
+	return ok
 }
 
 func nullableString(value sql.NullString) any {

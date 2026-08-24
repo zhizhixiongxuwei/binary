@@ -53,7 +53,7 @@ const visibleToggleDisabled = computed(
     visibleEligible.value.length === 0 ||
     props.submitting ||
     !props.creationEnabled ||
-    (props.selectedCount >= 20 && visibleSelectedCount.value === 0),
+    (props.selectedCount >= 10 && visibleSelectedCount.value === 0),
 )
 
 const statusLabels = {
@@ -64,7 +64,7 @@ const statusLabels = {
 } as const
 
 function toggleVisible(): void {
-  const canAdd = props.selectedCount < 20
+  const canAdd = props.selectedCount < 10
   emit('toggleVisible', !allVisibleSelected.value && canAdd)
 }
 
@@ -77,7 +77,7 @@ function disabled(entry: ArchiveImportEntry): boolean {
     (entry.status !== 'eligible' && entry.status !== 'failed') ||
     !props.creationEnabled ||
     props.submitting ||
-    (props.selectedCount >= 20 && !props.selectedIds.has(entry.id))
+    (props.selectedCount >= 10 && !props.selectedIds.has(entry.id))
   )
 }
 

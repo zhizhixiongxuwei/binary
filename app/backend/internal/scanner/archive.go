@@ -119,10 +119,14 @@ func (e *Executor) loadArchiveSubject(ctx context.Context, runID string) (subjec
 func (e *Executor) readArchive(
 	ctx context.Context, inputPath, sourceName, format string,
 ) ([]archiveItem, int64, error) {
+	archiveFormat, ok := filetype.ArchiveFormat(format)
+	if !ok {
+		return nil, 0, fmt.Errorf("unsupported archive format %q", format)
+	}
 	items := make([]archiveItem, 0)
 	seen := make(map[string]struct{})
 	var total int64
-	err := extract.Walk(ctx, inputPath, sourceName, format, e.cfg.Worker.ArchiveMaxFiles,
+	err := extract.Walk(ctx, inputPath, sourceName, archiveFormat, e.cfg.Worker.ArchiveMaxFiles,
 		func(entry extract.Entry, source io.Reader) error {
 			if !entry.Regular {
 				name := strings.TrimSpace(entry.Name)

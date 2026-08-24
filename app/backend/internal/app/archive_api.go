@@ -171,6 +171,8 @@ func archiveImportStatus(value string) string {
 		return "running"
 	case "complete", "partial":
 		return "ready"
+	case "unsupported":
+		return "unsupported"
 	default:
 		return "failed"
 	}
@@ -303,7 +305,7 @@ func mapArchiveEntry(
 }
 
 type archiveTaskBatchRequest struct {
-	EntryIDs []string `json:"entry_ids" binding:"required,min=1,max=20"`
+	EntryIDs []string `json:"entry_ids" binding:"required,min=1,max=10"`
 }
 
 func (s *taskService) createArchiveTaskBatch(c *gin.Context) {
@@ -313,7 +315,7 @@ func (s *taskService) createArchiveTaskBatch(c *gin.Context) {
 		return
 	}
 	var request archiveTaskBatchRequest
-	if err := c.ShouldBindJSON(&request); err != nil || len(request.EntryIDs) == 0 || len(request.EntryIDs) > 20 {
+	if err := c.ShouldBindJSON(&request); err != nil || len(request.EntryIDs) == 0 || len(request.EntryIDs) > 10 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_archive_task_batch"})
 		return
 	}
@@ -405,8 +407,8 @@ func (s *taskService) createTaskFromArchiveEntry(
 		displayName = logicalPath
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO tasks
-		(id, created_by, blob_id, display_name, input_category, detected_category, detected_format, status)
-		VALUES (?, ?, ?, ?, 'binary', 'binary', ?, 'queued')`,
+		(id, created_by, blob_id, display_name, input_category, analysis_mode, detected_category, detected_format, status)
+		VALUES (?, ?, ?, ?, 'binary', 'binary', 'binary', ?, 'queued')`,
 		taskID, ownerID, blobID.String, displayName, detected.String); err != nil {
 		return "", false, err
 	}

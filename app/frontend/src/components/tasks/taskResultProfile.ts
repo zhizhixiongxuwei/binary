@@ -100,18 +100,29 @@ const CONTAINER_RESULT_TABS = [
   'reports',
 ] as const satisfies readonly TaskResultTab[]
 
+const ARCHIVE_RESULT_TABS = [
+  'files',
+  'reports',
+] as const satisfies readonly TaskResultTab[]
+
 function normalizeInputType(inputType: string): string {
   return inputType.trim().toLowerCase()
 }
 
-export function isContainerImageInputType(inputType: string): boolean {
-  return CONTAINER_IMAGE_FORMATS.has(normalizeInputType(inputType))
+export function isContainerImageInputType(
+  inputType: string,
+  analysisMode?: string,
+): boolean {
+  return analysisMode === 'container' || CONTAINER_IMAGE_FORMATS.has(normalizeInputType(inputType))
 }
 
 export function taskResultTabsForInputType(
   inputType: string,
+  analysisMode?: string,
 ): readonly TaskResultTab[] {
   const normalized = normalizeInputType(inputType)
+  if (analysisMode === 'container') return CONTAINER_RESULT_TABS
+  if (analysisMode === 'archive') return ARCHIVE_RESULT_TABS
   if (CONTAINER_IMAGE_FORMATS.has(normalized)) return CONTAINER_RESULT_TABS
   if (NATIVE_DECOMPILE_FORMATS.has(normalized)) {
     return NATIVE_DECOMPILE_RESULT_TABS

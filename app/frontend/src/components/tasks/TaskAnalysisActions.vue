@@ -33,7 +33,9 @@ const emit = defineEmits<{
 const canOperate = computed(
   () => props.userRole === 'administrator' || props.userRole === 'operator',
 )
-const containerTask = computed(() => isContainerImageInputType(props.task.input_type))
+const containerTask = computed(() =>
+  isContainerImageInputType(props.task.input_type, props.task.analysis_mode),
+)
 const decompileModel = computed(() =>
   props.node
     ? getFileNodeDecompileActionModel({

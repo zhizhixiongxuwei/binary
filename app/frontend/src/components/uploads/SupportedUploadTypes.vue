@@ -20,20 +20,21 @@ const groups = [
     icon: Archive,
     title: '归档导入',
     formats:
-      'ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO 9660（.iso / .img）',
+      'ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO、JAR、APK',
   },
   {
     category: 'container',
     icon: Box,
-    title: '镜像漏洞扫描',
-    formats: 'Docker Save TAR、OCI Image Layout TAR',
+    title: '容器/映像分析',
+    formats:
+      'Docker/OCI TAR（可使用 .tar / .img）；ISO、EXT4 可识别但 Trivy 不适用',
   },
 ] as const
 
 const visibleGroups = computed(() =>
   props.category
     ? groups.filter((group) => group.category === props.category)
-    : groups.filter((group) => group.category !== 'archive'),
+    : groups,
 )
 </script>
 
@@ -60,7 +61,7 @@ const visibleGroups = computed(() =>
 <style scoped>
 .supported-types {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   margin-bottom: 14px;
   border-block: 1px solid var(--line);

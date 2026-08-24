@@ -31,6 +31,7 @@ import type {
   CompletedUpload,
   CreatedTask,
   CreateArchiveTaskBatchInput,
+  CreateUploadAnalysisTaskInput,
   CreateUploadInput,
   CreateTaskInput,
   CreateAdminUserInput,
@@ -64,6 +65,8 @@ import type {
   TaskReport,
   TaskReportList,
   UploadSession,
+  UploadAnalysisTask,
+  UploadPage,
   UpdateAdminUserInput,
   UploadPartInput,
   VulnerabilityFinding,
@@ -118,6 +121,8 @@ import { parseTaskDetail, parseTaskPage } from '@/api/taskContract'
 import {
   parseCompletedUpload,
   parseCreatedUploadSession,
+  parseUploadAnalysisTask,
+  parseUploadPage,
   parseUploadSession,
   UploadIntakeContractError,
 } from '@/api/uploadIntakeContract'
@@ -874,8 +879,15 @@ async function createUpload(
         body: JSON.stringify(input),
         headers: { 'Idempotency-Key': idempotencyKey },
       }),
-      input.input_category,
     )
+  } catch (error) {
+    return invalidUploadIntakeResponse(error)
+  }
+}
+
+async function listUploads(): Promise<UploadPage> {
+  try {
+    return parseUploadPage(await request<unknown>('/uploads'))
   } catch (error) {
     return invalidUploadIntakeResponse(error)
   }
@@ -900,6 +912,24 @@ async function completeUpload(uploadId: string): Promise<CompletedUpload> {
         { method: 'POST' },
       ),
       uploadId,
+    )
+  } catch (error) {
+    return invalidUploadIntakeResponse(error)
+  }
+}
+
+async function createUploadAnalysisTask(
+  uploadId: string,
+  input: CreateUploadAnalysisTaskInput,
+  idempotencyKey: string,
+): Promise<UploadAnalysisTask> {
+  try {
+    return parseUploadAnalysisTask(
+      await request<unknown>(`/uploads/${encodeURIComponent(uploadId)}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
     )
   } catch (error) {
     return invalidUploadIntakeResponse(error)
@@ -1301,6 +1331,7 @@ export const httpApi: ApiClient = {
   listAuditLogs: (query: AuditLogListQuery = {}) =>
     request<AuditLogPage>(`/admin/audit-logs${buildCursorQuery(query)}`),
   createUpload,
+  listUploads,
   getUpload,
   uploadPart: (uploadId: string, input: UploadPartInput) =>
     request<void>(`/uploads/${encodeURIComponent(uploadId)}/parts/${input.part_number}`, {
@@ -1313,6 +1344,7 @@ export const httpApi: ApiClient = {
       },
     }),
   completeUpload,
+  createUploadAnalysisTask,
   deleteUpload: (uploadId: string) =>
     request<void>(`/uploads/${encodeURIComponent(uploadId)}`, {
       method: 'DELETE',
@@ -1453,9 +1485,12 @@ export const api: ApiClient = {
   listAuditLogs: (query) => activeApi.listAuditLogs(query),
   createUpload: (input, idempotencyKey) =>
     activeApi.createUpload(input, idempotencyKey),
+  listUploads: () => activeApi.listUploads(),
   getUpload: (uploadId) => activeApi.getUpload(uploadId),
   uploadPart: (uploadId, input) => activeApi.uploadPart(uploadId, input),
   completeUpload: (uploadId) => activeApi.completeUpload(uploadId),
+  createUploadAnalysisTask: (uploadId, input, idempotencyKey) =>
+    activeApi.createUploadAnalysisTask(uploadId, input, idempotencyKey),
   deleteUpload: (uploadId) => activeApi.deleteUpload(uploadId),
   listArchiveImports: (query) => activeApi.listArchiveImports(query),
   getArchiveImport: (importId) => activeApi.getArchiveImport(importId),

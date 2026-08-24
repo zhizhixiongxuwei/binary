@@ -64,9 +64,21 @@ func TestCanonicalDecompileAndArchiveRouting(t *testing.T) {
 			t.Fatalf("legacy decompileKind(%q) is not supported", format)
 		}
 	}
-	for _, format := range []string{"zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660"} {
+	for _, format := range []string{"zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660", "jar", "apk", "docker-tar", "oci-tar"} {
 		if !archiveImportSupported(format) {
 			t.Fatalf("archiveImportSupported(%q) = false", format)
+		}
+	}
+}
+
+func TestArchiveImportStatusPreservesUnsupported(t *testing.T) {
+	t.Parallel()
+	for input, want := range map[string]string{
+		"queued": "queued", "running": "running", "complete": "ready", "partial": "ready",
+		"unsupported": "unsupported", "failed": "failed", "cancelled": "failed",
+	} {
+		if actual := archiveImportStatus(input); actual != want {
+			t.Errorf("archiveImportStatus(%q) = %q, want %q", input, actual, want)
 		}
 	}
 }
