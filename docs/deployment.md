@@ -1,5 +1,7 @@
 # 部署
 
+APP/checker 按需构建、完整 Compose 启动、清空数据初始化、暂停和停止的可复制命令统一见 `build-and-operations.md`，浏览器版见 `build-and-operations.html`。
+
 ## 网络入口
 
 产品入口只提供 HTTP，不加载证书，也不信任 `X-Forwarded-*` 代理头。根 `.env` 默认把 app 绑定到 `127.0.0.1:8080`，用户可在服务器本机通过 `http://localhost:8080` 访问。

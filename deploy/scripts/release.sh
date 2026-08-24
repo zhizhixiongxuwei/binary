@@ -42,43 +42,91 @@ require_image() {
   }
 }
 
+build_app() {
+  docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/app/Dockerfile" -t "$APP_IMAGE" \
+    --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE" \
+    --build-arg "APP_RUNTIME_IMAGE=$APP_RUNTIME_IMAGE" \
+    --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
+}
+
+build_scanner() {
+  docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/scanner.Dockerfile" -t "$SCANNER_IMAGE" \
+    --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "TRIVY_RUNTIME_DB_IMAGE=$TRIVY_RUNTIME_DB_IMAGE" \
+    --build-arg "SCANNER_RUNTIME_IMAGE=$SCANNER_RUNTIME_IMAGE" \
+    --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
+}
+
+build_native_decompiler() {
+  docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/native-decompiler.Dockerfile" -t "$NATIVE_DECOMPILER_IMAGE" \
+    --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "GHIDRA_RUNTIME_IMAGE=$GHIDRA_RUNTIME_IMAGE" \
+    --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
+}
+
+build_jvm_decompiler() {
+  docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/jvm-decompiler.Dockerfile" -t "$JVM_DECOMPILER_IMAGE" \
+    --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "JVM_TOOLS_IMAGE=$JVM_TOOLS_IMAGE" \
+    --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
+}
+
+build_pyc_decompiler() {
+  docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/pyc-decompiler.Dockerfile" -t "$PYC_DECOMPILER_IMAGE" \
+    --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "PYCDC_TOOLS_IMAGE=$PYCDC_TOOLS_IMAGE" \
+    --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
+}
+
+build_c_checker() {
+  docker build --platform "$BINARY_PLATFORM" -t "$C_CHECKER_IMAGE" \
+    --build-arg "JAVA_BUILD_IMAGE=$JAVA_BUILD_IMAGE" \
+    --build-arg "JAVA_RUNTIME_IMAGE=$JAVA_RUNTIME_IMAGE" "$repo_dir/checkers/c"
+}
+
+build_java_checker() {
+  docker build --platform "$BINARY_PLATFORM" -t "$JAVA_CHECKER_IMAGE" \
+    --build-arg "JAVA_BUILD_IMAGE=$JAVA_BUILD_IMAGE" \
+    --build-arg "JAVA_RUNTIME_IMAGE=$JAVA_RUNTIME_IMAGE" "$repo_dir/checkers/java"
+}
+
+build_python_checker() {
+  docker build --platform "$BINARY_PLATFORM" -t "$PYTHON_CHECKER_IMAGE" \
+    --build-arg "PYTHON_RUNTIME_IMAGE=$PYTHON_RUNTIME_IMAGE" "$repo_dir/checkers/python"
+}
+
+build_checkers() {
+  build_c_checker
+  build_java_checker
+  build_python_checker
+}
+
+build_all() {
+  require_image "$TRIVY_RUNTIME_DB_IMAGE"
+  require_image "$GHIDRA_RUNTIME_IMAGE"
+  require_image "$JVM_TOOLS_IMAGE"
+  require_image "$PYCDC_TOOLS_IMAGE"
+  build_app
+  build_scanner
+  build_native_decompiler
+  build_jvm_decompiler
+  build_pyc_decompiler
+  build_checkers
+}
+
+usage() {
+  echo "usage: $0 {build|build-app|build-checkers|build-c-checker|build-java-checker|build-python-checker|package OUTPUT.tar|load FILE}" >&2
+  exit 2
+}
+
 case "${1:-}" in
-  build)
-    require_image "$TRIVY_RUNTIME_DB_IMAGE"
-    require_image "$GHIDRA_RUNTIME_IMAGE"
-    require_image "$JVM_TOOLS_IMAGE"
-    require_image "$PYCDC_TOOLS_IMAGE"
-    docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/app/Dockerfile" -t "$APP_IMAGE" \
-      --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
-      --build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE" \
-      --build-arg "APP_RUNTIME_IMAGE=$APP_RUNTIME_IMAGE" \
-      --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
-    docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/scanner.Dockerfile" -t "$SCANNER_IMAGE" \
-      --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
-      --build-arg "TRIVY_RUNTIME_DB_IMAGE=$TRIVY_RUNTIME_DB_IMAGE" \
-      --build-arg "SCANNER_RUNTIME_IMAGE=$SCANNER_RUNTIME_IMAGE" \
-      --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
-    docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/native-decompiler.Dockerfile" -t "$NATIVE_DECOMPILER_IMAGE" \
-      --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
-      --build-arg "GHIDRA_RUNTIME_IMAGE=$GHIDRA_RUNTIME_IMAGE" \
-      --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
-    docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/jvm-decompiler.Dockerfile" -t "$JVM_DECOMPILER_IMAGE" \
-      --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
-      --build-arg "JVM_TOOLS_IMAGE=$JVM_TOOLS_IMAGE" \
-      --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
-    docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/pyc-decompiler.Dockerfile" -t "$PYC_DECOMPILER_IMAGE" \
-      --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
-      --build-arg "PYCDC_TOOLS_IMAGE=$PYCDC_TOOLS_IMAGE" \
-      --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
-    docker build --platform "$BINARY_PLATFORM" -t "$C_CHECKER_IMAGE" \
-      --build-arg "JAVA_BUILD_IMAGE=$JAVA_BUILD_IMAGE" \
-      --build-arg "JAVA_RUNTIME_IMAGE=$JAVA_RUNTIME_IMAGE" "$repo_dir/checkers/c"
-    docker build --platform "$BINARY_PLATFORM" -t "$JAVA_CHECKER_IMAGE" \
-      --build-arg "JAVA_BUILD_IMAGE=$JAVA_BUILD_IMAGE" \
-      --build-arg "JAVA_RUNTIME_IMAGE=$JAVA_RUNTIME_IMAGE" "$repo_dir/checkers/java"
-    docker build --platform "$BINARY_PLATFORM" -t "$PYTHON_CHECKER_IMAGE" \
-      --build-arg "PYTHON_RUNTIME_IMAGE=$PYTHON_RUNTIME_IMAGE" "$repo_dir/checkers/python"
-    ;;
+  build) build_all ;;
+  build-app) build_app ;;
+  build-checkers) build_checkers ;;
+  build-c-checker) build_c_checker ;;
+  build-java-checker) build_java_checker ;;
+  build-python-checker) build_python_checker ;;
   package)
     output=${2:?usage: release.sh package OUTPUT.tar}
     [ -d "$(dirname -- "$output")" ] || {
@@ -105,8 +153,5 @@ case "${1:-}" in
     checksum_verify "$archive"
     docker load -i "$archive"
     ;;
-  *)
-    echo "usage: $0 {build|package OUTPUT.tar|load FILE}" >&2
-    exit 2
-    ;;
+  *) usage ;;
 esac

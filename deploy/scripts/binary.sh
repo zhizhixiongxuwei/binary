@@ -257,6 +257,36 @@ compose() {
     -f "$repo_dir/docker-compose.yml" "$@"
 }
 
+fresh_up() {
+  [ "${1:-}" = "--yes" ] && [ "$#" -eq 1 ] ||
+    die "fresh-up permanently deletes BINARY_DATA_ROOT; run: $0 fresh-up --yes"
+
+  load_env
+  validate_data_root
+  : "${PRODUCT_UID:?PRODUCT_UID is required}"
+  : "${PRODUCT_GID:?PRODUCT_GID is required}"
+
+  if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
+    die "Linux fresh initialization must run as root: sudo $0 fresh-up --yes"
+  fi
+  if [ -e "$BINARY_DATA_ROOT" ]; then
+    [ -d "$BINARY_DATA_ROOT" ] || die "data root is not a directory: $BINARY_DATA_ROOT"
+    [ ! -L "$BINARY_DATA_ROOT" ] || die "data root must not be a symlink"
+  fi
+
+  echo "stopping and removing the current Compose containers"
+  docker compose --project-directory "$repo_dir" --env-file "$env_file" \
+    -f "$repo_dir/docker-compose.yml" down --remove-orphans
+
+  echo "permanently clearing $BINARY_DATA_ROOT"
+  mkdir -p "$BINARY_DATA_ROOT"
+  find "$BINARY_DATA_ROOT" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+
+  init_data
+  doctor
+  compose up --pull never --remove-orphans --wait
+}
+
 case "${1:-}" in
   init) init_data ;;
   doctor) doctor ;;
@@ -266,11 +296,15 @@ case "${1:-}" in
     doctor
     compose up --pull never --remove-orphans --wait
     ;;
+  fresh-up)
+    shift
+    fresh_up "$@"
+    ;;
   down) shift; compose down "$@" ;;
   status) shift; compose ps "$@" ;;
   logs) shift; compose logs "$@" ;;
   *)
-    echo "usage: $0 {init|doctor|up|down|status|logs}" >&2
+    echo "usage: $0 {init|doctor|up|fresh-up --yes|down|status|logs}" >&2
     exit 2
     ;;
 esac

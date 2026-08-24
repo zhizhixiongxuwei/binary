@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BinaryScan binary-demo 源代码验真与现场修改验证说明</title>
+  <style>
+    :root { color-scheme:light; --ink:#182230; --muted:#667085; --line:#d9e1ea; --violet:#6938ef; --green:#067647; --amber:#b54708; --red:#b42318; --soft:#f7f5ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f0f2f6; color:var(--ink); font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+    main { width:min(1080px,calc(100% - 32px)); margin:32px auto 64px; background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 54px rgba(16,24,40,.09); overflow:hidden; }
+    header { padding:46px 54px 36px; color:#fff; background:linear-gradient(135deg,#34206b,#6938ef 58%,#175cd3); }
+    header p { max-width:820px; margin:12px 0 0; color:#eee9ff; }
+    article { padding:34px 54px 56px; }
+    h1 { margin:0; font-size:32px; line-height:1.25; }
+    h2 { margin:40px 0 12px; padding-top:8px; border-top:1px solid var(--line); font-size:22px; }
+    h3 { margin:24px 0 8px; font-size:17px; }
+    p,ul,ol { margin:10px 0; }
+    li + li { margin-top:5px; }
+    code { padding:2px 5px; border-radius:5px; background:#f0edff; font:13.5px "SFMono-Regular",Consolas,monospace; }
+    pre { margin:12px 0 18px; padding:16px 18px; overflow:auto; border-radius:10px; border:1px solid #2d2155; background:#171128; color:#f3efff; line-height:1.55; }
+    pre code { padding:0; background:transparent; color:inherit; }
+    table { width:100%; margin:14px 0 20px; border-collapse:collapse; }
+    th,td { padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:#f8f9fb; }
+    .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:22px 0; }
+    .flow div { min-height:88px; padding:12px; border:1px solid #d8d0ff; border-radius:10px; background:var(--soft); text-align:center; }
+    .flow b { display:block; color:var(--violet); font-size:18px; }
+    .callout { margin:18px 0; padding:14px 16px; border-left:4px solid var(--violet); border-radius:7px; background:var(--soft); }
+    .callout.ok { border-color:var(--green); background:#ecfdf3; }
+    .callout.warn { border-color:var(--amber); background:#fffaeb; }
+    .callout.danger { border-color:var(--red); background:#fef3f2; }
+    .meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:22px; }
+    .pill { padding:5px 10px; border:1px solid rgba(255,255,255,.4); border-radius:999px; font-size:13px; }
+    nav { padding:18px 20px; border:1px solid var(--line); border-radius:10px; background:#fafbfc; }
+    nav a { color:var(--violet); text-decoration:none; }
+    footer { margin-top:42px; color:var(--muted); font-size:13px; }
+    @media (max-width:800px) { header,article { padding:28px 22px; } .flow { grid-template-columns:1fr; } h1 { font-size:26px; } }
+    @media print { body { background:#fff; } main { width:100%; margin:0; border:0; box-shadow:none; } header { print-color-adjust:exact; } pre { white-space:pre-wrap; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>binary-demo 源代码验真与现场修改验证说明</h1>
+    <p>本流程用同一套封存源代码完成“验真、断网编译、启动、现场小改、再次编译、替换 App、观察变化”的证据闭环。</p>
+    <div class="meta"><span class="pill">封存范围：backend + frontend + App Dockerfile</span><span class="pill">离线构建</span><span class="pill">App 可修改</span><span class="pill">其他引擎镜像不变</span></div>
+  </header>
+  <article>
+    <nav>
+      <strong>验证主线：</strong>
+      <a href="#seal">校验封存</a> →
+      <a href="#load">导入镜像</a> →
+      <a href="#build-original">编译原版</a> →
+      <a href="#run">启动验证</a> →
+      <a href="#change">现场修改</a> →
+      <a href="#rebuild">再次编译</a> →
+      <a href="#evidence">核对证据</a>
+    </nav>
+
+    <div class="flow">
+      <div><b>1</b>可信哈希确认源代码未变</div>
+      <div><b>2</b>断网构建生成 App 镜像</div>
+      <div><b>3</b>九服务启动证明可运行</div>
+      <div><b>4</b>现场改 UI 或 API</div>
+      <div><b>5</b>重建替换后观察变化</div>
+    </div>
+
+    <h2 id="meaning">1. 这套验证能证明什么</h2>
+    <ul>
+      <li>验证日拿到的 App 源代码与封存日的文件内容一致。</li>
+      <li>给定封存的编译基础镜像和依赖缓存，源代码能在禁止构建网络的条件下编译为新的 App 镜像。</li>
+      <li>新构建的 App 可以与预置的 MySQL、scanner、三个反编译器和三个 checker 共同启动。</li>
+      <li>修改 backend 或 frontend 中属于 App 的小功能后，能再次编译、替换 App 容器并观察到变化。</li>
+    </ul>
+    <div class="callout warn">这不是“字节级可复现构建”承诺。Docker/编译器元数据可能让同一源代码的镜像 ID 不完全相同；本流程验证的是输入一致、可离线构建、可运行和可修改，并用源代码摘要标签建立对应关系。</div>
+
+    <h2 id="inventory">2. binary-demo 目录组成</h2>
+    <table>
+      <thead><tr><th>路径</th><th>性质</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr><td><code>app/backend/</code></td><td>封存输入</td><td>Go 后端源代码；现场只构建 <code>cmd/app</code>。</td></tr>
+        <tr><td><code>app/frontend/</code></td><td>封存输入</td><td>Vue 前端和 Monaco Editor 相关页面代码。</td></tr>
+        <tr><td><code>app/Dockerfile</code></td><td>封存输入</td><td>从离线依赖构建前端、嵌入 Go App 并生成最终镜像。</td></tr>
+        <tr><td><code>app/.dockerignore</code></td><td>封存输入</td><td>限制构建上下文，排除本地产物。</td></tr>
+        <tr><td><code>images/runtime/</code></td><td>封存工具</td><td>九个可直接启动的运行镜像。</td></tr>
+        <tr><td><code>images/build/</code></td><td>封存工具</td><td>Go、Node、App runtime 和由锁文件生成的离线依赖缓存镜像。</td></tr>
+        <tr><td><code>build-app.sh</code></td><td>构建程序</td><td>核对依赖锁摘要，使用 <code>--network=none</code> 编译 App，记录构建证据。</td></tr>
+        <tr><td><code>build-output/</code></td><td>可变输出</td><td>每次构建的源码明细、依赖明细和镜像证据，不属于初始封存清单。</td></tr>
+        <tr><td><code>data/</code></td><td>可变输出</td><td>数据库、上传、反编译源码、finding、报告和工作目录，不属于初始封存清单。</td></tr>
+        <tr><td><code>manifests/</code></td><td>封存证据</td><td>包清单、App 源码清单、Git 提交和镜像 ID。</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="seal">3. 阶段一：验证封存一致性</h2>
+    <p>用户应先将整个目录复制到验证工作区，保留原始封存介质只读。进入尚未修改的副本：</p>
+    <pre><code>cd /验证工作区/binary-demo
+./verify.sh package
+./verify.sh source</code></pre>
+    <p><code>package</code> 校验初始交付文件；<code>source</code> 单独校验 <code>app/</code> 下的 backend、frontend、Dockerfile 和构建忽略文件。再比较可信根：</p>
+    <pre><code>sha256sum manifests/package.sha256
+sha256sum manifests/source.sha256</code></pre>
+    <p>上述两个值必须和封存日由用户保存在交付目录之外的签字记录一致。macOS 可将 <code>sha256sum</code> 换成 <code>shasum -a 256</code>。</p>
+    <div class="callout ok">建议现场记录验证时间、设备、操作人、Git 提交（见 <code>manifests/source-git.txt</code>）、两项可信根和命令输出，并由双方签字。</div>
+
+    <h2 id="load">4. 阶段二：导入运行与构建镜像</h2>
+    <pre><code>./load-images.sh</code></pre>
+    <p>该命令同时导入九个运行镜像和四个 App 构建输入镜像。每个镜像归档都会先做 SHA-256 校验。镜像清单位于：</p>
+    <pre><code>cat manifests/runtime-images.txt
+cat manifests/build-images.txt</code></pre>
+    <p>为证明构建不依赖外网，可在导入完成后断开网络，或由验证方在隔离网络中继续执行。</p>
+
+    <h2 id="build-original">5. 阶段三：从原始封存源代码离线编译</h2>
+    <pre><code>./build-app.sh</code></pre>
+    <p>脚本执行以下约束：</p>
+    <ol>
+      <li>确认 Go、Node、运行时和离线依赖镜像均已导入。</li>
+      <li>重新计算四个依赖锁文件的组合 SHA-256，并与离线依赖镜像标签比较。</li>
+      <li>计算整个 <code>app/</code> 源码树摘要。</li>
+      <li>调用 Docker Build，固定 <code>linux/amd64</code>、<code>--pull=false</code>、<code>--network=none</code>。</li>
+      <li>把源码摘要和依赖锁摘要写入最终 App 镜像标签。</li>
+      <li>在 <code>build-output/</code> 写入本次源码明细和构建证据。</li>
+    </ol>
+    <p>检查镜像中的源码对应关系：</p>
+    <pre><code>docker image inspect binaryscan/app:0.1.0-dev --format '{{json .Config.Labels}}'</code></pre>
+
+    <h2 id="run">6. 阶段四：初始化并启动完整系统</h2>
+    <pre><code>sudo ./manage.sh init
+sudo ./manage.sh doctor
+sudo ./manage.sh start
+./manage.sh status</code></pre>
+    <p>默认从本机访问 <code>http://localhost:8080</code>，随机管理员密码记录在权限为 0600 的 <code>.env</code>：</p>
+    <pre><code>grep '^INITIAL_ADMIN_' .env</code></pre>
+    <p>建议完成下列最小冒烟验证：</p>
+    <ul>
+      <li>登录后台并打开首页。</li>
+      <li>上传一个受支持的二进制样本，确认原文件持久化。</li>
+      <li>触发对应反编译，确认源码树和 Monaco Editor 可读取源码。</li>
+      <li>触发对应 checker，确认 finding 能定位到反编译源码。</li>
+      <li>上传容器镜像 TAR 后手动触发 Trivy，确认报告可查看。</li>
+    </ul>
+
+    <h2 id="change">7. 阶段五：现场添加一个小功能</h2>
+    <p>应先复制工作区，再修改副本，保留刚才通过验真的原始副本。推荐选择不增加依赖、不改数据库结构、不改 worker 协议的小功能。</p>
+    <h3>推荐方案 A：前端可视变化</h3>
+    <p>在 <code>app/frontend/src/</code> 的现有页面增加“现场验证版本”文字、一个说明卡片或一个本地交互按钮。优点是肉眼可见且不涉及数据库。</p>
+    <h3>推荐方案 B：App API 小功能</h3>
+    <p>在 <code>app/backend/internal/app/</code> 增加一个只读 HTTP 接口或在现有健康/版本响应中增加验证字段，并由前端显示。不得改变 scanner/checker 请求协议。</p>
+    <div class="callout danger"><strong>不要把以下内容作为 App-only 演示：</strong>新增 npm/Go 依赖、增加数据库迁移、修改 scanner/反编译 worker、修改 checker 协议、修改任务表结构。它们需要扩展封存范围或重新构建其他镜像，超出本证明边界。</div>
+
+    <h2 id="rebuild">8. 阶段六：重新编译并应用修改</h2>
+    <pre><code>./build-app.sh
+./manage.sh restart-app
+./manage.sh status</code></pre>
+    <p><code>restart-app</code> 使用新镜像强制重建 App 容器，不重建 MySQL、scanner、反编译器和 checker，不删除任何数据。刷新浏览器后应观察到现场增加的功能。</p>
+    <p>此时执行 <code>./verify.sh source</code> 应失败，这是预期结果：它证明工作副本已经偏离原始封存源代码。原始只读副本仍应继续通过验真。</p>
+
+    <h2 id="evidence">9. 阶段七：对比两次构建证据</h2>
+    <pre><code>ls -1 build-output/app-build-*.txt
+cat build-output/app-build-*.txt
+docker image inspect binaryscan/app:0.1.0-dev --format 'id={{.Id}} source={{index .Config.Labels "com.binaryscan.source-sha256"}}'</code></pre>
+    <p>现场记录至少应包含：</p>
+    <table>
+      <thead><tr><th>证据</th><th>原始构建</th><th>修改后构建</th></tr></thead>
+      <tbody>
+        <tr><td>源码树 SHA-256</td><td>应与原始源码对应</td><td>应变化</td></tr>
+        <tr><td>依赖锁 SHA-256</td><td>固定</td><td>应保持相同</td></tr>
+        <tr><td>App 镜像 ID</td><td>记录</td><td>通常变化</td></tr>
+        <tr><td>构建网络</td><td><code>none</code></td><td><code>none</code></td></tr>
+        <tr><td>其他八个运行镜像 ID</td><td>记录于清单</td><td>保持不变</td></tr>
+        <tr><td>页面/API 行为</td><td>无现场功能</td><td>可观察到新增功能</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="dependency">10. 为什么还需要离线依赖镜像</h2>
+    <p>只有 backend/frontend 源码和 Go/Node 基础镜像，断网时无法执行 <code>go mod download</code> 和 <code>npm ci</code>。因此交付包把锁文件对应的 Go module cache 与 <code>node_modules</code> 封装成独立的 <code>app-build-deps</code> 镜像。</p>
+    <ul>
+      <li>依赖镜像不包含 BinaryScan 业务源代码。</li>
+      <li>它带有四个锁文件的组合摘要标签。</li>
+      <li>构建脚本先比较摘要，锁文件被修改时会拒绝继续。</li>
+      <li>真正的前端打包和 Go 编译仍在验证现场从 <code>app/</code> 执行。</li>
+    </ul>
+
+    <h2 id="boundary">11. 必须对用户说明的能力边界</h2>
+    <p><code>app/backend</code> 代码树中也包含 scanner 和反编译 worker 的共享包，但本交付的 Dockerfile 只编译 <code>cmd/app</code>。因此：</p>
+    <ul>
+      <li>前端、App HTTP API、App 参数校验、查询与页面展示类修改可以通过本流程证明。</li>
+      <li>修改共享数据库代码可能让 App 与预构建 worker 行为不一致，应避免作为现场小改。</li>
+      <li>scanner、三个 checker、三个反编译器的内部实现没有作为此次源代码封存范围提供，现场仍使用预构建镜像。</li>
+      <li>如果用户要求证明扫描引擎或反编译引擎也能修改，必须另行扩大源代码、依赖和 Dockerfile 的封存范围。</li>
+    </ul>
+
+    <h2 id="reset">12. 清理验证数据</h2>
+    <p>普通停止不会删除数据：</p>
+    <pre><code>./manage.sh stop
+./manage.sh down</code></pre>
+    <p>确需恢复到空数据库并自动重启时：</p>
+    <pre><code>sudo ./manage.sh reset --yes</code></pre>
+    <div class="callout danger">该命令永久删除当前 <code>binary-demo/data/</code> 中的数据库、上传、二进制、反编译源码、finding 和报告。它不会删除 <code>app/</code>、镜像归档或 <code>build-output/</code>。</div>
+
+    <footer>BinaryScan binary-demo 验证说明 · 本文档位于源仓库 docs/，不复制进 binary-demo 封存目录。</footer>
+  </article>
+</main>
+</body>
+</html>
