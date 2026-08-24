@@ -48,6 +48,8 @@
 - Vue 产品构建和本机 HTTP 验收页的 DOM/视觉检查通过；direct TLS 页面未在浏览器中绕过自签名证书警告，TLS 功能由受信 CA 的命令行客户端验证。
 - 单一 `deploy/scripts/smoke.sh` 已补齐可重复的 topology、三个 `checker-v1` contract 和 live 模式。live 模式再次验证 PYC 上传后仅自动产生 scan/Trivy，随后手动 pycdc、Python check 命中 `python-dynamic-code-execution`，并下载包含 4 个显式 run 的 JSON 报告；临时验收账号结束后已停用且无残留 session。
 - `deploy/scripts/decompiler-checker-regression.sh` 使用 `binary-repo/01-binary/expected-findings.json` 作为唯一预期清单，真实执行 Ghidra、Vineflower、pycdc 后再请求三个 checker；Native、CLASS、JAR、Python 分别严格命中 4、13、13、5 个预期规则族，额外或缺失规则都会使回归失败。
+- `deploy/scripts/trivy-image-regression.sh` 对 `binary-repo/03-container` 的 Docker Save TAR 与 OCI Layout TAR 使用当前离线 Trivy 数据库真实扫描；两种格式均识别合成的 `log4j-core 2.14.1` 元数据并命中 7 条漏洞，至少包含 `expected-trivy.json` 中固定的 4 个 Log4j CVE 基线。
+- ISO 9660 归入 02 归档导入而不是 03 容器扫描；`.iso` 与相同内容的 `.img` 均按文件系统 magic 识别为 `iso9660`，展开后 4 个成员全部可批量创建二进制任务。
 
 ## 纯 HTTP localhost 回归（2026-08-23）
 

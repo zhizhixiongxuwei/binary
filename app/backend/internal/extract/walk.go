@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"strings"
 
 	"github.com/bodgit/sevenzip"
+	diskfile "github.com/diskfs/go-diskfs/backend/file"
+	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	"github.com/klauspost/compress/zstd"
 	"github.com/nwaples/rardecode/v2"
 	"github.com/sassoftware/go-rpmutils"
@@ -60,6 +63,8 @@ func Walk(ctx context.Context, filename, sourceName, format string, maxEntries i
 		return walkDebian(ctx, filename, maxEntries, visit)
 	case "rpm":
 		return walkRPM(ctx, filename, maxEntries, visit)
+	case "iso9660":
+		return walkISO9660(ctx, filename, maxEntries, visit)
 	default:
 		return fmt.Errorf("unsupported archive format %q", format)
 	}
@@ -329,6 +334,67 @@ func walkRPM(ctx context.Context, filename string, maxEntries int, visit Visitor
 			return err
 		}
 	}
+}
+
+func walkISO9660(ctx context.Context, filename string, maxEntries int, visit Visitor) error {
+	storage, err := diskfile.OpenFromPath(filename, true)
+	if err != nil {
+		return fmt.Errorf("open ISO 9660 image: %w", err)
+	}
+	defer storage.Close()
+	info, err := storage.Stat()
+	if err != nil {
+		return fmt.Errorf("stat ISO 9660 image: %w", err)
+	}
+	filesystem, err := iso9660.Read(storage, info.Size(), 0, 0)
+	if err != nil {
+		return fmt.Errorf("read ISO 9660 filesystem: %w", err)
+	}
+	defer filesystem.Close()
+
+	ordinal := 0
+	err = iofs.WalkDir(filesystem, ".", func(name string, directoryEntry iofs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if name == "." {
+			return nil
+		}
+		ordinal++
+		if ordinal > maxEntries {
+			return fmt.Errorf("archive entry limit exceeded")
+		}
+		entryInfo, infoErr := directoryEntry.Info()
+		if infoErr != nil {
+			return fmt.Errorf("read ISO 9660 member %q metadata: %w", name, infoErr)
+		}
+		entry := Entry{
+			Ordinal: ordinal,
+			Name:    strings.TrimPrefix(name, "./"),
+			Size:    entryInfo.Size(),
+			Regular: entryInfo.Mode().IsRegular(),
+		}
+		if !entry.Regular {
+			return call(ctx, visit, entry, nil)
+		}
+		stream, openErr := filesystem.Open(name)
+		if openErr != nil {
+			return fmt.Errorf("open ISO 9660 member %q: %w", name, openErr)
+		}
+		visitErr := call(ctx, visit, entry, stream)
+		closeErr := stream.Close()
+		if visitErr != nil {
+			return visitErr
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close ISO 9660 member %q: %w", name, closeErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk ISO 9660 filesystem: %w", err)
+	}
+	return nil
 }
 
 func call(ctx context.Context, visit Visitor, entry Entry, reader io.Reader) error {

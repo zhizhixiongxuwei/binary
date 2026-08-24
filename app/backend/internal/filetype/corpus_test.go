@@ -8,7 +8,8 @@ import (
 
 // TestFixtureCorpus is optional in normal CI. Set BINARY_FIXTURE_ROOT to the
 // generated binary-repo directory to exercise the detector against the four
-// decompiler/checker regression binaries and their one-layer ZIP bundle.
+// decompiler/checker regression binaries, archive/filesystem bundles, and
+// container image fixtures.
 func TestFixtureCorpus(t *testing.T) {
 	root := os.Getenv("BINARY_FIXTURE_ROOT")
 	if root == "" {
@@ -24,6 +25,10 @@ func TestFixtureCorpus(t *testing.T) {
 		{"01-binary/vulnerable.jar", "jar", CategoryBinary},
 		{"01-binary/vulnerable.pyc", "pyc", CategoryBinary},
 		{"02-archive/vulnerable-binaries.zip", "zip", CategoryArchive},
+		{"02-archive/vulnerable-binaries.iso", "iso9660", CategoryArchive},
+		{"02-archive/vulnerable-binaries.img", "iso9660", CategoryArchive},
+		{"03-container/docker-save.tar", "docker-tar", CategoryContainer},
+		{"03-container/oci-layout.tar", "oci-tar", CategoryContainer},
 	}
 	for _, test := range tests {
 		t.Run(test.path, func(t *testing.T) {

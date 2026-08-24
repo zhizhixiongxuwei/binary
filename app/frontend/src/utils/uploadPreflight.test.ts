@@ -18,6 +18,8 @@ describe('inputCategoryAccept', () => {
 
   it('keeps native picker hints for archives and containers', () => {
     expect(inputCategoryAccept.archive).toContain('.zip')
+    expect(inputCategoryAccept.archive).toContain('.iso')
+    expect(inputCategoryAccept.archive).toContain('.img')
     expect(inputCategoryAccept.container).toContain('.tar')
     expect(nativePickerAcceptAttributes('archive')).toHaveProperty('accept')
     expect(nativePickerAcceptAttributes('container')).toHaveProperty('accept')
@@ -67,4 +69,22 @@ describe('preflightUploadFile', () => {
 
     expect(result).toEqual({ accepted: true })
   })
+
+  it.each(['vulnerable-binaries.iso', 'vulnerable-binaries.img'])(
+    'routes ISO 9660 content in %s to archive import',
+    async (name) => {
+      const body = new Uint8Array(40 * 1_024)
+      const offset = 16 * 2_048
+      body[offset] = 1
+      body.set(Array.from('CD001').map((character) => character.charCodeAt(0)), offset + 1)
+      body[offset + 6] = 1
+
+      const result = await preflightUploadFile(
+        new File([body], name, { type: 'application/octet-stream' }),
+        'archive',
+      )
+
+      expect(result).toEqual({ accepted: true, detectedFormat: 'ISO 9660' })
+    },
+  )
 })

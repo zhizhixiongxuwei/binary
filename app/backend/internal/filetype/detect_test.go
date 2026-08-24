@@ -28,6 +28,7 @@ func TestDetectCanonicalFormats(t *testing.T) {
 		{name: "GZIP", filename: "demo.gz", body: []byte{0x1f, 0x8b}, format: "gzip", category: CategoryArchive},
 		{name: "XZ", filename: "demo.xz", body: []byte{0xfd, '7', 'z', 'X', 'Z', 0}, format: "xz", category: CategoryArchive},
 		{name: "RPM", filename: "demo.rpm", body: []byte{0xed, 0xab, 0xee, 0xdb}, format: "rpm", category: CategoryArchive},
+		{name: "ISO 9660", filename: "demo.img", body: iso9660Body(), format: "iso9660", category: CategoryArchive},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -44,6 +45,15 @@ func TestDetectCanonicalFormats(t *testing.T) {
 			}
 		})
 	}
+}
+
+func iso9660Body() []byte {
+	body := make([]byte, 40*1024)
+	offset := 16 * 2048
+	body[offset] = 1
+	copy(body[offset+1:], "CD001")
+	body[offset+6] = 1
+	return body
 }
 
 func TestDetectPEAndZipApplications(t *testing.T) {

@@ -1,0 +1,24 @@
+{
+  "schema": "binaryscan-trivy-image-fixtures-v1",
+  "targets": {
+    "docker-save": {
+      "artifact": "03-container/docker-save.tar",
+      "format": "docker-tar"
+    },
+    "oci-layout": {
+      "artifact": "03-container/oci-layout.tar",
+      "format": "oci-tar"
+    }
+  },
+  "package": {
+    "name": "org.apache.logging.log4j:log4j-core",
+    "version": "2.14.1"
+  },
+  "minimumFindings": 4,
+  "requiredVulnerabilityIds": [
+    "CVE-2021-44228",
+    "CVE-2021-44832",
+    "CVE-2021-45046",
+    "CVE-2021-45105"
+  ]
+}

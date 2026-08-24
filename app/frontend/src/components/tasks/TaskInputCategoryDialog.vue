@@ -35,8 +35,8 @@ const categories = [
   {
     value: 'archive',
     number: '02',
-    title: '压缩包格式',
-    formats: 'ZIP · 7Z · RAR · TAR · GZIP · XZ · DEB · RPM',
+    title: '归档导入格式',
+    formats: 'ZIP · 7Z · RAR · TAR · GZIP · XZ · DEB · RPM · ISO/IMG',
     icon: Archive,
   },
   {

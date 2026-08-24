@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bodgit/sevenzip v1.6.5
+	github.com/diskfs/go-diskfs v1.9.4
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/klauspost/compress v1.19.0
@@ -25,6 +26,7 @@ require (
 	github.com/cloudflare/circl v1.3.8 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/djherbis/times v1.6.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect

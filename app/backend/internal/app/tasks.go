@@ -729,7 +729,7 @@ func decompileKind(format string) (job.Kind, bool) {
 
 func archiveImportSupported(format string) bool {
 	switch format {
-	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm":
+	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660":
 		return true
 	default:
 		return false

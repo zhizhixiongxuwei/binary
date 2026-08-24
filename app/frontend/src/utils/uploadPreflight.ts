@@ -1,6 +1,7 @@
 import type { InputCategory } from '@/api/types'
 
-const HEAD_LIMIT = 4_096
+// ISO 9660 volume descriptors begin at sector 16 (32 KiB).
+const HEAD_LIMIT = 40 * 1_024
 const TAIL_LIMIT = 65_557
 const BINARY_FILENAME_EXTENSIONS = [
   '.exe',
@@ -20,7 +21,7 @@ const BINARY_FILENAME_EXTENSIONS = [
 
 export const inputCategoryLabels: Record<InputCategory, string> = {
   binary: '01 二进制格式',
-  archive: '02 压缩包格式',
+  archive: '02 归档导入格式',
   container: '03 容器镜像格式',
 }
 
@@ -30,7 +31,7 @@ export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
   // native picker select them; preflightUploadFile still validates their contents.
   binary: undefined,
   archive:
-    '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip',
+    '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,.iso,.img,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip,application/x-iso9660-image',
   container: '.tar,application/x-tar,application/octet-stream',
 }
 
@@ -153,6 +154,14 @@ function detectHead(bytes: Uint8Array): MagicMatch | null {
   }
   if (startsWith(bytes, [0xed, 0xab, 0xee, 0xdb])) {
     return { format: 'RPM', allowedCategories: ['archive'] }
+  }
+  const isoDescriptorOffset = 16 * 2_048
+  if (
+    (bytes[isoDescriptorOffset] === 1 || bytes[isoDescriptorOffset] === 2) &&
+    asciiAt(bytes, isoDescriptorOffset + 1, 'CD001') &&
+    bytes[isoDescriptorOffset + 6] === 1
+  ) {
+    return { format: 'ISO 9660', allowedCategories: ['archive'] }
   }
   if (asciiAt(bytes, 257, 'ustar')) {
     return {

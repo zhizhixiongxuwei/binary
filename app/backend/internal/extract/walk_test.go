@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	diskfile "github.com/diskfs/go-diskfs/backend/file"
+	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	"github.com/ulikunitz/xz"
 )
 
@@ -75,6 +77,40 @@ func TestWalkCommonArchives(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertWalk(t, filename, "sample.deb", "deb", "usr/bin/demo", "deb-binary")
+	})
+
+	t.Run("ISO 9660 filesystem", func(t *testing.T) {
+		filename := filepath.Join(t.TempDir(), "sample.iso")
+		const imageSize = int64(1 << 20)
+		storage, err := diskfile.CreateFromPath(filename, imageSize)
+		if err != nil {
+			t.Fatal(err)
+		}
+		filesystem, err := iso9660.Create(storage, imageSize, 0, 2048, "")
+		if err != nil {
+			_ = storage.Close()
+			t.Fatal(err)
+		}
+		member, err := filesystem.OpenFile("demo.pyc", os.O_CREATE|os.O_RDWR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := member.Write([]byte("iso-data")); err != nil {
+			t.Fatal(err)
+		}
+		if err := member.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := filesystem.Finalize(iso9660.FinalizeOptions{Joliet: true, VolumeIdentifier: "BINARYSCAN"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := filesystem.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := storage.Close(); err != nil {
+			t.Fatal(err)
+		}
+		assertWalk(t, filename, "sample.iso", "iso9660", "demo.pyc", "iso-data")
 	})
 }
 

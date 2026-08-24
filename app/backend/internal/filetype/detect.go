@@ -55,6 +55,8 @@ func CategoryForFormat(format string) (Category, bool) {
 		return CategoryBinary, true
 	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm":
 		return CategoryArchive, true
+	case "iso9660":
+		return CategoryArchive, true
 	case containerarchive.FormatDockerTAR, containerarchive.FormatOCITAR:
 		return CategoryContainer, true
 	default:
@@ -70,9 +72,11 @@ func Detect(filename, logicalPath string) (Result, error) {
 		return Result{}, fmt.Errorf("open file for detection: %w", err)
 	}
 	defer file.Close()
-	header := make([]byte, 4096)
-	count, err := file.Read(header)
-	if err != nil && !errors.Is(err, io.EOF) {
+	// ISO 9660 volume descriptors start at sector 16 (32 KiB). Keep the read
+	// bounded while including enough data for content-based ISO detection.
+	header := make([]byte, 40*1024)
+	count, err := io.ReadFull(file, header)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
 		return Result{}, fmt.Errorf("read file header: %w", err)
 	}
 	header = header[:count]
@@ -120,6 +124,9 @@ func Detect(filename, logicalPath string) (Result, error) {
 	}
 	if len(header) >= 4 && bytes.Equal(header[:4], []byte{0xed, 0xab, 0xee, 0xdb}) {
 		return result("rpm"), nil
+	}
+	if isISO9660(header) {
+		return result("iso9660"), nil
 	}
 	if isDebianPackage(file, header) {
 		return result("deb"), nil
@@ -190,6 +197,26 @@ func isPYC(header []byte, extension string) bool {
 func isZIP(header []byte) bool {
 	return len(header) >= 4 && (bytes.Equal(header[:4], []byte{'P', 'K', 3, 4}) ||
 		bytes.Equal(header[:4], []byte{'P', 'K', 5, 6}) || bytes.Equal(header[:4], []byte{'P', 'K', 7, 8}))
+}
+
+func isISO9660(header []byte) bool {
+	const sectorSize = 2048
+	for sector := 16; sector <= 18; sector++ {
+		offset := sector * sectorSize
+		if len(header) < offset+7 {
+			return false
+		}
+		descriptorType := header[offset]
+		if bytes.Equal(header[offset+1:offset+6], []byte("CD001")) && header[offset+6] == 1 {
+			if descriptorType == 1 || descriptorType == 2 {
+				return true
+			}
+			if descriptorType == 255 {
+				return false
+			}
+		}
+	}
+	return false
 }
 
 func inspectZIP(filename, extension string) (string, error) {
