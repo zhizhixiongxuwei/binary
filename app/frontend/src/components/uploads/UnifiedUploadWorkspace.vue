@@ -80,7 +80,11 @@ async function chooseMode(
   if (created.analysis_mode === 'archive' && created.archive_import_id) {
     await imports.refresh()
     expandedImportId.value = created.archive_import_id
+    uploads.forget(item.localId)
+    return
   }
+  uploads.forget(item.localId)
+  openCreatedTask(created)
 }
 
 function openCreatedTask(created: UploadAnalysisTask): void {

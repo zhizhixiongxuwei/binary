@@ -1316,13 +1316,25 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       return cloneSession(session)
     },
 
-    async listUploads() {
+    async listUploads(query = {}) {
       await delay()
       requireUser()
+      let items = [...uploads.values()]
+        .map((upload) => cloneSession(upload.completed ?? upload.session))
+        .reverse()
+      if (query.pending_analysis) {
+        items = items.filter(
+          (session) =>
+            session.status === 'completed' &&
+            session.validation_status === 'valid' &&
+            (session.tasks?.length ?? 0) === 0 &&
+            !session.task_id &&
+            !session.archive_import_id,
+        )
+      }
+      if (query.limit !== undefined) items = items.slice(0, query.limit)
       return {
-        items: [...uploads.values()]
-          .map((upload) => cloneSession(upload.completed ?? upload.session))
-          .reverse(),
+        items,
       }
     },
 

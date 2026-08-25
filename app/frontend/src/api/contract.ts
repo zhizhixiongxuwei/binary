@@ -68,6 +68,7 @@ import type {
   UpdateAdminUserInput,
   UploadPartInput,
   UploadAnalysisTask,
+  UploadListQuery,
   UploadPage,
   UploadSession,
   VulnerabilityFinding,
@@ -246,7 +247,7 @@ export interface ApiClient {
     input: CreateUploadInput,
     idempotencyKey: string,
   ): Promise<UploadSession>
-  listUploads(): Promise<UploadPage>
+  listUploads(query?: UploadListQuery): Promise<UploadPage>
   getUpload(uploadId: string): Promise<UploadSession>
   uploadPart(uploadId: string, input: UploadPartInput): Promise<void>
   completeUpload(uploadId: string): Promise<CompletedUpload>

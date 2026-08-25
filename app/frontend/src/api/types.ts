@@ -1018,6 +1018,11 @@ export interface UploadPage {
   items: UploadSession[]
 }
 
+export interface UploadListQuery {
+  pending_analysis?: boolean
+  limit?: number
+}
+
 export interface CompletedUpload extends UploadSession {
   sha256: string
   size_bytes: number

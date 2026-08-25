@@ -85,6 +85,16 @@ function recoveredItem(session: UploadSession): UnifiedUploadItem {
   }
 }
 
+export function isPendingAnalysisUpload(session: UploadSession): boolean {
+  return (
+    session.status === 'completed' &&
+    session.validation_status === 'valid' &&
+    (session.tasks?.length ?? 0) === 0 &&
+    !session.task_id &&
+    !session.archive_import_id
+  )
+}
+
 export function useUnifiedUpload() {
   const queue = shallowRef<UnifiedUploadItem[]>([])
   const activeId = shallowRef<string | null>(null)
@@ -145,14 +155,12 @@ export function useUnifiedUpload() {
     recovering.value = true
     recoveryError.value = ''
     try {
-      const page = await api.listUploads()
+      const page = await api.listUploads({ pending_analysis: true, limit: 100 })
       const existing = new Set(queue.value.flatMap((item) => item.uploadId ?? []))
       const restored = page.items
         .filter(
           (session) =>
-            session.status === 'completed' &&
-            session.validation_status === 'valid' &&
-            !existing.has(session.id),
+            isPendingAnalysisUpload(session) && !existing.has(session.id),
         )
         .map(recoveredItem)
       queue.value = [...queue.value, ...restored]
@@ -295,6 +303,10 @@ export function useUnifiedUpload() {
     }
   }
 
+  function forget(localId: string): void {
+    queue.value = queue.value.filter((candidate) => candidate.localId !== localId)
+  }
+
   return {
     queue,
     activeId,
@@ -307,5 +319,6 @@ export function useUnifiedUpload() {
     startAll,
     selectMode,
     remove,
+    forget,
   }
 }

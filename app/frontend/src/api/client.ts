@@ -66,6 +66,7 @@ import type {
   TaskReportList,
   UploadSession,
   UploadAnalysisTask,
+  UploadListQuery,
   UploadPage,
   UpdateAdminUserInput,
   UploadPartInput,
@@ -885,9 +886,15 @@ async function createUpload(
   }
 }
 
-async function listUploads(): Promise<UploadPage> {
+async function listUploads(query: UploadListQuery = {}): Promise<UploadPage> {
+  const params = new URLSearchParams()
+  if (query.pending_analysis !== undefined) {
+    params.set('pending_analysis', String(query.pending_analysis))
+  }
+  if (query.limit !== undefined) params.set('limit', String(query.limit))
+  const suffix = params.size ? `?${params.toString()}` : ''
   try {
-    return parseUploadPage(await request<unknown>('/uploads'))
+    return parseUploadPage(await request<unknown>(`/uploads${suffix}`))
   } catch (error) {
     return invalidUploadIntakeResponse(error)
   }
@@ -1485,7 +1492,7 @@ export const api: ApiClient = {
   listAuditLogs: (query) => activeApi.listAuditLogs(query),
   createUpload: (input, idempotencyKey) =>
     activeApi.createUpload(input, idempotencyKey),
-  listUploads: () => activeApi.listUploads(),
+  listUploads: (query) => activeApi.listUploads(query),
   getUpload: (uploadId) => activeApi.getUpload(uploadId),
   uploadPart: (uploadId, input) => activeApi.uploadPart(uploadId, input),
   completeUpload: (uploadId) => activeApi.completeUpload(uploadId),

@@ -940,9 +940,15 @@ export function createLiveApiClient(): ApiClient {
         throw error
       }
     },
-    async listUploads() {
+    async listUploads(query = {}) {
+      const params = new URLSearchParams()
+      if (query.pending_analysis !== undefined) {
+        params.set('pending_analysis', String(query.pending_analysis))
+      }
+      if (query.limit !== undefined) params.set('limit', String(query.limit))
+      const suffix = params.size ? `?${params.toString()}` : ''
       try {
-        return parseUploadPage(await request<unknown>('/uploads'))
+        return parseUploadPage(await request<unknown>(`/uploads${suffix}`))
       } catch (error) {
         if (error instanceof UploadIntakeContractError) {
           throw new ApiError('上传响应不符合接口契约', 502, {

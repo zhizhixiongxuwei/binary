@@ -210,9 +210,24 @@ func (s *taskService) listUploads(c *gin.Context) {
 			limit = value
 		}
 	}
-	rows, err := s.db.QueryContext(c, `SELECT id FROM uploads
-		WHERE created_by = ? AND status <> 'aborted' ORDER BY created_at DESC LIMIT ?`,
-		mustCurrentUser(c).ID, limit)
+	pendingAnalysis := false
+	if raw := strings.TrimSpace(c.Query("pending_analysis")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_pending_analysis"})
+			return
+		}
+		pendingAnalysis = value
+	}
+	query := `SELECT u.id FROM uploads u
+		WHERE u.created_by = ? AND u.status <> 'aborted'`
+	if pendingAnalysis {
+		query += ` AND u.status = 'complete' AND u.validation_status = 'valid'
+			AND NOT EXISTS (SELECT 1 FROM tasks t
+				WHERE t.upload_id = u.id AND t.deleted_at IS NULL)`
+	}
+	query += ` ORDER BY u.created_at DESC LIMIT ?`
+	rows, err := s.db.QueryContext(c, query, mustCurrentUser(c).ID, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_query_failed"})
 		return
