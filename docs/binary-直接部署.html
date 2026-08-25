@@ -40,7 +40,7 @@
     .command-table code { white-space:nowrap; }
     footer { margin-top:42px; color:var(--muted); font-size:13px; }
     @media (max-width:900px) { .os-grid { grid-template-columns:1fr; } }
-    @media (max-width:700px) { header,article { padding:28px 22px; } h1 { font-size:26px; } }
+    @media (max-width:700px) { header,article { padding:28px 22px; } h1 { font-size:26px; } table { display:block; overflow-x:auto; } .callout code { overflow-wrap:anywhere; word-break:break-all; } }
     @media print { body { background:#fff; } main { width:100%; margin:0; border:0; box-shadow:none; } header { print-color-adjust:exact; } .os-grid { grid-template-columns:1fr; } pre { white-space:pre-wrap; } }
   </style>
 </head>
@@ -49,10 +49,10 @@
   <header>
     <h1>binary-deploy 跨平台离线部署操作说明</h1>
     <p>同一交付目录支持 Windows、Linux 和 macOS 主机。Windows 使用 PowerShell 脚本，Linux/macOS 使用 Shell 脚本；三种主机最终运行的都是交付包内固定的 Linux/AMD64 容器。</p>
-    <div class="meta"><span class="pill">Windows：PowerShell + Docker Desktop</span><span class="pill">Linux/macOS：Shell</span><span class="pill">9 个运行服务</span><span class="pill">数据统一位于 data/</span></div>
+    <div class="meta"><span class="pill">交付文档 V1.0</span><span class="pill">Windows：PowerShell + Docker Desktop</span><span class="pill">Linux/macOS：Shell</span><span class="pill">9 个运行服务</span><span class="pill">数据统一位于 data/</span></div>
   </header>
   <article>
-    <nav><strong>操作顺序：</strong> <a href="#choose-os">选择系统</a> → <a href="#verify">封存验真</a> → <a href="#load">导入镜像</a> → <a href="#config">配置</a> → <a href="#start">启动</a> → <a href="#operate">日常运维</a></nav>
+    <nav><strong>操作顺序：</strong> <a href="#choose-os">选择系统</a> → <a href="#verify">封存验真</a> → <a href="#load">导入镜像</a> → <a href="#config">配置</a> → <a href="#start">启动</a> → <a href="#acceptance">业务验收</a> → <a href="#operate">日常运维</a></nav>
 
     <h2 id="scope">1. 交付内容</h2>
     <table>
@@ -63,7 +63,7 @@
         <tr><td><code>manage.ps1 / manage.sh</code></td><td><code>manage.ps1</code></td><td><code>manage.sh</code></td><td>初始化、检查、启停、日志和安全重置。</td></tr>
         <tr><td><code>images/runtime/</code></td><td colspan="3">MySQL、App、scanner、三个反编译器和三个 checker 的统一离线归档。</td></tr>
         <tr><td><code>.env</code></td><td colspan="3">镜像名、密码、端口、并发和资源限制；不要改变 <code>BINARY_DATA_ROOT=./data</code>。</td></tr>
-        <tr><td><code>data/</code></td><td colspan="3">数据库、上传文件、原始二进制、反编译源码、finding、报告和工作目录。</td></tr>
+        <tr><td><code>data/</code></td><td colspan="3">数据库、上传文件、原始二进制、反编译源码、finding、单任务报告、归档总报告和工作目录。</td></tr>
       </tbody>
     </table>
 
@@ -127,6 +127,7 @@ chmod +x ./*.sh
 shasum -a 256 manifests/package.sha256</code></pre></section>
     </div>
     <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。</div>
+    <div class="callout"><strong>2026-08-25 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>56f29385d6e5cbec8a960617c96e218a1fab3cd74fbfd8a2b4da9b085ebac831</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
 
     <h2 id="load">4. 离线导入九个运行镜像</h2>
     <div class="os-grid">
@@ -178,12 +179,23 @@ sudo ./manage.sh status</code></pre></section>
         <tr><td>类 C 源码</td><td><code>data\storage\projects\native</code></td><td><code>data/storage/projects/native</code></td><td><code>/data/storage/projects/native</code></td></tr>
         <tr><td>Java 源码</td><td><code>data\storage\projects\jvm</code></td><td><code>data/storage/projects/jvm</code></td><td><code>/data/storage/projects/jvm</code></td></tr>
         <tr><td>Python 源码</td><td><code>data\storage\projects\pyc</code></td><td><code>data/storage/projects/pyc</code></td><td><code>/data/storage/projects/pyc</code></td></tr>
-        <tr><td>报告</td><td><code>data\storage\reports</code></td><td><code>data/storage/reports</code></td><td><code>/data/storage/reports</code></td></tr>
+        <tr><td>单任务报告</td><td><code>data\storage\reports</code></td><td><code>data/storage/reports</code></td><td><code>/data/storage/reports</code></td></tr>
+        <tr><td>归档总报告 ZIP</td><td><code>data\storage\reports\archive-bundles</code></td><td><code>data/storage/reports/archive-bundles</code></td><td><code>/data/storage/reports/archive-bundles</code></td></tr>
       </tbody>
     </table>
     <p>Monaco Editor 和漏洞详情通过 App 读取数据库记录指向的持久化源码，不依赖容器临时文件系统。</p>
 
-    <h2 id="operate">8. 日常命令对照表</h2>
+    <h2 id="acceptance">8. 当前版本业务验收主线</h2>
+    <ol>
+      <li>上传 DLL、EXE、SYS、PYC、Mach-O、CLASS、ZIP、GZIP、TAR、RAR、JAR、APK、IMG、ISO 或 EXT4 文件；上传完成后再选择“二进制”“归档”或“容器/映像”分析模式。</li>
+      <li>二进制模式按实际识别结果进入 Ghidra、JVM 或 PYC 反编译，再手动启动 C、Java 或 Python 源码检查；源码、行列定位和 finding 均写入 <code>data/</code>。</li>
+      <li>归档模式只读拆分一层；ZIP、TAR、ISO 9660、EXT4 等可列出符合条件的成员并批量创建二进制子任务。每个子任务独立反编译、检查并导出 JSON、HTML 或 Word 报告。</li>
+      <li>从左侧“归档批次”展开对应批次，选择格式生成总报告 ZIP；总包只收集当时已经 ready 的子报告，可选包含反编译源码，缺失格式和未收录任务写入 <code>manifest.json</code> 与 <code>index.html</code>。</li>
+      <li>容器/映像模式由用户手动启动 Trivy。Docker Save TAR、OCI Layout TAR 以及内容实际为 Docker archive 的 IMG 可检测；ISO、EXT4 或其他不适用内容应明确显示“不适用/无结果”，不得伪造漏洞。</li>
+    </ol>
+    <div class="callout warn">总报告不会自动替子任务启动反编译、checker 或单任务报告。验收总报告前，应先进入各子任务完成所需流程并生成对应格式报告，再返回“归档批次”汇总。</div>
+
+    <h2 id="operate">9. 日常命令对照表</h2>
     <table class="command-table">
       <thead><tr><th>行为</th><th>Windows PowerShell</th><th>Linux</th><th>macOS</th></tr></thead>
       <tbody>
@@ -196,8 +208,8 @@ sudo ./manage.sh status</code></pre></section>
       </tbody>
     </table>
 
-    <h2 id="reset">9. 清空全部数据并重新启动</h2>
-    <div class="callout danger"><strong>不可恢复：</strong>会删除数据库、账号、上传文件、二进制、反编译源码、finding、报告和工作目录。日常重启不要使用。</div>
+    <h2 id="reset">10. 清空全部数据并重新启动</h2>
+    <div class="callout danger"><strong>不可恢复：</strong>会删除数据库、账号、上传文件、二进制、反编译源码、finding、单任务报告、归档总报告和工作目录。日常重启不要使用。</div>
     <div class="os-grid">
       <section class="os-card windows"><h3>Windows</h3><pre><code>.\manage.ps1 reset -Yes</code></pre></section>
       <section class="os-card linux"><h3>Linux</h3><pre><code>sudo ./manage.sh reset --yes</code></pre></section>
@@ -205,7 +217,7 @@ sudo ./manage.sh status</code></pre></section>
     </div>
     <p>Windows 脚本要求 <code>-Yes</code>，Shell 脚本要求 <code>--yes</code>。两者都会验证目标严格等于当前交付目录的 <code>data</code>、不是符号链接/junction，并且哨兵与 Compose 项目名一致。</p>
 
-    <h2 id="trouble">10. Windows 常见问题与跨平台排查</h2>
+    <h2 id="trouble">11. Windows 常见问题与跨平台排查</h2>
     <ul>
       <li><strong>PowerShell 提示禁止运行脚本：</strong>执行 <code>Set-ExecutionPolicy -Scope Process Bypass -Force</code>，只影响当前窗口；必要时执行 <code>Get-ChildItem .\*.ps1 | Unblock-File</code>。</li>
       <li><strong>提示 Docker Desktop must use Linux containers：</strong>在 Docker Desktop 菜单切换到 Linux containers，并确认 WSL2 engine 已启动。</li>
