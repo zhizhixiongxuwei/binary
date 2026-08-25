@@ -73,9 +73,11 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.GET("/archive-imports", tasks.listArchiveImports)
 	protected.GET("/archive-imports/:importID", tasks.getArchiveImport)
 	protected.GET("/archive-imports/:importID/entries", tasks.listArchiveImportEntries)
+	protected.GET("/archive-imports/:importID/report-bundles", tasks.listArchiveReportBundles)
 	protected.GET("/uploads", tasks.listUploads)
 	protected.GET("/uploads/:uploadID", tasks.getUpload)
 	protected.GET("/reports/:reportID/content", tasks.downloadReport)
+	protected.GET("/archive-report-bundles/:bundleID/content", tasks.downloadArchiveReportBundle)
 	protected.POST("/uploads", auth.requireCSRF(), requireOperator(), tasks.createUpload)
 	protected.PUT("/uploads/:uploadID/parts/:partNumber", auth.requireCSRF(), requireOperator(), tasks.putUploadPart)
 	protected.POST("/uploads/:uploadID/complete", auth.requireCSRF(), requireOperator(), tasks.completeUpload)
@@ -89,6 +91,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.POST("/tasks/:taskID/projects/:projectID/check", auth.requireCSRF(), requireOperator(), tasks.queueCheck)
 	protected.POST("/tasks/:taskID/reports", auth.requireCSRF(), requireOperator(), tasks.createReport)
 	protected.POST("/archive-imports/:importID/task-batches", auth.requireCSRF(), requireOperator(), tasks.createArchiveTaskBatch)
+	protected.POST("/archive-imports/:importID/report-bundles", auth.requireCSRF(), requireOperator(), tasks.createArchiveReportBundle)
 
 	dist, err := fs.Sub(webui.Dist, "dist")
 	if err != nil {

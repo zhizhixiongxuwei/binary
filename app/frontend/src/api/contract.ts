@@ -3,6 +3,8 @@ import type {
   AdminUserListQuery,
   AdminUserPage,
   ArchiveImport,
+  ArchiveReportBundle,
+  ArchiveReportBundleList,
   ArchiveImportListQuery,
   ArchiveImportPage,
   ArchiveImportEntryListQuery,
@@ -30,6 +32,7 @@ import type {
   CompletedUpload,
   CreatedTask,
   CreateArchiveTaskBatchInput,
+  CreateArchiveReportBundleInput,
   CreateTaskInput,
   CreateUploadAnalysisTaskInput,
   CreateUploadInput,
@@ -268,5 +271,12 @@ export interface ApiClient {
     input: CreateArchiveTaskBatchInput,
     idempotencyKey: string,
   ): Promise<ArchiveTaskBatchResult>
+  listArchiveReportBundles(importId: string): Promise<ArchiveReportBundleList>
+  createArchiveReportBundle(
+    importId: string,
+    input: CreateArchiveReportBundleInput,
+    idempotencyKey: string,
+  ): Promise<ArchiveReportBundle>
+  downloadArchiveReportBundle(bundleId: string): Promise<ReportDownload>
   createTask(input: CreateTaskInput, idempotencyKey: string): Promise<CreatedTask>
 }

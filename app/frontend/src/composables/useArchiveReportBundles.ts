@@ -1,0 +1,219 @@
+import {
+  onScopeDispose,
+  readonly,
+  shallowRef,
+  toValue,
+  watch,
+  type MaybeRefOrGetter,
+} from 'vue'
+
+import { api, ApiError } from '@/api/client'
+import type {
+  ArchiveReportBundle,
+  CreateArchiveReportBundleInput,
+  ReportDownload,
+} from '@/api/types'
+import { createIdempotencyKey } from '@/utils/idempotency'
+
+interface UseArchiveReportBundlesOptions {
+  importId: MaybeRefOrGetter<string>
+}
+
+const BLOB_URL_RELEASE_DELAY_MS = 30_000
+
+function message(error: unknown, fallback: string): string {
+  return error instanceof ApiError || error instanceof Error
+    ? error.message
+    : fallback
+}
+
+export function useArchiveReportBundles(
+  options: UseArchiveReportBundlesOptions,
+) {
+  const bundles = shallowRef<readonly ArchiveReportBundle[]>([])
+  const loading = shallowRef(false)
+  const generating = shallowRef(false)
+  const downloadingId = shallowRef('')
+  const error = shallowRef('')
+  const operationError = shallowRef('')
+  const idempotencyKeys = new Map<string, string>()
+  const releaseTimers = new Map<
+    string,
+    ReturnType<typeof globalThis.setTimeout>
+  >()
+  let generation = 0
+
+  function inputSignature(input: CreateArchiveReportBundleInput): string {
+    return `${[...input.formats].sort().join(',')}:${input.include_sources ? 'sources' : 'reports'}`
+  }
+
+  function clickDownload(url: string, filename?: string): void {
+    if (typeof document === 'undefined') {
+      throw new Error('当前浏览器不支持归档报告包下载')
+    }
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = filename ?? ''
+    anchor.rel = 'noopener'
+    anchor.style.display = 'none'
+    document.body.append(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+
+  function scheduleRelease(objectUrl: string): void {
+    const timer = globalThis.setTimeout(() => {
+      releaseTimers.delete(objectUrl)
+      URL.revokeObjectURL(objectUrl)
+    }, BLOB_URL_RELEASE_DELAY_MS)
+    releaseTimers.set(objectUrl, timer)
+  }
+
+  async function load(): Promise<void> {
+    const importId = toValue(options.importId)
+    if (!importId) return
+    const current = ++generation
+    loading.value = true
+    error.value = ''
+    try {
+      const result = await api.listArchiveReportBundles(importId)
+      if (current !== generation || importId !== toValue(options.importId)) return
+      bundles.value = result.items
+    } catch (caught) {
+      if (current !== generation || importId !== toValue(options.importId)) return
+      error.value = message(caught, '无法读取归档报告包')
+      bundles.value = []
+    } finally {
+      if (current === generation) loading.value = false
+    }
+  }
+
+  async function generate(
+    input: CreateArchiveReportBundleInput,
+  ): Promise<ArchiveReportBundle | null> {
+    const importId = toValue(options.importId)
+    if (!importId || generating.value || input.formats.length === 0) return null
+    const current = generation
+    const signature = inputSignature(input)
+    const idempotencyKey =
+      idempotencyKeys.get(signature) ?? createIdempotencyKey()
+    idempotencyKeys.set(signature, idempotencyKey)
+    generating.value = true
+    operationError.value = ''
+    try {
+      const created = await api.createArchiveReportBundle(
+        importId,
+        {
+          formats: [...input.formats].sort(),
+          include_sources: input.include_sources,
+        },
+        idempotencyKey,
+      )
+      if (current !== generation || importId !== toValue(options.importId)) {
+        return null
+      }
+      idempotencyKeys.delete(signature)
+      bundles.value = [
+        created,
+        ...bundles.value.filter((bundle) => bundle.id !== created.id),
+      ]
+      return created
+    } catch (caught) {
+      if (current !== generation || importId !== toValue(options.importId)) {
+        return null
+      }
+      if (
+        caught instanceof ApiError &&
+        caught.code === 'archive_report_bundle_idempotency_conflict'
+      ) {
+        idempotencyKeys.delete(signature)
+      }
+      operationError.value = message(caught, '归档报告包生成失败')
+      return null
+    } finally {
+      if (current === generation) generating.value = false
+    }
+  }
+
+  async function presentDownload(result: ReportDownload, bundleId: string): Promise<void> {
+    if (result.kind === 'url') {
+      if (typeof window === 'undefined') {
+        throw new Error('当前浏览器不支持归档报告包下载')
+      }
+      const target = new URL(result.url, window.location.href)
+      if (
+        target.origin !== window.location.origin ||
+        target.username ||
+        target.password
+      ) {
+        throw new Error('归档报告包下载地址不是安全的同源地址')
+      }
+      clickDownload(target.href)
+      return
+    }
+    if (typeof URL.createObjectURL !== 'function') {
+      throw new Error('当前浏览器不支持归档报告包下载')
+    }
+    const objectUrl = URL.createObjectURL(result.blob)
+    scheduleRelease(objectUrl)
+    clickDownload(
+      objectUrl,
+      result.filename || `binaryscan-archive-${bundleId}.zip`,
+    )
+  }
+
+  async function download(bundle: ArchiveReportBundle): Promise<void> {
+    if (bundle.status !== 'ready' || downloadingId.value) return
+    const importId = toValue(options.importId)
+    const current = generation
+    downloadingId.value = bundle.id
+    operationError.value = ''
+    try {
+      const result = await api.downloadArchiveReportBundle(bundle.id)
+      if (current !== generation || importId !== toValue(options.importId)) return
+      await presentDownload(result, bundle.id)
+    } catch (caught) {
+      if (current !== generation || importId !== toValue(options.importId)) return
+      operationError.value = message(caught, '归档报告包下载失败')
+    } finally {
+      if (current === generation) downloadingId.value = ''
+    }
+  }
+
+  watch(
+    () => toValue(options.importId),
+    (importId) => {
+      generation += 1
+      bundles.value = []
+      loading.value = false
+      generating.value = false
+      downloadingId.value = ''
+      error.value = ''
+      operationError.value = ''
+      idempotencyKeys.clear()
+      if (importId) void load()
+    },
+    { immediate: true },
+  )
+
+  onScopeDispose(() => {
+    generation += 1
+    for (const [objectUrl, timer] of releaseTimers) {
+      globalThis.clearTimeout(timer)
+      URL.revokeObjectURL(objectUrl)
+    }
+    releaseTimers.clear()
+  })
+
+  return {
+    bundles: readonly(bundles),
+    loading: readonly(loading),
+    generating: readonly(generating),
+    downloadingId: readonly(downloadingId),
+    error: readonly(error),
+    operationError: readonly(operationError),
+    load,
+    generate,
+    download,
+  }
+}

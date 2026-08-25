@@ -33,6 +33,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/TasksView.vue'),
       },
       {
+        path: 'archives',
+        name: 'archive-imports',
+        component: () => import('@/views/ArchiveImportsView.vue'),
+      },
+      {
         path: 'change-password',
         name: 'change-password',
         component: () => import('@/views/ChangePasswordView.vue'),

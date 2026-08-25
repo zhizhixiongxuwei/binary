@@ -286,6 +286,7 @@ UNION ALL SELECT CONCAT('source_symbols=', COUNT(*)) FROM source_symbols
 UNION ALL SELECT CONCAT('findings=', COUNT(*)) FROM findings
 UNION ALL SELECT CONCAT('run_artifacts=', COUNT(*)) FROM run_artifacts
 UNION ALL SELECT CONCAT('reports=', COUNT(*)) FROM reports
+UNION ALL SELECT CONCAT('archive_report_bundles=', COUNT(*)) FROM archive_report_bundles
 UNION ALL SELECT CONCAT('audit_logs=', COUNT(*)) FROM audit_logs;
 "
 
@@ -367,7 +368,7 @@ verify_bundle() {
   for manifest_key in created_at binary_version mysql_image mysql_database; do
     manifest_value "$bundle_dir/manifest" "$manifest_key" >/dev/null || die "manifest key is missing or duplicated: $manifest_key"
   done
-  for manifest_key in schema_version users tasks blobs runs jobs source_projects findings run_artifacts reports audit_logs database_bytes storage_archive_bytes; do
+  for manifest_key in schema_version users tasks blobs runs jobs source_projects findings run_artifacts reports archive_report_bundles audit_logs database_bytes storage_archive_bytes; do
     verify_numeric_manifest_value "$bundle_dir/manifest" "$manifest_key"
   done
 
@@ -506,6 +507,9 @@ verify_restored_references() {
 	SELECT 'report', CONCAT('storage/', storage_key), COALESCE(CAST(size_bytes AS CHAR), '-'), COALESCE(LOWER(HEX(sha256)), '-')
 	  FROM reports WHERE status = 'ready' AND deleted_at IS NULL
 	UNION ALL
+	SELECT 'archive-bundle', CONCAT('storage/', storage_key), CAST(size_bytes AS CHAR), LOWER(HEX(sha256))
+	  FROM archive_report_bundles WHERE status = 'ready' AND deleted_at IS NULL
+	UNION ALL
 	SELECT 'project', CONCAT('storage/projects/', source_kind, '/', root_storage_key), CAST(file_count AS CHAR), COALESCE(LOWER(HEX(manifest_sha256)), '-')
 	  FROM source_projects WHERE state = 'ready' AND deleted_at IS NULL
 	UNION ALL
@@ -531,7 +535,7 @@ verify_restored_references() {
 		  [ "$actual_sha256" = "$expected_sha256" ] || die "restored file digest differs: $relative_path"
 		fi
 		;;
-	  report)
+	  report|archive-bundle)
 		[ -f "$absolute_path" ] && [ ! -L "$absolute_path" ] || die "restored report is missing: $relative_path"
 		if [ "$expected_size" != "-" ]; then
 		  actual_size=$(wc -c < "$absolute_path" | tr -d '[:space:]')

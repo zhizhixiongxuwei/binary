@@ -620,6 +620,97 @@ paths:
         "201": { description: Report snapshot created }
         "400": { description: Invalid idempotency key, format, run ID set or JSON body }
         "409": { description: A selected run is not terminal, or the idempotency key was already used with different parameters }
+  /api/v1/archive-imports/{importID}/report-bundles:
+    get:
+      description: Lists immutable report bundles previously generated for an archive import.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: importID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Archive report bundles
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundles]
+                properties:
+                  bundles:
+                    type: array
+                    items: { $ref: "#/components/schemas/ArchiveReportBundle" }
+        "404": { description: Archive import not found }
+    post:
+      description: Creates an immutable ZIP containing the latest ready child-task reports for each requested format, an HTML index, a JSON manifest, and optionally persisted decompiled sources.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: importID
+          required: true
+          schema: { type: string, format: uuid }
+        - $ref: "#/components/parameters/CSRFToken"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [formats, include_sources]
+              properties:
+                formats:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: { enum: [json, html, docx] }
+                include_sources: { type: boolean }
+      responses:
+        "200":
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundle]
+                properties:
+                  bundle: { $ref: "#/components/schemas/ArchiveReportBundle" }
+        "201":
+          description: Archive report bundle created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundle]
+                properties:
+                  bundle: { $ref: "#/components/schemas/ArchiveReportBundle" }
+        "400": { description: Invalid request }
+        "404": { description: Archive import not found }
+        "409": { description: No selected child reports are ready, or the idempotency key conflicts }
+        "413": { description: Bundle input exceeds the configured safety limit }
+  /api/v1/archive-report-bundles/{bundleID}/content:
+    get:
+      description: Downloads a persisted archive report ZIP after verifying its size and SHA-256.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: path
+          name: bundleID
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Verified archive report bundle
+          headers:
+            ETag:
+              schema: { type: string, pattern: '^"[0-9a-f]{64}"$' }
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "404": { description: Archive report bundle not found }
+        "409": { description: Persisted bundle failed integrity verification }
   /api/v1/reports/{reportID}/content:
     get:
       security: [{ sessionCookie: [] }]
@@ -849,17 +940,20 @@ components:
     ArchiveImport:
       type: object
       additionalProperties: false
-      required: [id, upload_id, filename, status, scanned_entries, total_entries, eligible_entries, skipped_entries, created_tasks, created_at, updated_at]
+      required: [id, upload_id, filename, status, source_retained, scanned_entries, total_entries, eligible_entries, skipped_entries, created_tasks, report_ready_tasks, ready_reports, created_at, updated_at]
       properties:
         id: { type: string, format: uuid }
         upload_id: { type: string, format: uuid }
         filename: { type: string }
         status: { enum: [queued, running, ready, failed, unsupported, deleting, deleted] }
+        source_retained: { type: boolean }
         scanned_entries: { type: integer, minimum: 0 }
         total_entries: { type: integer, minimum: 0 }
         eligible_entries: { type: integer, minimum: 0 }
         skipped_entries: { type: integer, minimum: 0 }
         created_tasks: { type: integer, minimum: 0 }
+        report_ready_tasks: { type: integer, minimum: 0 }
+        ready_reports: { type: integer, minimum: 0 }
         error_code: { type: string }
         error_message: { type: string }
         created_at: { type: string, format: date-time }
@@ -916,6 +1010,30 @@ components:
               task_id: { type: string, format: uuid }
               error_code: { type: string }
               message: { type: string }
+    ArchiveReportBundle:
+      type: object
+      additionalProperties: false
+      required: [id, archive_import_id, status, schema_version, formats, include_sources, included_tasks, omitted_tasks, report_files, source_files, sha256, size_bytes, created_at, completed_at]
+      properties:
+        id: { type: string, format: uuid }
+        archive_import_id: { type: string, format: uuid }
+        status: { enum: [ready, failed, deleted] }
+        schema_version: { type: string }
+        formats:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { enum: [json, html, docx] }
+        include_sources: { type: boolean }
+        included_tasks: { type: integer, minimum: 0 }
+        omitted_tasks: { type: integer, minimum: 0 }
+        report_files: { type: integer, minimum: 0 }
+        source_files: { type: integer, minimum: 0 }
+        sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+        size_bytes: { type: integer, format: int64, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
     UserRole:
       type: string
       enum: [reader, operator, administrator]

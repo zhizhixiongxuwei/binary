@@ -13,6 +13,11 @@ import {
   parseArchiveTaskBatchResult,
 } from '@/api/archiveImportContract'
 import {
+  ArchiveReportBundleContractError,
+  parseArchiveReportBundle,
+  parseArchiveReportBundleList,
+} from '@/api/archiveReportBundleContract'
+import {
   parseCompletedUpload,
   parseCreatedUploadSession,
   parseUploadAnalysisTask,
@@ -205,6 +210,11 @@ function errorMessage(code: string, status: number): string {
     invalid_analysis_mode: '请选择二进制、压缩包或容器/映像分析模式',
     task_creation_failed: '分析任务创建失败，请重试',
     archive_import_not_found: '归档导入不存在或已删除',
+    archive_reports_not_ready: '所选格式还没有可打包的已完成子任务报告',
+    archive_report_bundle_too_large: '归档报告包内容超过安全上限，请减少格式或取消包含源码',
+    archive_report_bundle_idempotency_conflict: '归档报告包请求参数已经变化，请重新提交',
+    archive_report_bundle_not_found: '归档报告包不存在或已删除',
+    archive_report_bundle_storage_corrupt: '归档报告包存储校验失败，当前文件不能安全下载',
     idempotency_key_required: '请求标识无效，请刷新页面后重试',
     report_run_not_finished: '仍有处理流程未结束，暂时不能生成报告',
     invalid_report_request: '当前报告格式或分析快照无效',
@@ -1097,6 +1107,51 @@ export function createLiveApiClient(): ApiClient {
           })
         }
         throw error
+      }
+    },
+    async listArchiveReportBundles(importId) {
+      try {
+        return parseArchiveReportBundleList(
+          await request<unknown>(
+            `/archive-imports/${encode(importId)}/report-bundles`,
+          ),
+        )
+      } catch (error) {
+        if (error instanceof ArchiveReportBundleContractError) {
+          throw new ApiError('归档报告包响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_REPORT_BUNDLE_RESPONSE',
+          })
+        }
+        throw error
+      }
+    },
+    async createArchiveReportBundle(importId, input, idempotencyKey) {
+      try {
+        return parseArchiveReportBundle(
+          await request<unknown>(
+            `/archive-imports/${encode(importId)}/report-bundles`,
+            {
+              method: 'POST',
+              body: JSON.stringify(input),
+              headers: { 'Idempotency-Key': idempotencyKey },
+            },
+          ),
+        )
+      } catch (error) {
+        if (error instanceof ArchiveReportBundleContractError) {
+          throw new ApiError('归档报告包响应不符合接口契约', 502, {
+            code: 'INVALID_ARCHIVE_REPORT_BUNDLE_RESPONSE',
+          })
+        }
+        throw error
+      }
+    },
+    async downloadArchiveReportBundle(bundleId) {
+      return {
+        kind: 'url',
+        url: apiEndpoint(
+          `/archive-report-bundles/${encode(bundleId)}/content`,
+        ),
       }
     },
     async createTask(input) {

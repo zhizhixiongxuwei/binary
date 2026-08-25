@@ -11,6 +11,7 @@ import { computed, watch } from 'vue'
 import type { ArchiveImportEntryFilter } from '@/api/types'
 import ArchiveImportBatchActions from '@/components/uploads/ArchiveImportBatchActions.vue'
 import ArchiveImportEntryTable from '@/components/uploads/ArchiveImportEntryTable.vue'
+import ArchiveReportBundlePanel from '@/components/uploads/ArchiveReportBundlePanel.vue'
 import { useArchiveImport } from '@/composables/useArchiveImport'
 
 const props = withDefaults(
@@ -129,9 +130,15 @@ watch(
         <span class="archive-import__icon" aria-hidden="true">
           <Archive :size="19" />
         </span>
-        <div>
-          <strong :title="filename">{{ filename }}</strong>
-          <small class="mono">{{ importId }}</small>
+      <div>
+        <strong :title="filename">{{ filename }}</strong>
+        <small class="mono">{{ importId }}</small>
+        <small
+          v-if="model.archiveImport.value && !model.archiveImport.value.source_retained"
+          class="archive-import__retention"
+        >
+          原始归档已清理，已创建任务和报告关系继续保留
+        </small>
         </div>
       </div>
       <div class="archive-import__commands">
@@ -174,6 +181,11 @@ watch(
       <span><strong>{{ model.archiveImport.value.skipped_entries }}</strong> 已跳过</span>
       <span><strong>{{ model.archiveImport.value.created_tasks }}</strong> 已建任务</span>
     </div>
+
+    <ArchiveReportBundlePanel
+      v-if="model.archiveImport.value && model.archiveImport.value.created_tasks > 0"
+      :archive-import="model.archiveImport.value"
+    />
 
     <div
       v-if="model.isPolling.value"
@@ -310,6 +322,11 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.archive-import__identity .archive-import__retention {
+  color: var(--amber);
+  font-family: inherit;
 }
 
 .archive-import__identity strong {

@@ -19,19 +19,22 @@ import (
 )
 
 type archiveImportRecord struct {
-	ID              string    `json:"id"`
-	UploadID        string    `json:"upload_id"`
-	Filename        string    `json:"filename"`
-	Status          string    `json:"status"`
-	ScannedEntries  int       `json:"scanned_entries"`
-	TotalEntries    int       `json:"total_entries"`
-	EligibleEntries int       `json:"eligible_entries"`
-	SkippedEntries  int       `json:"skipped_entries"`
-	CreatedTasks    int       `json:"created_tasks"`
-	ErrorCode       string    `json:"error_code,omitempty"`
-	ErrorMessage    string    `json:"error_message,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	UploadID         string    `json:"upload_id"`
+	Filename         string    `json:"filename"`
+	Status           string    `json:"status"`
+	SourceRetained   bool      `json:"source_retained"`
+	ScannedEntries   int       `json:"scanned_entries"`
+	TotalEntries     int       `json:"total_entries"`
+	EligibleEntries  int       `json:"eligible_entries"`
+	SkippedEntries   int       `json:"skipped_entries"`
+	CreatedTasks     int       `json:"created_tasks"`
+	ReportReadyTasks int       `json:"report_ready_tasks"`
+	ReadyReports     int       `json:"ready_reports"`
+	ErrorCode        string    `json:"error_code,omitempty"`
+	ErrorMessage     string    `json:"error_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func (s *taskService) listArchiveImports(c *gin.Context) {
@@ -41,8 +44,12 @@ func (s *taskService) listArchiveImports(c *gin.Context) {
 	var err error
 	if cursorID == "" {
 		rows, err = s.db.QueryContext(c, `SELECT r.id FROM runs r
-			JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+			JOIN tasks t ON t.id = r.task_id
 			WHERE r.kind = 'archive_import'
+			  AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
+				JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
+				WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
+				WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))
 			  AND NOT EXISTS (SELECT 1 FROM runs newer WHERE newer.task_id = r.task_id
 				AND newer.kind = 'archive_import'
 				AND (newer.created_at > r.created_at OR (newer.created_at = r.created_at AND newer.id > r.id)))
@@ -59,8 +66,12 @@ func (s *taskService) listArchiveImports(c *gin.Context) {
 			return
 		}
 		rows, err = s.db.QueryContext(c, `SELECT r.id FROM runs r
-			JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+			JOIN tasks t ON t.id = r.task_id
 			WHERE r.kind = 'archive_import'
+			  AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
+				JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
+				WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
+				WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))
 			  AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))
 			  AND NOT EXISTS (SELECT 1 FROM runs newer WHERE newer.task_id = r.task_id
 				AND newer.kind = 'archive_import'
@@ -120,18 +131,24 @@ func (s *taskService) loadArchiveImport(ctx context.Context, importID string) (a
 	var result archiveImportRecord
 	var runStatus string
 	var errorCode, errorMessage sql.NullString
+	var parentDeleted sql.NullTime
 	err := s.db.QueryRowContext(ctx, `SELECT r.id, COALESCE(t.upload_id, t.id), t.display_name,
 		r.status, r.error_code, r.error_message, r.created_at,
-		COALESCE(r.completed_at, r.started_at, r.created_at)
-		FROM runs r JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
-		WHERE r.id = ? AND r.kind = 'archive_import'`, importID).Scan(
+		COALESCE(r.completed_at, r.started_at, r.created_at), t.deleted_at
+		FROM runs r JOIN tasks t ON t.id = r.task_id
+		WHERE r.id = ? AND r.kind = 'archive_import'
+		  AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
+			JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
+			WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
+			WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))`, importID).Scan(
 		&result.ID, &result.UploadID, &result.Filename, &runStatus, &errorCode,
-		&errorMessage, &result.CreatedAt, &result.UpdatedAt,
+		&errorMessage, &result.CreatedAt, &result.UpdatedAt, &parentDeleted,
 	)
 	if err != nil {
 		return archiveImportRecord{}, err
 	}
 	result.Status = archiveImportStatus(runStatus)
+	result.SourceRetained = !parentDeleted.Valid
 	result.ErrorCode, result.ErrorMessage = errorCode.String, errorMessage.String
 	rows, err := s.db.QueryContext(ctx, `SELECT detected_format, status, created_task_id
 		FROM archive_entries WHERE import_run_id = ? ORDER BY ordinal`, importID)
@@ -158,6 +175,17 @@ func (s *taskService) loadArchiveImport(ctx context.Context, importID string) (a
 		}
 	}
 	if err := rows.Err(); err != nil {
+		return archiveImportRecord{}, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(DISTINCT reports_by_task.task_id),
+		COUNT(reports_by_task.id)
+		FROM archive_entries ae
+		LEFT JOIN reports reports_by_task ON reports_by_task.task_id = ae.created_task_id
+			AND reports_by_task.status = 'ready' AND reports_by_task.deleted_at IS NULL
+		LEFT JOIN tasks child ON child.id = ae.created_task_id AND child.deleted_at IS NULL
+		WHERE ae.import_run_id = ? AND child.id IS NOT NULL`, importID).Scan(
+		&result.ReportReadyTasks, &result.ReadyReports,
+	); err != nil {
 		return archiveImportRecord{}, err
 	}
 	return result, nil

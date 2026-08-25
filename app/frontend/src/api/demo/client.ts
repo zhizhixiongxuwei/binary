@@ -12,6 +12,7 @@ import type {
   AdminUser,
   ArchiveImport,
   ArchiveImportEntry,
+  ArchiveReportBundle,
   AuditLog,
   AuditLogListQuery,
   CompletedUpload,
@@ -254,6 +255,8 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
   )
   const uploads = new Map<string, DemoUpload>()
   const archiveImports = new Map<string, DemoArchiveImport>()
+  const archiveReportBundles = new Map<string, ArchiveReportBundle[]>()
+  const archiveReportBundleByIdempotencyKey = new Map<string, ArchiveReportBundle>()
   const uploadByIdempotencyKey = new Map<
     string,
     { fingerprint: string; uploadId: string }
@@ -266,6 +269,110 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
   let uploadCounter = 0
   let taskCounter = 0
   let reportCounter = 0
+  let archiveReportBundleCounter = 0
+
+  const demoArchiveImportId = 'demo-archive-history-0001'
+  const demoArchiveReportCreatedAt = '2026-07-30T12:00:00+08:00'
+  reports.set(DEMO_TASK_IDS.firmware, [
+    {
+      id: 'demo-report-archive-html',
+      task_id: DEMO_TASK_IDS.firmware,
+      format: 'html',
+      schema_version: 'binaryscan-report-v2',
+      status: 'complete',
+      sha256: 'c'.repeat(64),
+      size_bytes: 48_216,
+      error_code: null,
+      error_message: null,
+      created_at: demoArchiveReportCreatedAt,
+      completed_at: demoArchiveReportCreatedAt,
+    },
+    {
+      id: 'demo-report-archive-json',
+      task_id: DEMO_TASK_IDS.firmware,
+      format: 'json',
+      schema_version: 'binaryscan-report-v2',
+      status: 'complete',
+      sha256: 'd'.repeat(64),
+      size_bytes: 31_904,
+      error_code: null,
+      error_message: null,
+      created_at: demoArchiveReportCreatedAt,
+      completed_at: demoArchiveReportCreatedAt,
+    },
+  ])
+  archiveImports.set(demoArchiveImportId, {
+    value: {
+      id: demoArchiveImportId,
+      upload_id: 'demo-upload-cleaned-0001',
+      filename: 'vulnerable-binaries.zip',
+      status: 'ready',
+      source_retained: false,
+      scanned_entries: 3,
+      total_entries: 3,
+      eligible_entries: 2,
+      skipped_entries: 1,
+      created_tasks: 2,
+      report_ready_tasks: 1,
+      ready_reports: 2,
+      created_at: '2026-07-30T10:00:00+08:00',
+      updated_at: demoArchiveReportCreatedAt,
+    },
+    entries: [
+      {
+        id: '1',
+        path: 'bin/vulnerable-elf',
+        size_bytes: 92_274_688,
+        sha256: '7'.repeat(64),
+        detected_format: 'elf64',
+        detected_category: 'binary',
+        status: 'created',
+        task_id: DEMO_TASK_IDS.firmware,
+      },
+      {
+        id: '2',
+        path: 'apps/vulnerable.apk',
+        size_bytes: 4_194_304,
+        sha256: '6'.repeat(64),
+        detected_format: 'apk',
+        detected_category: 'binary',
+        status: 'created',
+        task_id: DEMO_TASK_IDS.apk,
+      },
+      {
+        id: '3',
+        path: 'README.txt',
+        size_bytes: 512,
+        sha256: null,
+        detected_format: null,
+        detected_category: null,
+        status: 'skipped',
+        skip_reason: '不是受支持的二进制文件',
+      },
+    ],
+    batchResults: new Map([
+      ['1', DEMO_TASK_IDS.firmware],
+      ['2', DEMO_TASK_IDS.apk],
+    ]),
+  })
+  archiveReportBundles.set(demoArchiveImportId, [
+    {
+      id: 'demo-archive-bundle-0000',
+      archive_import_id: demoArchiveImportId,
+      status: 'ready',
+      schema_version: 'binaryscan-archive-report-bundle-v1',
+      formats: ['html', 'json'],
+      include_sources: true,
+      included_tasks: 1,
+      omitted_tasks: 1,
+      report_files: 2,
+      source_files: 7,
+      sha256: 'e'.repeat(64),
+      size_bytes: 142_560,
+      created_at: demoArchiveReportCreatedAt,
+      completed_at: demoArchiveReportCreatedAt,
+    },
+  ])
 
   async function delay(): Promise<void> {
     if (delayMs <= 0) return
@@ -1443,11 +1550,14 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
             upload_id: uploadId,
             filename: upload.input.filename,
             status: task.supported ? 'ready' : 'unsupported',
+            source_retained: true,
             scanned_entries: task.supported ? 2 : 0,
             total_entries: task.supported ? 2 : 0,
             eligible_entries: task.supported ? 1 : 0,
             skipped_entries: task.supported ? 1 : 0,
             created_tasks: 0,
+            report_ready_tasks: 0,
+            ready_reports: 0,
             ...(!task.supported
               ? {
                   error_code: 'analysis_mode_not_applicable',
@@ -1492,7 +1602,15 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       requireUser()
       findUpload(uploadId)
       for (const [importId, archiveImport] of archiveImports) {
-        if (archiveImport.value.upload_id === uploadId) archiveImports.delete(importId)
+        if (archiveImport.value.upload_id !== uploadId) continue
+        if (archiveImport.value.created_tasks > 0) {
+          archiveImport.value.source_retained = false
+          archiveImport.entries = archiveImport.entries.filter(
+            (entry) => entry.status === 'created',
+          )
+        } else {
+          archiveImports.delete(importId)
+        }
       }
       uploads.delete(uploadId)
     },
@@ -1629,6 +1747,104 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       archiveImport.value.updated_at = '2026-07-30T10:30:00+08:00'
       void idempotencyKey
       return { items }
+    },
+
+    async listArchiveReportBundles(importId) {
+      await delay()
+      requireUser()
+      if (!archiveImports.has(importId)) {
+        throw new ApiError('示例归档导入不存在', 404, {
+          code: 'ARCHIVE_IMPORT_NOT_FOUND',
+        })
+      }
+      return {
+        items: (archiveReportBundles.get(importId) ?? []).map((bundle) => ({
+          ...bundle,
+          formats: [...bundle.formats],
+        })),
+      }
+    },
+
+    async createArchiveReportBundle(importId, input, idempotencyKey) {
+      await delay()
+      const user = requireUser()
+      if (user.role === 'reader') {
+        throw new ApiError('只读用户不能生成归档报告包', 403, {
+          code: 'FORBIDDEN',
+        })
+      }
+      const archiveImport = archiveImports.get(importId)
+      if (!archiveImport) {
+        throw new ApiError('示例归档导入不存在', 404, {
+          code: 'ARCHIVE_IMPORT_NOT_FOUND',
+        })
+      }
+      const existing = archiveReportBundleByIdempotencyKey.get(idempotencyKey)
+      if (existing) return { ...existing, formats: [...existing.formats] }
+      const taskIds = archiveImport.entries
+        .filter((entry) => entry.status === 'created' && entry.task_id)
+        .map((entry) => entry.task_id as string)
+      const readyByTask = taskIds.map((taskId) => ({
+        taskId,
+        reports: (reports.get(taskId) ?? []).filter(
+          (report) =>
+            report.status === 'complete' && input.formats.includes(report.format),
+        ),
+      }))
+      const included = readyByTask.filter((item) => item.reports.length > 0)
+      if (included.length === 0) {
+        throw new ApiError('所选格式还没有可打包的已完成子任务报告', 409, {
+          code: 'archive_reports_not_ready',
+        })
+      }
+      archiveReportBundleCounter += 1
+      const now = new Date().toISOString()
+      const created: ArchiveReportBundle = {
+        id: `demo-archive-bundle-${String(archiveReportBundleCounter).padStart(4, '0')}`,
+        archive_import_id: importId,
+        status: 'ready',
+        schema_version: 'binaryscan-archive-report-bundle-v1',
+        formats: [...input.formats].sort(),
+        include_sources: input.include_sources,
+        included_tasks: included.length,
+        omitted_tasks: Math.max(0, taskIds.length - included.length),
+        report_files: included.reduce((total, item) => total + item.reports.length, 0),
+        source_files: input.include_sources ? included.length : 0,
+        sha256: 'e'.repeat(64),
+        size_bytes: 96 * 1024,
+        created_at: now,
+        completed_at: now,
+      }
+      const bundles = archiveReportBundles.get(importId) ?? []
+      bundles.unshift(created)
+      archiveReportBundles.set(importId, bundles)
+      archiveReportBundleByIdempotencyKey.set(idempotencyKey, created)
+      archiveImport.value.report_ready_tasks = included.length
+      archiveImport.value.ready_reports = readyByTask.reduce(
+        (total, item) => total + item.reports.length,
+        0,
+      )
+      return { ...created, formats: [...created.formats] }
+    },
+
+    async downloadArchiveReportBundle(bundleId) {
+      await delay()
+      requireUser()
+      const exists = [...archiveReportBundles.values()]
+        .flat()
+        .some((bundle) => bundle.id === bundleId)
+      if (!exists) {
+        throw new ApiError('示例归档报告包不存在', 404, {
+          code: 'ARCHIVE_REPORT_BUNDLE_NOT_FOUND',
+        })
+      }
+      return {
+        kind: 'blob',
+        blob: new Blob(['BinaryScan archive report bundle preview'], {
+          type: 'application/zip',
+        }),
+        filename: `binaryscan-archive-${bundleId}.zip`,
+      }
     },
 
     async createTask(input, idempotencyKey) {

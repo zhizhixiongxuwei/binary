@@ -8,6 +8,8 @@ import type {
   ArchiveImportPage,
   ArchiveImportEntryListQuery,
   ArchiveImportEntryPage,
+  ArchiveReportBundle,
+  ArchiveReportBundleList,
   ArchiveTaskBatchResult,
   AuditLogListQuery,
   AuditLogPage,
@@ -31,6 +33,7 @@ import type {
   CompletedUpload,
   CreatedTask,
   CreateArchiveTaskBatchInput,
+  CreateArchiveReportBundleInput,
   CreateUploadAnalysisTaskInput,
   CreateUploadInput,
   CreateTaskInput,
@@ -83,6 +86,11 @@ import {
   parseArchiveImportEntryPage,
   parseArchiveTaskBatchResult,
 } from '@/api/archiveImportContract'
+import {
+  ArchiveReportBundleContractError,
+  parseArchiveReportBundle,
+  parseArchiveReportBundleList,
+} from '@/api/archiveReportBundleContract'
 import {
   CAnalysisContractError,
   parseCAnalysisFindingPage,
@@ -1008,6 +1016,51 @@ async function createArchiveTaskBatch(
   }
 }
 
+async function listArchiveReportBundles(
+  importId: string,
+): Promise<ArchiveReportBundleList> {
+  try {
+    return parseArchiveReportBundleList(
+      await request<unknown>(
+        `/archive-imports/${encodeURIComponent(importId)}/report-bundles`,
+      ),
+    )
+  } catch (error) {
+    if (error instanceof ArchiveReportBundleContractError) {
+      throw new ApiError('归档报告包响应不符合接口契约', 502, {
+        code: 'INVALID_ARCHIVE_REPORT_BUNDLE_RESPONSE',
+      })
+    }
+    throw error
+  }
+}
+
+async function createArchiveReportBundle(
+  importId: string,
+  input: CreateArchiveReportBundleInput,
+  idempotencyKey: string,
+): Promise<ArchiveReportBundle> {
+  try {
+    return parseArchiveReportBundle(
+      await request<unknown>(
+        `/archive-imports/${encodeURIComponent(importId)}/report-bundles`,
+        {
+          method: 'POST',
+          body: JSON.stringify(input),
+          headers: { 'Idempotency-Key': idempotencyKey },
+        },
+      ),
+    )
+  } catch (error) {
+    if (error instanceof ArchiveReportBundleContractError) {
+      throw new ApiError('归档报告包响应不符合接口契约', 502, {
+        code: 'INVALID_ARCHIVE_REPORT_BUNDLE_RESPONSE',
+      })
+    }
+    throw error
+  }
+}
+
 async function changePassword(input: ChangePasswordInput): Promise<CurrentUser> {
   const user = await request<CurrentUser | undefined>('/me/password', {
     method: 'PUT',
@@ -1360,6 +1413,14 @@ export const httpApi: ApiClient = {
   getArchiveImport,
   listArchiveImportEntries,
   createArchiveTaskBatch,
+  listArchiveReportBundles,
+  createArchiveReportBundle,
+  downloadArchiveReportBundle: (bundleId: string) =>
+    Promise.resolve(
+      sameOriginReportDownload(
+        `/archive-report-bundles/${encodeURIComponent(bundleId)}/content`,
+      ),
+    ),
   createTask: (input: CreateTaskInput, idempotencyKey: string) =>
     request<CreatedTask>('/tasks', {
       method: 'POST',
@@ -1505,5 +1566,11 @@ export const api: ApiClient = {
     activeApi.listArchiveImportEntries(importId, query),
   createArchiveTaskBatch: (importId, input, idempotencyKey) =>
     activeApi.createArchiveTaskBatch(importId, input, idempotencyKey),
+  listArchiveReportBundles: (importId) =>
+    activeApi.listArchiveReportBundles(importId),
+  createArchiveReportBundle: (importId, input, idempotencyKey) =>
+    activeApi.createArchiveReportBundle(importId, input, idempotencyKey),
+  downloadArchiveReportBundle: (bundleId) =>
+    activeApi.downloadArchiveReportBundle(bundleId),
   createTask: (input, idempotencyKey) => activeApi.createTask(input, idempotencyKey),
 }

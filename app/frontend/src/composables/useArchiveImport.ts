@@ -83,6 +83,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
   const canDelete = computed(() => {
     const status = archiveImport.value?.status
     return (
+      archiveImport.value?.source_retained === true &&
       !submitting.value &&
       !deleting.value &&
       (status === 'ready' || status === 'failed')

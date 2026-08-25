@@ -146,11 +146,14 @@ function importValue(value: unknown, field: string): ArchiveImport {
       'upload_id',
       'filename',
       'status',
+      'source_retained',
       'scanned_entries',
       'total_entries',
       'eligible_entries',
       'skipped_entries',
       'created_tasks',
+      'report_ready_tasks',
+      'ready_reports',
       'created_at',
       'updated_at',
     ],
@@ -162,6 +165,12 @@ function importValue(value: unknown, field: string): ArchiveImport {
     upload_id: identifier(item.upload_id, `${field}.upload_id`),
     filename: text(item.filename, `${field}.filename`, 1_024),
     status: enumValue(item.status, importStatuses, `${field}.status`),
+    source_retained:
+      typeof item.source_retained === 'boolean'
+        ? item.source_retained
+        : (() => {
+            throw new ArchiveImportContractError(`${field}.source_retained`)
+          })(),
     scanned_entries: integer(
       item.scanned_entries,
       `${field}.scanned_entries`,
@@ -179,6 +188,12 @@ function importValue(value: unknown, field: string): ArchiveImport {
       20_000,
     ),
     created_tasks: integer(item.created_tasks, `${field}.created_tasks`, 20_000),
+    report_ready_tasks: integer(
+      item.report_ready_tasks,
+      `${field}.report_ready_tasks`,
+      20_000,
+    ),
+    ready_reports: integer(item.ready_reports, `${field}.ready_reports`, 60_000),
     created_at: timestamp(item.created_at, `${field}.created_at`),
     updated_at: timestamp(item.updated_at, `${field}.updated_at`),
   }
@@ -190,6 +205,7 @@ function importValue(value: unknown, field: string): ArchiveImport {
     parsed.eligible_entries + parsed.skipped_entries > parsed.total_entries ||
     parsed.scanned_entries > parsed.total_entries ||
     parsed.created_tasks > parsed.eligible_entries
+    || parsed.report_ready_tasks > parsed.created_tasks
   ) {
     throw new ArchiveImportContractError(`${field}.counts`)
   }

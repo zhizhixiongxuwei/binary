@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Binary,
+  Archive,
   ChevronLeft,
   ChevronRight,
   CircleGauge,
@@ -50,6 +51,7 @@ const navigation = computed(() => {
   const entries = [
     { label: '系统概览', to: '/', icon: CircleGauge, adminOnly: false },
     { label: '检测任务', to: '/tasks', icon: FileScan, adminOnly: false },
+    { label: '归档批次', to: '/archives', icon: Archive, adminOnly: false },
     { label: '新建任务', to: '/tasks/new', icon: Plus, adminOnly: false, operatorOnly: true, command: true },
     { label: '系统维护', to: '/system', icon: ServerCog, adminOnly: true },
   ]

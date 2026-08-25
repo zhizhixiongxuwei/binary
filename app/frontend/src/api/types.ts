@@ -1072,11 +1072,14 @@ export interface ArchiveImport {
   upload_id: string
   filename: string
   status: ArchiveImportStatus
+  source_retained: boolean
   scanned_entries: number
   total_entries: number
   eligible_entries: number
   skipped_entries: number
   created_tasks: number
+  report_ready_tasks: number
+  ready_reports: number
   error_code?: string
   error_message?: string
   created_at: string
@@ -1142,6 +1145,34 @@ export interface ArchiveTaskBatchResultItem {
 
 export interface ArchiveTaskBatchResult {
   items: readonly ArchiveTaskBatchResultItem[]
+}
+
+export type ArchiveReportBundleStatus = 'ready' | 'failed' | 'deleted'
+
+export interface ArchiveReportBundle {
+  id: string
+  archive_import_id: string
+  status: ArchiveReportBundleStatus
+  schema_version: string
+  formats: readonly ReportFormat[]
+  include_sources: boolean
+  included_tasks: number
+  omitted_tasks: number
+  report_files: number
+  source_files: number
+  sha256: string
+  size_bytes: number
+  created_at: string
+  completed_at: string
+}
+
+export interface ArchiveReportBundleList {
+  items: ArchiveReportBundle[]
+}
+
+export interface CreateArchiveReportBundleInput {
+  formats: ReportFormat[]
+  include_sources: boolean
 }
 
 export interface ApiErrorBody {

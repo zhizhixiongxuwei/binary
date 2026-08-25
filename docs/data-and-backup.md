@@ -7,10 +7,12 @@
 - `storage/blobs`：按 SHA-256 去重的不可变输入内容，包括直接上传文件以及归档一级拆分后物化的成员。
 - `storage/artifacts`：Trivy、源码检查器等运行制品，数据库记录其大小、摘要和 schema 版本。
 - `storage/projects/{native,jvm,pyc}/<project-id>`：三类反编译源码项目；每个项目包含 `project.json` 清单以及只读源码文件，清单和数据库都保留输入 blob、文件 ID、路径、SHA-256、行数等定位信息。
-- `storage/reports`：生成的 JSON、HTML、DOCX 报告；报告中的源码发现保留 source project/file ID 和精确行列范围，可回到任务详情中的 Monaco 编辑器。
+- `storage/reports`：生成的 JSON、HTML、DOCX 单任务报告，以及 `archive-bundles/<archive-import-id>/<bundle-id>.zip` 归档批次总报告；报告中的源码发现保留 source project/file ID 和精确行列范围，可回到任务详情中的 Monaco 编辑器。
 - `work`：worker 临时目录，不进入备份。
 
 Docker 日志、镜像、容器元数据和网络信息由 Docker 管理，不在 `binary-data` 保证范围内。
+
+归档批次总报告在生成时固化为只读 ZIP，并在数据库 `archive_report_bundles` 中记录选项、完整清单、大小和 SHA-256。下载前服务端重新校验大小与摘要；总包可选包含反编译源码，因此应按源码和漏洞报告同等级别控制访问与介质流转。数据库 dump 与 `storage` 必须配套备份，否则总报告记录和 ZIP 文件会失去对应关系。
 
 ## 一致性备份
 
