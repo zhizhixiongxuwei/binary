@@ -5,7 +5,6 @@ import type {
   AnalysisMode,
   UploadAnalysisOption,
   UploadAnalysisTask,
-  UploadSession,
 } from '@/api/types'
 import { sha256Blob } from '@/utils/hash'
 import { createIdempotencyKey } from '@/utils/idempotency'
@@ -60,46 +59,9 @@ function uploadedBytes(
   }, 0)
 }
 
-function recoveredItem(session: UploadSession): UnifiedUploadItem {
-  const size = session.size_bytes ?? 0
-  return {
-    localId: `recovered:${session.id}`,
-    file: undefined,
-    filename: session.filename ?? session.id,
-    size,
-    contentType: session.content_type ?? 'application/octet-stream',
-    status: session.status === 'completed' ? 'awaiting_mode' : 'failed',
-    progress: session.status === 'completed' ? 100 : 0,
-    uploadedBytes: session.status === 'completed' ? size : 0,
-    uploadId: session.id,
-    detectedFormat: session.detected_format,
-    detectedCategory: session.detected_category,
-    sha256: session.sha256,
-    analysisOptions: session.analysis_options ?? [],
-    tasks: session.tasks ?? [],
-    creatingMode: undefined,
-    errorMessage:
-      session.status === 'completed' ? '' : '历史上传未完成，请重新选择文件',
-    canRetry: false,
-    removing: false,
-  }
-}
-
-export function isPendingAnalysisUpload(session: UploadSession): boolean {
-  return (
-    session.status === 'completed' &&
-    session.validation_status === 'valid' &&
-    (session.tasks?.length ?? 0) === 0 &&
-    !session.task_id &&
-    !session.archive_import_id
-  )
-}
-
 export function useUnifiedUpload() {
   const queue = shallowRef<UnifiedUploadItem[]>([])
   const activeId = shallowRef<string | null>(null)
-  const recovering = shallowRef(false)
-  const recoveryError = shallowRef('')
 
   const readyCount = computed(
     () =>
@@ -149,27 +111,6 @@ export function useUnifiedUpload() {
     }
     queue.value = [...queue.value, ...additions]
     return rejected
-  }
-
-  async function recover(): Promise<void> {
-    recovering.value = true
-    recoveryError.value = ''
-    try {
-      const page = await api.listUploads({ pending_analysis: true, limit: 100 })
-      const existing = new Set(queue.value.flatMap((item) => item.uploadId ?? []))
-      const restored = page.items
-        .filter(
-          (session) =>
-            isPendingAnalysisUpload(session) && !existing.has(session.id),
-        )
-        .map(recoveredItem)
-      queue.value = [...queue.value, ...restored]
-    } catch (error) {
-      recoveryError.value =
-        error instanceof ApiError ? error.message : '待处理上传恢复失败'
-    } finally {
-      recovering.value = false
-    }
   }
 
   async function uploadItem(localId: string): Promise<void> {
@@ -311,10 +252,7 @@ export function useUnifiedUpload() {
     queue,
     activeId,
     readyCount,
-    recovering,
-    recoveryError,
     addFiles,
-    recover,
     uploadItem,
     startAll,
     selectMode,

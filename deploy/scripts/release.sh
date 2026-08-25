@@ -115,14 +115,25 @@ build_all() {
   build_checkers
 }
 
+build_core() {
+  require_image "$TRIVY_RUNTIME_DB_IMAGE"
+  build_app
+  build_scanner
+}
+
 usage() {
-  echo "usage: $0 {build|build-app|build-checkers|build-c-checker|build-java-checker|build-python-checker|package OUTPUT.tar|load FILE}" >&2
+  echo "usage: $0 {build|build-core|build-app|build-scanner|build-checkers|build-c-checker|build-java-checker|build-python-checker|package OUTPUT.tar|load FILE}" >&2
   exit 2
 }
 
 case "${1:-}" in
   build) build_all ;;
+  build-core) build_core ;;
   build-app) build_app ;;
+  build-scanner)
+    require_image "$TRIVY_RUNTIME_DB_IMAGE"
+    build_scanner
+    ;;
   build-checkers) build_checkers ;;
   build-c-checker) build_c_checker ;;
   build-java-checker) build_java_checker ;;

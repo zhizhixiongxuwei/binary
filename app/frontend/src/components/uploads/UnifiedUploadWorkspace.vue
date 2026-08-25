@@ -2,19 +2,17 @@
 import {
   AlertTriangle,
   ArrowUpRight,
-  ChevronDown,
   RefreshCw,
   Trash2,
   Upload,
 } from 'lucide-vue-next'
-import { computed, onMounted, shallowRef } from 'vue'
+import { shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import type { AnalysisMode, ArchiveImport, UploadAnalysisTask } from '@/api/types'
+import type { AnalysisMode, UploadAnalysisTask } from '@/api/types'
 import ArchiveImportWorkspace from '@/components/uploads/ArchiveImportWorkspace.vue'
 import FileDropzone from '@/components/uploads/FileDropzone.vue'
 import SupportedUploadTypes from '@/components/uploads/SupportedUploadTypes.vue'
-import { useArchiveImportList } from '@/composables/useArchiveImportList'
 import {
   type UnifiedUploadItem,
   useUnifiedUpload,
@@ -23,9 +21,12 @@ import { formatBytes } from '@/utils/formatters'
 
 const router = useRouter()
 const uploads = useUnifiedUpload()
-const imports = useArchiveImportList()
 const warningMessage = shallowRef('')
-const expandedImportId = shallowRef<string | null>(null)
+const activeArchive = shallowRef<{
+  id: string
+  uploadId: string
+  filename: string
+} | null>(null)
 
 const modes: readonly {
   value: AnalysisMode
@@ -49,12 +50,6 @@ const modes: readonly {
   },
 ]
 
-const expandedImport = computed(
-  () =>
-    imports.items.value.find((item) => item.id === expandedImportId.value) ??
-    null,
-)
-
 function addFiles(files: File[]): void {
   warningMessage.value = uploads.addFiles(files).join('；')
 }
@@ -77,9 +72,16 @@ async function chooseMode(
 ): Promise<void> {
   const created = await uploads.selectMode(item.localId, mode)
   if (!created) return
-  if (created.analysis_mode === 'archive' && created.archive_import_id) {
-    await imports.refresh()
-    expandedImportId.value = created.archive_import_id
+  if (
+    created.analysis_mode === 'archive' &&
+    created.archive_import_id &&
+    item.uploadId
+  ) {
+    activeArchive.value = {
+      id: created.archive_import_id,
+      uploadId: item.uploadId,
+      filename: item.filename,
+    }
     uploads.forget(item.localId)
     return
   }
@@ -91,18 +93,9 @@ function openCreatedTask(created: UploadAnalysisTask): void {
   void router.push({ name: 'task-detail', params: { id: created.task_id } })
 }
 
-function toggleArchive(item: ArchiveImport): void {
-  expandedImportId.value = expandedImportId.value === item.id ? null : item.id
+function forgetArchive(): void {
+  activeArchive.value = null
 }
-
-function forgetArchive(item: ArchiveImport): void {
-  imports.remove(item.id)
-  if (expandedImportId.value === item.id) expandedImportId.value = null
-}
-
-onMounted(() => {
-  void uploads.recover()
-})
 </script>
 
 <template>
@@ -129,10 +122,6 @@ onMounted(() => {
       <div v-if="warningMessage" class="upload-warning" role="alert">
         <AlertTriangle :size="16" aria-hidden="true" />
         <span>{{ warningMessage }}</span>
-      </div>
-      <div v-if="uploads.recoveryError.value" class="upload-warning" role="alert">
-        <AlertTriangle :size="16" aria-hidden="true" />
-        <span>{{ uploads.recoveryError.value }}</span>
       </div>
       <FileDropzone
         :disabled="uploads.activeId.value !== null"
@@ -211,13 +200,6 @@ onMounted(() => {
                 {{ option(item, mode.value)?.supported === false ? '仍按此模式创建' : '选择此模式' }}
               </el-button>
               <el-button
-                v-else-if="mode.value === 'archive' && task(item, mode.value)?.archive_import_id"
-                :icon="ChevronDown"
-                @click="expandedImportId = task(item, mode.value)?.archive_import_id ?? null"
-              >
-                查看归档解析
-              </el-button>
-              <el-button
                 v-else
                 :icon="ArrowUpRight"
                 @click="openCreatedTask(task(item, mode.value)!)"
@@ -228,44 +210,22 @@ onMounted(() => {
           </div>
         </article>
       </div>
-      <div v-else-if="uploads.recovering.value" class="empty-state">
-        正在恢复待处理上传……
-      </div>
     </div>
   </section>
 
-  <section v-if="imports.items.value.length" class="archive-list surface-panel">
+  <section v-if="activeArchive" class="archive-list surface-panel">
     <header class="archive-list__header">
       <div>
         <span class="mono">ARCHIVE IMPORTS</span>
         <h2>归档解析与二进制任务</h2>
       </div>
-      <el-button :icon="RefreshCw" :loading="imports.loading.value" @click="imports.refresh">
-        刷新
-      </el-button>
     </header>
-    <button
-      v-for="item in imports.items.value"
-      :key="item.id"
-      class="archive-row"
-      type="button"
-      @click="toggleArchive(item)"
-    >
-      <span>
-        <strong>{{ item.filename }}</strong>
-        <small class="mono">{{ item.id }}</small>
-      </span>
-      <span>{{ item.status === 'unsupported' ? '不适用/无结果' : item.status }}</span>
-      <span>{{ item.eligible_entries }} 个可创建</span>
-      <ChevronDown :size="16" aria-hidden="true" />
-    </button>
     <ArchiveImportWorkspace
-      v-if="expandedImport"
-      :key="expandedImport.id"
-      :import-id="expandedImport.id"
-      :upload-id="expandedImport.upload_id"
-      :filename="expandedImport.filename"
-      @deleted="forgetArchive(expandedImport)"
+      :key="activeArchive.id"
+      :import-id="activeArchive.id"
+      :upload-id="activeArchive.uploadId"
+      :filename="activeArchive.filename"
+      @deleted="forgetArchive"
       @open-task="(taskId) => router.push({ name: 'task-detail', params: { id: taskId } })"
     />
   </section>
@@ -322,16 +282,14 @@ onMounted(() => {
   background: #fff;
 }
 
-.asset-card__header > div,
-.archive-row > span:first-child {
+.asset-card__header > div {
   display: grid;
   min-width: 0;
   gap: 3px;
 }
 
 .asset-card__header span,
-.asset-card__state,
-.archive-row small {
+.asset-card__state {
   color: var(--ink-600);
   font-size: 11px;
 }
@@ -377,27 +335,6 @@ onMounted(() => {
   margin-top: 18px;
 }
 
-.archive-row {
-  display: grid;
-  width: 100%;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  align-items: center;
-  gap: 16px;
-  padding: 13px 18px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink-800);
-  background: #fff;
-  text-align: left;
-  cursor: pointer;
-}
-
-.empty-state {
-  padding: 24px;
-  color: var(--ink-600);
-  text-align: center;
-}
-
 @media (max-width: 860px) {
   .mode-grid {
     grid-template-columns: 1fr;
@@ -415,10 +352,6 @@ onMounted(() => {
   .asset-card__state {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .archive-row {
-    grid-template-columns: 1fr auto;
   }
 }
 </style>
