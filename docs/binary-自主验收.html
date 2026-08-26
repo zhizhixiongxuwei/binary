@@ -155,7 +155,7 @@ shasum -a 256 manifests/package.sha256
 shasum -a 256 manifests/source.sha256</code></pre></section>
     </div>
     <p>两个清单文件自身的 SHA-256 必须与用户封存日在交付目录之外记录的可信值一致。建议记录设备、操作系统、操作人、时间、<code>manifests/source-git.txt</code> 和完整命令输出。</p>
-    <div class="callout"><strong>2026-08-25 本次源码交付锚点：</strong><code>source-git.txt</code> 记录提交 <code>574927f4c7ed6abead7730365d865390db9e19cd</code>；<code>package.sha256</code> 文件自身摘要为 <code>09f0c5dd3b420df7b42fcfa49d56146755369b022d69f1cf10880f8a6dc6319e</code>，<code>source.sha256</code> 文件自身摘要为 <code>1e33c53ee3ee3a0991e9582cc5deb4432cd8041d033b3031e5082cc2462800d5</code>。三项都应保存在交付目录之外；重新生成交付后必须重新记录。</div>
+    <div class="callout"><strong>2026-08-26 本次源码交付锚点：</strong><code>source-git.txt</code> 记录提交 <code>cf42c36f06e1e2d24fbd1e3a7dfa01b8afd8388c</code>；<code>package.sha256</code> 文件自身摘要为 <code>c1b3ef52cae0794a4b892f467f5efc641ebff3394effb88b5226410c5d89e7fd</code>，<code>source.sha256</code> 文件自身摘要为 <code>db04b37b00fc72856c2a23609e9bb4190be71889f76824dcea7a7e4de04b3f0a</code>。三项都应保存在交付目录之外；重新生成交付后必须重新记录。</div>
 
     <h2 id="load">5. 阶段二：导入运行与构建镜像</h2>
     <div class="os-grid">
@@ -212,12 +212,13 @@ grep '^INITIAL_ADMIN_' .env</code></pre></section>
     <h2 id="current-flow">7.1 当前封存源码应能验证的完整业务链路</h2>
     <ol>
       <li>上传 DLL、EXE、SYS、PYC、Mach-O、CLASS、ZIP、GZIP、TAR、RAR、JAR、APK、IMG、ISO 或 EXT4；上传后再选择二进制、归档或容器/映像模式。</li>
-      <li>二进制任务手动反编译并调用对应 checker，漏洞详情能够根据持久化 source project/file ID 和行列范围打开 Monaco Editor。</li>
+      <li>二进制任务手动反编译并调用对应 checker，在线漏洞详情能够根据持久化 source project/file ID 和行列范围打开 Monaco Editor。下载后的离线 HTML 报告只保留源码路径、行列、代码片段和证据，不生成无法脱离系统工作的任务链接。</li>
       <li>归档、ISO 9660 和 EXT4 按一层只读解析，符合条件的 ELF、PE、CLASS、JAR、PYC 等成员可批量创建子任务；子任务互相独立，可分别生成 JSON、HTML、Word 报告。</li>
       <li>“归档批次”页面可长期查看父子关系；选择报告格式后生成 ZIP 总报告，可选包含反编译源码。总包只收集已经 ready 的子报告，并在 <code>manifest.json</code> 中明确记录缺失与省略项。</li>
       <li>Docker Save TAR、OCI Layout TAR 和实际内容为 Docker archive 的 IMG 可手动执行 Trivy；不适用的 ISO、EXT4 内容允许识别并显示“不适用/无结果”。</li>
     </ol>
     <div class="callout warn">如果要演示总报告，必须先对至少一个归档子任务完成反编译、源码检查和单任务报告生成。总报告是已有结果的不可变合集，不会暗中替用户执行检测。</div>
+    <div class="callout"><strong>2026-08-26 制备机回归基线：</strong>封存所用运行镜像已针对 <code>binary-repo</code> 的 25 个业务样本执行端到端回归：25 个上传全部成功，12 个归档全部完成一层解析并实际创建 19 个子任务，29 个二进制任务全部完成反编译和对应 C/Java/Python checker，3 个 Docker/OCI 镜像任务全部完成 Trivy；共记录 225 条 finding、生成并校验 93 份 JSON/HTML/DOCX 单任务报告和 12 个归档总报告 ZIP。一个从 JAR 拆出的内部类为 0 命中，按当前策略不生成个人报告，总包明确记录省略。现场自主验收应使用同一批样本复现流程，但硬件性能会影响耗时，任意其他文件也不保证产生相同命中数量。</div>
 
     <h2 id="change">8. 阶段五：现场添加小功能</h2>
     <p>先复制一份已经验真的工作目录，原始副本保持只读。Windows 可使用 VS Code 打开 <code>C:\BinaryScan\binary-demo\app</code>；Linux/macOS 打开对应 <code>app/</code>。</p>

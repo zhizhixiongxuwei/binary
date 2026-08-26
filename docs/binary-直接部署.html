@@ -127,7 +127,7 @@ chmod +x ./*.sh
 shasum -a 256 manifests/package.sha256</code></pre></section>
     </div>
     <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。</div>
-    <div class="callout"><strong>2026-08-25 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>56f29385d6e5cbec8a960617c96e218a1fab3cd74fbfd8a2b4da9b085ebac831</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
+    <div class="callout"><strong>2026-08-26 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>fdde3c598cd6e052e0d16074bc0d01130627f71eabddee346d34953abc7b8fbe</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
 
     <h2 id="load">4. 离线导入九个运行镜像</h2>
     <div class="os-grid">
@@ -188,12 +188,13 @@ sudo ./manage.sh status</code></pre></section>
     <h2 id="acceptance">8. 当前版本业务验收主线</h2>
     <ol>
       <li>上传 DLL、EXE、SYS、PYC、Mach-O、CLASS、ZIP、GZIP、TAR、RAR、JAR、APK、IMG、ISO 或 EXT4 文件；上传完成后再选择“二进制”“归档”或“容器/映像”分析模式。</li>
-      <li>二进制模式按实际识别结果进入 Ghidra、JVM 或 PYC 反编译，再手动启动 C、Java 或 Python 源码检查；源码、行列定位和 finding 均写入 <code>data/</code>。</li>
+      <li>二进制模式按实际识别结果进入 Ghidra、JVM 或 PYC 反编译，再手动启动 C、Java 或 Python 源码检查；源码、行列定位和 finding 均写入 <code>data/</code>。在线任务页的 Monaco Editor 可以读取持久化源码；下载后的离线 HTML 报告只展示路径、行列和代码片段，不提供依赖系统地址的“在源码中打开”链接。</li>
       <li>归档模式只读拆分一层；ZIP、TAR、ISO 9660、EXT4 等可列出符合条件的成员并批量创建二进制子任务。每个子任务独立反编译、检查并导出 JSON、HTML 或 Word 报告。</li>
       <li>从左侧“归档批次”展开对应批次，选择格式生成总报告 ZIP；总包只收集当时已经 ready 的子报告，可选包含反编译源码，缺失格式和未收录任务写入 <code>manifest.json</code> 与 <code>index.html</code>。</li>
       <li>容器/映像模式由用户手动启动 Trivy。Docker Save TAR、OCI Layout TAR 以及内容实际为 Docker archive 的 IMG 可检测；ISO、EXT4 或其他不适用内容应明确显示“不适用/无结果”，不得伪造漏洞。</li>
     </ol>
     <div class="callout warn">总报告不会自动替子任务启动反编译、checker 或单任务报告。验收总报告前，应先进入各子任务完成所需流程并生成对应格式报告，再返回“归档批次”汇总。</div>
+    <div class="callout"><strong>2026-08-26 制备机回归基线：</strong>使用随项目维护的 <code>binary-repo</code> 业务样本完成 25/25 上传，12/12 归档一层展开，实际创建 19 个归档子任务；29/29 反编译和对应 checker、3/3 Trivy 均到达完成状态，共记录 225 条 finding。31 个有结果任务生成并下载校验了 93 份 JSON/HTML/DOCX 单任务报告，12 个归档批次均生成总报告 ZIP。JAR 中单独拆出的一个内部类检测完成但为 0 命中，因此按“有结果才生成报告”策略不生成该子任务报告，并在总包清单中记为省略。该数字是本次制备机与本批测试样本的回归记录，不是对任意用户文件命中数量或现场耗时的承诺。</div>
 
     <h2 id="operate">9. 日常命令对照表</h2>
     <table class="command-table">
