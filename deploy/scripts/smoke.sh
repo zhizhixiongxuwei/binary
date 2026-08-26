@@ -368,7 +368,7 @@ live_workflow_smoke() {
     -H 'Content-Type: application/json' --data-binary "@$smoke_tmp/report-request.json" \
     "$smoke_base_url/api/v1/tasks/$smoke_task_id/reports")
   [ "$smoke_code" = 200 ] || die "report idempotent replay failed with HTTP $smoke_code"
-  jq -e --arg id "$smoke_report_id" '.report.id == $id and .report.schemaVersion == "binaryscan-report-v2"' \
+  jq -e --arg id "$smoke_report_id" '.report.id == $id and .report.schemaVersion == "binaryscan-report-v3"' \
     "$smoke_tmp/report-replay.json" >/dev/null || die "report replay returned a different report"
 
   smoke_curl --fail --dump-header "$smoke_tmp/report-headers" \
@@ -383,7 +383,9 @@ live_workflow_smoke() {
   jq -e --arg task "$smoke_task_id" --arg sha "$smoke_upload_sha" \
     --arg decompile "$smoke_decompile_run_id" --arg check "$smoke_check_run_id" \
     --arg project "$smoke_project_id" --arg file "$smoke_source_file_id" '
-      .schema == "binaryscan-report-v2"
+      .schema == "binaryscan-report-v3"
+      and .summary.findingCount >= 1
+      and .summary.affectedFileCount >= 1
       and .task.id == $task
       and .task.inputSha256 == $sha
       and (([.runs[].id] | sort) == ([$decompile, $check] | sort))

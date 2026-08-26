@@ -1,11 +1,12 @@
 package app
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
-	"html"
-	"net/url"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,21 +14,22 @@ import (
 )
 
 func TestHTMLReportIncludesStableSourceLocatorAndEscapesContent(t *testing.T) {
+	runs := []map[string]any{{"kind": "java_sast", "status": "complete", "toolName": "java-checker"}}
+	findings := []map[string]any{{
+		"severity": "high", "ruleId": "JAVA001", "title": "Runtime <exec>",
+		"message": "message", "path": "src/Foo.java", "startLine": 12, "startColumn": 5,
+		"endLine": 13, "endColumn": 9,
+		"sourceProjectId": "project-1", "sourceFileId": "file-1", "snippet": "Runtime.exec(value < 1);",
+	}}
 	snapshot := map[string]any{
-		"task": map[string]any{"id": "task-1", "displayName": "unsafe <name>", "inputSha256": "abc"},
-		"findings": []map[string]any{{
-			"severity": "high", "ruleId": "JAVA001", "title": "Runtime <exec>",
-			"message": "message", "path": "src/Foo.java", "startLine": 12, "startColumn": 5,
-			"endLine": 13, "endColumn": 9,
-			"sourceProjectId": "project-1", "sourceFileId": "file-1", "snippet": "Runtime.exec(value < 1);",
-		}},
+		"schema": reportSchemaVersion, "generatedAt": "2026-08-26T10:00:00+08:00",
+		"task":    map[string]any{"id": "task-1", "displayName": "unsafe <name>", "inputSha256": "abc"},
+		"summary": buildReportSummary(runs, findings), "runs": runs, "findings": findings,
 		"findingsTruncated": false,
 	}
 	body := string(buildHTMLReport(snapshot))
-	href := reportSourceHref("task-1", snapshot["findings"].([]map[string]any)[0])
 	for _, expected := range []string{
-		"binaryscan-report-v2", "src/Foo.java:12:5",
-		html.EscapeString(href),
+		"binaryscan-report-v3", "执行摘要", "检测运行（1）", "漏洞明细（1）", "src/Foo.java:12:5",
 		"unsafe &lt;name&gt;", "Runtime &lt;exec&gt;", "value &lt; 1",
 	} {
 		if !strings.Contains(body, expected) {
@@ -37,45 +39,84 @@ func TestHTMLReportIncludesStableSourceLocatorAndEscapesContent(t *testing.T) {
 	if strings.Contains(body, "unsafe <name>") || strings.Contains(body, "Runtime <exec>") {
 		t.Fatal("report contains unescaped content")
 	}
-	parsed, err := url.Parse(href)
-	if err != nil {
-		t.Fatalf("parse report source URL: %v", err)
-	}
-	if parsed.Path != "/tasks/task-1" {
-		t.Fatalf("source URL path = %q", parsed.Path)
-	}
-	wantQuery := map[string]string{
-		"detail": "results", "result": "decompile", "sourceProject": "project-1",
-		"sourceFile": "file-1", "sourcePath": "src/Foo.java", "startLine": "12",
-		"startColumn": "5", "endLine": "13", "endColumn": "9",
-	}
-	for key, expected := range wantQuery {
-		if actual := parsed.Query().Get(key); actual != expected {
-			t.Errorf("source URL query %s = %q, want %q", key, actual, expected)
-		}
-	}
-	for _, legacy := range []string{"tab", "project", "file", "line", "column"} {
-		if parsed.Query().Has(legacy) {
-			t.Errorf("source URL retained legacy query %q", legacy)
+	for _, forbidden := range []string{"在源码中打开", "href=\"/tasks/", "file:///tasks/"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("offline report retained unusable source link %q", forbidden)
 		}
 	}
 }
 
-func TestReportSourceHrefUsesOneBasedFallbackRange(t *testing.T) {
-	href := reportSourceHref("task-1", map[string]any{
-		"sourceProjectId": "project-1", "sourceFileId": "file-1",
-		"startLine": 0, "startColumn": nil, "endLine": -1, "endColumn": 0,
-	})
-	parsed, err := url.Parse(href)
+func TestReportSummaryCountsSeverityFilesRulesAndRuns(t *testing.T) {
+	summary := buildReportSummary(
+		[]map[string]any{{"status": "complete"}, {"status": "partial"}, {"status": "future"}},
+		[]map[string]any{
+			{"severity": "high", "path": "a.c", "ruleId": "C001"},
+			{"severity": "HIGH", "path": "a.c", "ruleId": "C001"},
+			{"severity": "unexpected", "path": "b.c", "ruleId": "C002"},
+		},
+	)
+	if summary["findingCount"] != 3 || summary["affectedFileCount"] != 2 || summary["ruleCount"] != 2 {
+		t.Fatalf("unexpected report summary: %#v", summary)
+	}
+	severity := reportMap(summary["severityCounts"])
+	if severity["high"] != 2 || severity["unknown"] != 1 {
+		t.Fatalf("unexpected severity counts: %#v", severity)
+	}
+	runCounts := reportMap(summary["runCounts"])
+	if runCounts["total"] != 3 || runCounts["complete"] != 1 || runCounts["partial"] != 1 || runCounts["other"] != 1 {
+		t.Fatalf("unexpected run counts: %#v", runCounts)
+	}
+}
+
+func TestDOCXReportContainsStructuredSections(t *testing.T) {
+	findings := []map[string]any{{
+		"severity": "high", "ruleId": "C001", "title": "unsafe <copy>", "message": "buffer copy",
+		"path": "src/main.c", "startLine": 8, "startColumn": 3, "snippet": "strcpy(dst, src);",
+	}}
+	snapshot := map[string]any{
+		"schema": reportSchemaVersion, "generatedAt": "2026-08-26T10:00:00+08:00",
+		"task":    map[string]any{"id": "task-1", "displayName": "sample", "inputSha256": "abc"},
+		"summary": buildReportSummary(nil, findings), "runs": []map[string]any{}, "findings": findings,
+	}
+	body, err := buildDOCXReport(snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, expected := range map[string]string{
-		"startLine": "1", "startColumn": "1", "endLine": "1", "endColumn": "2",
-	} {
-		if actual := parsed.Query().Get(key); actual != expected {
-			t.Errorf("%s = %q, want %q", key, actual, expected)
+	if output := os.Getenv("BINARYSCAN_DOCX_QA_OUTPUT"); output != "" {
+		if err := os.WriteFile(output, body, 0o600); err != nil {
+			t.Fatalf("write DOCX QA artifact: %v", err)
 		}
+	}
+	archive, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("open generated docx: %v", err)
+	}
+	parts := make(map[string]string)
+	for _, file := range archive.File {
+		reader, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		parts[file.Name] = string(content)
+	}
+	for _, required := range []string{"word/document.xml", "word/styles.xml", "word/header1.xml", "word/footer1.xml"} {
+		if parts[required] == "" {
+			t.Errorf("generated docx omitted %s", required)
+		}
+	}
+	document := parts["word/document.xml"]
+	for _, expected := range []string{"执行摘要", "任务信息", "检测运行", "漏洞明细", "src/main.c:8:3", "unsafe &lt;copy&gt;", `<w:tbl>`} {
+		if !strings.Contains(document, expected) {
+			t.Errorf("document.xml omitted %q", expected)
+		}
+	}
+	if strings.Contains(document, `&quot;schema&quot;`) {
+		t.Fatal("DOCX still renders raw JSON instead of a structured report")
 	}
 }
 
@@ -105,7 +146,7 @@ func TestReportIntentMatchesCanonicalRunSet(t *testing.T) {
 func TestVerifyReportFileChecksSizeAndDigest(t *testing.T) {
 	t.Parallel()
 	filename := filepath.Join(t.TempDir(), "report.json")
-	body := []byte(`{"schema":"binaryscan-report-v2"}`)
+	body := []byte(`{"schema":"binaryscan-report-v3"}`)
 	if err := os.WriteFile(filename, body, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -278,7 +278,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       id: 'demo-report-archive-html',
       task_id: DEMO_TASK_IDS.firmware,
       format: 'html',
-      schema_version: 'binaryscan-report-v2',
+      schema_version: 'binaryscan-report-v3',
       status: 'complete',
       sha256: 'c'.repeat(64),
       size_bytes: 48_216,
@@ -291,7 +291,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       id: 'demo-report-archive-json',
       task_id: DEMO_TASK_IDS.firmware,
       format: 'json',
-      schema_version: 'binaryscan-report-v2',
+      schema_version: 'binaryscan-report-v3',
       status: 'complete',
       sha256: 'd'.repeat(64),
       size_bytes: 31_904,
@@ -1033,7 +1033,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         id: `demo-report-${String(reportCounter).padStart(4, '0')}`,
         task_id: taskId,
         format,
-        schema_version: '1.1.0',
+        schema_version: 'binaryscan-report-v3',
         status: 'complete',
         sha256: format === 'json' ? 'c'.repeat(64) : 'd'.repeat(64),
         size_bytes: format === 'json' ? 32_768 : 65_536,
@@ -1042,10 +1042,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         created_at: '2026-07-30T12:00:00+08:00',
         completed_at: '2026-07-30T12:00:01+08:00',
       }
-      const nextReports = (reports.get(taskId) ?? []).filter(
-        (report) => report.format !== format,
-      )
-      nextReports.push(created)
+      const nextReports = [created, ...(reports.get(taskId) ?? [])]
       reports.set(taskId, nextReports)
       reportByIdempotencyKey.set(idempotencyKey, created)
       return cloneReport(created)

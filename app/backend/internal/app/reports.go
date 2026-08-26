@@ -1,7 +1,6 @@
 package app
 
 import (
-	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -10,14 +9,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -116,7 +112,7 @@ func (s *taskService) createReport(c *gin.Context) {
 	if request.Format == "html" {
 		reportBody = buildHTMLReport(snapshot)
 	} else if request.Format == "docx" {
-		reportBody, err = buildDOCXReport(snapshotBody)
+		reportBody, err = buildDOCXReport(snapshot)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 			return
@@ -150,9 +146,9 @@ func (s *taskService) createReport(c *gin.Context) {
 	if _, err := tx.ExecContext(c, `INSERT INTO reports
 		(id, task_id, created_by, idempotency_key, format, schema_version, status, storage_key, sha256,
 		 size_bytes, selected_run_ids, snapshot)
-		VALUES (?, ?, ?, ?, ?, 'binaryscan-report-v2', 'ready', ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE id = id`,
-		reportID, taskID, user.ID, idempotencyKey, request.Format, storageKey,
+		reportID, taskID, user.ID, idempotencyKey, request.Format, reportSchemaVersion, storageKey,
 		digest[:], sizeBytes, selected, snapshotBody); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
@@ -369,11 +365,12 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 		findings = findings[:50000]
 	}
 	return map[string]any{
-		"schema": "binaryscan-report-v2", "generatedAt": time.Now().UTC(),
+		"schema": reportSchemaVersion, "generatedAt": time.Now().UTC(),
 		"task": map[string]any{"id": taskID, "displayName": displayName, "status": taskStatus,
 			"detectedFormat": nullableString(detected), "inputSha256": strings.ToLower(inputSHA256),
 			"createdAt": taskCreated},
-		"runs": runs, "findings": findings, "findingsTruncated": findingsTruncated,
+		"summary": buildReportSummary(runs, findings),
+		"runs":    runs, "findings": findings, "findingsTruncated": findingsTruncated,
 	}, nil
 }
 
@@ -500,146 +497,6 @@ func verifyReportFile(filename string, expectedSize sql.NullInt64, expectedSHA s
 		return fmt.Errorf("report digest does not match database record")
 	}
 	return nil
-}
-
-func buildHTMLReport(snapshot map[string]any) []byte {
-	var output strings.Builder
-	output.WriteString(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">`)
-	output.WriteString(`<meta name="viewport" content="width=device-width,initial-scale=1">`)
-	output.WriteString(`<title>BinaryScan 分析报告</title><style>`)
-	output.WriteString(`body{font:14px/1.6 system-ui;margin:32px;color:#17212b}h1{margin-bottom:4px}`)
-	output.WriteString(`table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dce4e8;text-align:left;vertical-align:top}`)
-	output.WriteString(`th{background:#f1f6f7}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}`)
-	output.WriteString(`pre{overflow:auto;white-space:pre;background:#172427;color:#e9f2f0;padding:12px;border-radius:6px}`)
-	output.WriteString(`.critical,.high{color:#a31d2d}.medium{color:#8a5700}.low{color:#176b57}.finding{margin:20px 0}`)
-	output.WriteString(`</style></head><body><h1>BinaryScan 分析报告</h1>`)
-	output.WriteString(`<p>报告格式：<code>binaryscan-report-v2</code></p>`)
-	task, _ := snapshot["task"].(map[string]any)
-	taskID := reportText(task["id"])
-	output.WriteString(`<dl><dt>任务</dt><dd>` + html.EscapeString(reportText(task["displayName"])) + `</dd>`)
-	output.WriteString(`<dt>输入 SHA-256</dt><dd><code>` + html.EscapeString(reportText(task["inputSha256"])) + `</code></dd></dl>`)
-	findings, _ := snapshot["findings"].([]map[string]any)
-	output.WriteString(`<h2>检测结果（` + strconv.Itoa(len(findings)) + `）</h2>`)
-	for _, finding := range findings {
-		severity := strings.ToLower(reportText(finding["severity"]))
-		path := reportText(finding["path"])
-		startLine := reportText(finding["startLine"])
-		startColumn := reportText(finding["startColumn"])
-		output.WriteString(`<section class="finding"><h3 class="` + html.EscapeString(severity) + `">`)
-		output.WriteString(html.EscapeString(strings.ToUpper(severity) + " · " + reportText(finding["ruleId"]) + " · " + reportText(finding["title"])))
-		output.WriteString(`</h3><p>` + html.EscapeString(reportText(finding["message"])) + `</p>`)
-		output.WriteString(`<p><code>` + html.EscapeString(path+":"+startLine+":"+startColumn) + `</code>`)
-		if href := reportSourceHref(taskID, finding); href != "" {
-			output.WriteString(` · <a href="` + html.EscapeString(href) + `">在源码中打开</a>`)
-		}
-		output.WriteString(`</p>`)
-		if snippet := reportText(finding["snippet"]); snippet != "" {
-			output.WriteString(`<pre><code>` + html.EscapeString(snippet) + `</code></pre>`)
-		}
-		output.WriteString(`</section>`)
-	}
-	if truncated, _ := snapshot["findingsTruncated"].(bool); truncated {
-		output.WriteString(`<p><strong>注意：</strong>检测结果已达到报告上限，存在截断。</p>`)
-	}
-	output.WriteString(`</body></html>`)
-	return []byte(output.String())
-}
-
-func reportSourceHref(taskID string, finding map[string]any) string {
-	projectID := reportText(finding["sourceProjectId"])
-	fileID := reportText(finding["sourceFileId"])
-	if taskID == "" || projectID == "" || fileID == "" {
-		return ""
-	}
-	startLine := reportCoordinate(finding["startLine"], 1)
-	startColumn := reportCoordinate(finding["startColumn"], 1)
-	endLine := reportCoordinate(finding["endLine"], startLine)
-	if endLine < startLine {
-		endLine = startLine
-	}
-	endColumnFallback := 1
-	if endLine == startLine {
-		endColumnFallback = startColumn + 1
-	}
-	endColumn := reportCoordinate(finding["endColumn"], endColumnFallback)
-	if endLine == startLine && endColumn < startColumn {
-		endColumn = startColumn
-	}
-	query := url.Values{
-		"detail":        {"results"},
-		"result":        {"decompile"},
-		"sourceProject": {projectID},
-		"sourceFile":    {fileID},
-		"startLine":     {strconv.Itoa(startLine)},
-		"startColumn":   {strconv.Itoa(startColumn)},
-		"endLine":       {strconv.Itoa(endLine)},
-		"endColumn":     {strconv.Itoa(endColumn)},
-	}
-	if path := reportText(finding["path"]); path != "" {
-		query.Set("sourcePath", path)
-	}
-	return "/tasks/" + url.PathEscape(taskID) + "?" + query.Encode()
-}
-
-func reportCoordinate(value any, fallback int) int {
-	parsed, err := strconv.Atoi(reportText(value))
-	if err != nil || parsed <= 0 {
-		return fallback
-	}
-	return parsed
-}
-
-func reportText(value any) string {
-	if value == nil {
-		return ""
-	}
-	return fmt.Sprint(value)
-}
-
-func buildDOCXReport(snapshot []byte) ([]byte, error) {
-	var body bytes.Buffer
-	archive := zip.NewWriter(&body)
-	files := map[string]string{
-		"[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`,
-		"_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`,
-		"word/document.xml": docxDocumentXML(snapshot),
-	}
-	for _, name := range []string{"[Content_Types].xml", "_rels/.rels", "word/document.xml"} {
-		writer, err := archive.Create(name)
-		if err != nil {
-			archive.Close()
-			return nil, err
-		}
-		if _, err := writer.Write([]byte(files[name])); err != nil {
-			archive.Close()
-			return nil, err
-		}
-	}
-	if err := archive.Close(); err != nil {
-		return nil, err
-	}
-	return body.Bytes(), nil
-}
-
-func docxDocumentXML(snapshot []byte) string {
-	var paragraphs strings.Builder
-	paragraphs.WriteString(`<w:p><w:r><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:t>BinaryScan 分析报告</w:t></w:r></w:p>`)
-	for _, line := range strings.Split(string(snapshot), "\n") {
-		paragraphs.WriteString(`<w:p><w:r><w:rPr><w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/><w:sz w:val="18"/></w:rPr><w:t xml:space="preserve">`)
-		paragraphs.WriteString(html.EscapeString(line))
-		paragraphs.WriteString(`</w:t></w:r></w:p>`)
-	}
-	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
-		paragraphs.String() + `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134"/></w:sectPr></w:body></w:document>`
 }
 
 func publishReportFile(root, taskID, reportID, format string, body []byte) (string, int64, error) {

@@ -110,14 +110,14 @@ export function useTaskReports(options: UseTaskReportsOptions) {
     if (!taskIsReportable.value) {
       return '任务完成、部分完成、失败或取消后才能生成报告；当前仅可查看已有报告。'
     }
-    return '确认按需反编译和镜像检测结束后再生成；JSON 与 HTML 独立取快照。'
+    return '确认按需反编译和镜像检测结束后再生成；JSON、HTML 与 Word 独立取快照，已完成格式可重新生成。'
   })
   const state = computed<TaskResultState>(() => {
     if (loading.value) {
       return {
         status: 'loading',
         title: '正在读取任务报告',
-        description: '正在加载 JSON 和 HTML 报告的生成状态。',
+        description: '正在加载 JSON、HTML 和 Word 报告的生成状态。',
       }
     }
     if (error.value) {
@@ -133,7 +133,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
         status: 'empty',
         title: '尚未生成任务报告',
         description: canGenerate.value
-          ? '可以按需生成 JSON 或离线 HTML 报告。'
+          ? '可以按需生成 JSON、离线 HTML 或 Word 报告。'
           : generationHint.value,
       }
     }
@@ -291,7 +291,10 @@ export function useTaskReports(options: UseTaskReportsOptions) {
     return created
   }
 
-  async function generate(format: ReportFormat): Promise<void> {
+  async function generate(
+    format: ReportFormat,
+    regenerate = false,
+  ): Promise<void> {
     const taskId = toValue(options.taskId)
     const existing = reportFor(format)
     if (!taskId || !isEnabled() || generatingFormats.value.includes(format)) {
@@ -301,7 +304,13 @@ export function useTaskReports(options: UseTaskReportsOptions) {
       operationError.value = generationHint.value
       return
     }
-    if (existing && existing.status !== 'failed') return
+    if (
+      existing &&
+      existing.status !== 'failed' &&
+      !(regenerate && existing.status === 'complete')
+    ) {
+      return
+    }
 
     const currentScope = scopeGeneration
     const intentKey = operationKey(taskId, format)

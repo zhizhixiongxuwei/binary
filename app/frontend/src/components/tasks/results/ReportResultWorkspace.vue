@@ -35,7 +35,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  generate: [format: ReportFormat]
+  generate: [format: ReportFormat, regenerate?: boolean]
   download: [report: TaskReport, encoding: ReportDownloadEncoding]
   viewSources: []
   exportSources: [includeCombined: boolean]
@@ -84,7 +84,7 @@ const rows = computed<readonly ReportRow[]>(() =>
   })),
 )
 const completeCount = computed(
-  () => props.reports.filter((report) => report.status === 'complete').length,
+  () => rows.value.filter((row) => row.report?.status === 'complete').length,
 )
 function statusLabel(report: TaskReport | undefined): string {
   if (!report) return '未生成'
@@ -114,6 +114,14 @@ function canRequestGeneration(row: ReportRow): boolean {
   return (
     props.canGenerate &&
     (!row.report || row.report.status === 'failed') &&
+    !isGenerating(row.format)
+  )
+}
+
+function canRegenerate(row: ReportRow): boolean {
+  return (
+    props.canGenerate &&
+    row.report?.status === 'complete' &&
     !isGenerating(row.format)
   )
 }
@@ -248,12 +256,38 @@ const sampleRelationLabels: Readonly<
         </dl>
 
         <div class="report-row__action">
-          <ReportDownloadControl
+          <div
             v-if="row.report?.status === 'complete'"
-            :report="row.report"
-            :pending-key="downloadingReportKey"
-            @download="handleDownload"
-          />
+            class="report-complete-actions"
+          >
+            <ReportDownloadControl
+              :report="row.report"
+              :pending-key="downloadingReportKey"
+              @download="handleDownload"
+            />
+            <button
+              class="report-regenerate"
+              type="button"
+              :disabled="!canRegenerate(row) || downloadingReportKey !== ''"
+              :title="
+                canGenerate
+                  ? `按当前检测结果重新生成 ${row.label}`
+                  : generationHint
+              "
+              :aria-busy="isGenerating(row.format)"
+              :aria-label="`重新生成 ${row.label}`"
+              @click="emit('generate', row.format, true)"
+            >
+              <LoaderCircle
+                v-if="isGenerating(row.format)"
+                class="spin"
+                :size="13"
+                aria-hidden="true"
+              />
+              <RotateCw v-else :size="13" aria-hidden="true" />
+              重新生成
+            </button>
+          </div>
           <button
             v-else-if="!row.report || row.report.status === 'failed'"
             class="report-action"
@@ -560,8 +594,43 @@ const sampleRelationLabels: Readonly<
 
 .report-row__action {
   display: flex;
-  min-width: 82px;
+  min-width: 184px;
   justify-content: flex-end;
+}
+
+.report-complete-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.report-regenerate {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid #b9c5c7;
+  border-radius: 4px;
+  color: var(--teal-strong);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.report-regenerate:hover:not(:disabled) {
+  border-color: var(--teal);
+  background: #f0f8f7;
+}
+
+.report-regenerate:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .report-action {
