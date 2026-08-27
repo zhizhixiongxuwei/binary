@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -37,6 +38,8 @@ type taskSummary struct {
 	ID               string    `json:"id"`
 	DisplayName      string    `json:"displayName"`
 	Status           string    `json:"status"`
+	CreatorID        string    `json:"creatorId,omitempty"`
+	CreatorName      string    `json:"creatorName,omitempty"`
 	InputSHA256      string    `json:"inputSha256,omitempty"`
 	InputCategory    string    `json:"inputCategory,omitempty"`
 	AnalysisMode     string    `json:"analysisMode,omitempty"`
@@ -51,6 +54,18 @@ type queuedRun struct {
 	Kind      string    `json:"kind"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
+}
+
+type taskListOptions struct {
+	PageSize    int
+	Cursor      string
+	Keyword     string
+	Status      string
+	InputType   string
+	Creator     string
+	Tag         string
+	CreatedFrom *time.Time
+	CreatedTo   *time.Time
 }
 
 const taskRunsQuery = `SELECT id, kind, status, subject_type, subject_id, result_quality,
@@ -263,27 +278,84 @@ func (s *taskService) persistUpload(
 }
 
 func (s *taskService) list(c *gin.Context) {
-	limit := 50
-	if raw := c.Query("limit"); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 && value <= 100 {
-			limit = value
-		}
+	options, err := parseTaskListOptions(c.Request.URL.Query())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_task_list_query"})
+		return
 	}
-	rows, err := s.db.QueryContext(c, `SELECT t.id, t.display_name, t.status, HEX(b.sha256),
-		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category, t.detected_format, t.created_at, t.updated_at
-		FROM tasks t JOIN blobs b ON b.id = t.blob_id
-		WHERE t.deleted_at IS NULL AND COALESCE(t.analysis_mode, t.input_category, 'binary') <> 'archive'
-		ORDER BY t.created_at DESC LIMIT ?`, limit)
+
+	conditions := []string{
+		"t.deleted_at IS NULL",
+		"COALESCE(t.analysis_mode, t.input_category, 'binary') <> 'archive'",
+	}
+	args := make([]any, 0, 16)
+	if options.Keyword != "" {
+		pattern := "%" + options.Keyword + "%"
+		conditions = append(conditions, "(t.display_name LIKE ? OR t.id LIKE ?)")
+		args = append(args, pattern, pattern)
+	}
+	if options.Status != "" {
+		conditions = append(conditions, "t.status = ?")
+		args = append(args, options.Status)
+	}
+	if options.InputType != "" {
+		conditions = append(conditions, "LOWER(COALESCE(t.detected_format, '')) = ?")
+		args = append(args, options.InputType)
+	}
+	if options.Creator != "" {
+		pattern := "%" + strings.ToLower(options.Creator) + "%"
+		conditions = append(conditions, "(LOWER(u.username) LIKE ? OR LOWER(u.public_id) = ?)")
+		args = append(args, pattern, strings.ToLower(options.Creator))
+	}
+	if options.Tag != "" {
+		conditions = append(conditions, "LOWER(COALESCE(t.detected_format, '')) = ?")
+		args = append(args, strings.ToLower(options.Tag))
+	}
+	if options.CreatedFrom != nil {
+		conditions = append(conditions, "t.created_at >= ?")
+		args = append(args, *options.CreatedFrom)
+	}
+	if options.CreatedTo != nil {
+		conditions = append(conditions, "t.created_at < ?")
+		args = append(args, *options.CreatedTo)
+	}
+	if options.Cursor != "" {
+		var cursorCreated time.Time
+		if queryErr := s.db.QueryRowContext(c, `SELECT created_at FROM tasks
+			WHERE id = ? AND deleted_at IS NULL
+			  AND COALESCE(analysis_mode, input_category, 'binary') <> 'archive'`, options.Cursor).Scan(&cursorCreated); queryErr != nil {
+			if errors.Is(queryErr, sql.ErrNoRows) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_task_list_cursor"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
+			}
+			return
+		}
+		conditions = append(conditions, "(t.created_at < ? OR (t.created_at = ? AND t.id < ?))")
+		args = append(args, cursorCreated, cursorCreated, options.Cursor)
+	}
+
+	query := `SELECT t.id, t.display_name, t.status, u.public_id, u.username, HEX(b.sha256),
+		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category,
+		t.detected_format, t.created_at, t.updated_at
+		FROM tasks t
+		JOIN blobs b ON b.id = t.blob_id
+		JOIN users u ON u.id = t.created_by
+		WHERE ` + strings.Join(conditions, " AND ") + `
+		ORDER BY t.created_at DESC, t.id DESC LIMIT ?`
+	args = append(args, options.PageSize+1)
+	rows, err := s.db.QueryContext(c, query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
 		return
 	}
 	defer rows.Close()
-	tasks := make([]taskSummary, 0)
+	tasks := make([]taskSummary, 0, options.PageSize+1)
 	for rows.Next() {
 		var item taskSummary
 		var inputCategory, analysisMode, detectedCategory, detected sql.NullString
-		if err := rows.Scan(&item.ID, &item.DisplayName, &item.Status, &item.InputSHA256,
+		if err := rows.Scan(&item.ID, &item.DisplayName, &item.Status, &item.CreatorID,
+			&item.CreatorName, &item.InputSHA256,
 			&inputCategory, &analysisMode, &detectedCategory,
 			&detected, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
@@ -300,7 +372,110 @@ func (s *taskService) list(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+	response := gin.H{}
+	if len(tasks) > options.PageSize {
+		response["next_cursor"] = tasks[options.PageSize-1].ID
+		tasks = tasks[:options.PageSize]
+	}
+	response["tasks"] = tasks
+	c.JSON(http.StatusOK, response)
+}
+
+func parseTaskListOptions(values url.Values) (taskListOptions, error) {
+	options := taskListOptions{PageSize: 50}
+	pageSize := strings.TrimSpace(values.Get("page_size"))
+	if pageSize == "" {
+		pageSize = strings.TrimSpace(values.Get("limit"))
+	}
+	if pageSize != "" {
+		value, err := strconv.Atoi(pageSize)
+		if err != nil || value <= 0 || value > 100 {
+			return taskListOptions{}, fmt.Errorf("invalid page size")
+		}
+		options.PageSize = value
+	}
+
+	var err error
+	if options.Cursor, err = taskListText(values.Get("cursor"), 256); err != nil {
+		return taskListOptions{}, err
+	}
+	if options.Keyword, err = taskListText(values.Get("keyword"), 255); err != nil {
+		return taskListOptions{}, err
+	}
+	if options.InputType, err = taskListText(values.Get("input_type"), 64); err != nil {
+		return taskListOptions{}, err
+	}
+	options.InputType = strings.ToLower(options.InputType)
+	if options.Creator, err = taskListText(values.Get("creator"), 128); err != nil {
+		return taskListOptions{}, err
+	}
+	if options.Tag, err = taskListText(values.Get("tag"), 64); err != nil {
+		return taskListOptions{}, err
+	}
+
+	status, err := taskListStatus(values.Get("status"))
+	if err != nil {
+		return taskListOptions{}, err
+	}
+	options.Status = status
+
+	createdFrom := strings.TrimSpace(values.Get("created_from"))
+	createdTo := strings.TrimSpace(values.Get("created_to"))
+	if createdFrom != "" {
+		value, parseErr := time.Parse("2006-01-02", createdFrom)
+		if parseErr != nil {
+			return taskListOptions{}, fmt.Errorf("invalid created_from")
+		}
+		options.CreatedFrom = &value
+	}
+	if createdTo != "" {
+		value, parseErr := time.Parse("2006-01-02", createdTo)
+		if parseErr != nil {
+			return taskListOptions{}, fmt.Errorf("invalid created_to")
+		}
+		value = value.AddDate(0, 0, 1)
+		options.CreatedTo = &value
+	}
+	if options.CreatedFrom != nil && options.CreatedTo != nil && !options.CreatedFrom.Before(*options.CreatedTo) {
+		return taskListOptions{}, fmt.Errorf("invalid task date range")
+	}
+	return options, nil
+}
+
+func taskListText(raw string, maximum int) (string, error) {
+	value := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(value) > maximum || strings.IndexFunc(value, func(character rune) bool {
+		return character <= 0x1f || character == 0x7f
+	}) >= 0 {
+		return "", fmt.Errorf("invalid task list text")
+	}
+	return value, nil
+}
+
+func taskListStatus(raw string) (string, error) {
+	value := strings.ToUpper(strings.TrimSpace(raw))
+	switch value {
+	case "":
+		return "", nil
+	case "QUEUED":
+		return "queued", nil
+	case "SCANNING", "VALIDATING", "IDENTIFYING", "EXTRACTING", "INDEXING", "REPORTING":
+		return "scanning", nil
+	case "SUCCEEDED", "READY":
+		return "ready", nil
+	case "PARTIAL_SUCCEEDED", "PARTIAL":
+		return "partial", nil
+	case "FAILED":
+		return "failed", nil
+	case "DELETING":
+		return "deleting", nil
+	case "DELETED":
+		return "deleted", nil
+	case "UPLOADING", "CANCEL_REQUESTED", "CANCELLED":
+		return "__no_matching_status__", nil
+	default:
+		return "", fmt.Errorf("invalid task status")
+	}
 }
 
 func (s *taskService) get(c *gin.Context) {

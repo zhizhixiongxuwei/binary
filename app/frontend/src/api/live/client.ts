@@ -43,6 +43,8 @@ interface LiveTask {
   id: string
   displayName: string
   status: string
+  creatorId?: string
+  creatorName?: string
   inputSha256?: string
   detectedFormat?: string
   analysisMode?: Model.AnalysisMode
@@ -273,14 +275,30 @@ function mapTask(value: LiveTask): Model.ScanTask {
     risk_level: 'UNKNOWN',
     progress: progress.progress,
     progress_indeterminate: progress.indeterminate,
-    creator_id: currentUser?.id ?? '',
-    creator_name: currentUser?.display_name ?? currentUser?.username ?? '系统用户',
+    creator_id: value.creatorId ?? currentUser?.id ?? '',
+    creator_name:
+      value.creatorName ?? currentUser?.display_name ?? currentUser?.username ?? '系统用户',
     tags: value.detectedFormat ? [value.detectedFormat.toUpperCase()] : [],
     created_at: value.createdAt,
     updated_at: value.updatedAt,
     sample_expires_at: plusDays(value.createdAt, 30),
     sample_deleted_at: null,
   }
+}
+
+export function buildLiveTaskListQuery(query: Model.TaskListQuery): string {
+  const params = new URLSearchParams({
+    page_size: String(Math.min(Math.max(query.page_size, 1), 100)),
+  })
+  if (query.cursor) params.set('cursor', query.cursor)
+  if (query.keyword) params.set('keyword', query.keyword)
+  if (query.status) params.set('status', query.status)
+  if (query.input_type) params.set('input_type', query.input_type)
+  if (query.creator) params.set('creator', query.creator)
+  if (query.tag) params.set('tag', query.tag)
+  if (query.created_from) params.set('created_from', query.created_from)
+  if (query.created_to) params.set('created_to', query.created_to)
+  return params.toString()
 }
 
 function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
@@ -597,15 +615,13 @@ export function createLiveApiClient(): ApiClient {
       return mapUser(result.user)
     },
     async listTasks(query) {
-      const result = await request<{ tasks: LiveTask[] }>(`/tasks?limit=${Math.min(Math.max(query.page_size, 1), 100)}`)
-      let items = result.tasks.map(mapTask)
-      if (query.keyword) {
-        const keyword = query.keyword.toLocaleLowerCase()
-        items = items.filter((task) => task.name.toLocaleLowerCase().includes(keyword))
+      const result = await request<{ tasks: LiveTask[]; next_cursor?: string }>(
+        `/tasks?${buildLiveTaskListQuery(query)}`,
+      )
+      return {
+        items: result.tasks.map(mapTask),
+        ...(result.next_cursor ? { next_cursor: result.next_cursor } : {}),
       }
-      if (query.status) items = items.filter((task) => task.status === query.status)
-      if (query.input_type) items = items.filter((task) => task.input_type === query.input_type)
-      return { items }
     },
     async getTask(id) { return mapTaskDetail(await loadTask(id)) },
     async cancelTask() { return unsupported('当前处理任务不能在此阶段取消') },
