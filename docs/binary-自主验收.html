@@ -156,7 +156,7 @@ shasum -a 256 manifests/package.sha256
 shasum -a 256 manifests/source.sha256</code></pre></section>
     </div>
     <p>两个清单文件自身的 SHA-256 必须与用户封存日在交付目录之外记录的可信值一致。验证脚本核对清单中的内容，但不拒绝后来增加的额外文件，也不验证所有者、权限或时间戳；不要运行目录内来源不明的附加脚本。建议记录设备、操作系统、操作人、时间、<code>manifests/source-git.txt</code> 和完整命令输出。</p>
-    <div class="callout"><strong>2026-08-26 本次源码交付锚点：</strong><code>source-git.txt</code> 记录提交 <code>cf42c36f06e1e2d24fbd1e3a7dfa01b8afd8388c</code>；<code>package.sha256</code> 文件自身摘要为 <code>c1b3ef52cae0794a4b892f467f5efc641ebff3394effb88b5226410c5d89e7fd</code>，<code>source.sha256</code> 文件自身摘要为 <code>db04b37b00fc72856c2a23609e9bb4190be71889f76824dcea7a7e4de04b3f0a</code>。三项都应保存在交付目录之外；重新生成交付后必须重新记录。</div>
+    <div class="callout"><strong>2026-08-30 本次源码交付锚点：</strong><code>source-git.txt</code> 记录提交 <code>256defd3808dd1cd82fd153a185732972293c69b</code>；<code>package.sha256</code> 文件自身摘要为 <code>02f0ac6af67215434e63a87b535fb543d42cc1430bd8ada5f74cf4aecceda5ab</code>，<code>source.sha256</code> 文件自身摘要为 <code>2fb6bddd4a842c87a7c6c93632f34f1b48cd089dd160be5954e1758fa5565ea1</code>。三项都应保存在交付目录之外；重新生成交付后必须重新记录。</div>
 
     <h2 id="load">5. 阶段二：导入运行与构建镜像</h2>
     <div class="os-grid">

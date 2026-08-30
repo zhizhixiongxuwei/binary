@@ -128,7 +128,7 @@ chmod +x ./*.sh
 shasum -a 256 manifests/package.sha256</code></pre></section>
     </div>
     <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。脚本验证清单内文件内容，不拒绝目录中后来增加的额外文件；验收时不要运行来源不明的附加脚本。</div>
-    <div class="callout"><strong>2026-08-26 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>fdde3c598cd6e052e0d16074bc0d01130627f71eabddee346d34953abc7b8fbe</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
+    <div class="callout"><strong>2026-08-30 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>a505974ca926eee59469df4f57ad94defa8bdbf41d780b074b29cc6febb7f99e</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
 
     <h2 id="load">4. 离线导入九个运行镜像</h2>
     <div class="os-grid">
