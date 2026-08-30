@@ -131,6 +131,8 @@ type archiveBundleSourceFile struct {
 	Manifest    archiveBundleManifestSource
 }
 
+// preparedArchiveBundle 是“选择哪些子任务制品”与“实际写 ZIP”之间的确定性计划，
+// Manifest 同时记录包含、省略和缺失原因，让合集即使不完整也可解释。
 type preparedArchiveBundle struct {
 	Manifest   archiveBundleManifest
 	Reports    []archiveBundleReportFile
@@ -145,6 +147,9 @@ type archiveBundleStored struct {
 
 var errNoArchiveReports = errors.New("archive has no completed reports for the requested formats")
 
+// createArchiveReportBundle 为一次归档导入汇总子任务报告及可选源码。
+// 排序后的格式集合与 IncludeSources 构成幂等意图；文件先原子发布、数据库后登记，
+// 并发赢家和 Commit 结果不确定都通过唯一幂等记录回读收敛，未被引用的本次文件会被清理。
 func (s *taskService) createArchiveReportBundle(c *gin.Context) {
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if !validIdempotencyKey(idempotencyKey) {
@@ -254,6 +259,7 @@ func (s *taskService) createArchiveReportBundle(c *gin.Context) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
+		// 提交响应丢失时反查唯一记录；只有数据库确实引用本 bundleID 才保留本次磁盘文件。
 		committed, found, queryErr := s.loadArchiveBundleByIntent(c, user.ID, importID, idempotencyKey)
 		if queryErr == nil && found && archiveBundleIntentMatches(committed.Options, request) {
 			if committed.Record.ID == bundleID {
@@ -269,6 +275,7 @@ func (s *taskService) createArchiveReportBundle(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"bundle": actual.Record})
 }
 
+// canonicalArchiveBundleOptions 校验有限格式白名单并排序，使数组顺序差异不会改变幂等意图。
 func canonicalArchiveBundleOptions(options *archiveBundleOptions) bool {
 	if len(options.Formats) == 0 || len(options.Formats) > 3 {
 		return false
@@ -379,6 +386,7 @@ func (s *taskService) listArchiveReportBundles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"bundles": bundles})
 }
 
+// downloadArchiveReportBundle 与单份报告共享完整性门禁：只传输 ready 且磁盘大小/SHA-256 仍匹配的 ZIP。
 func (s *taskService) downloadArchiveReportBundle(c *gin.Context) {
 	var importID, storageKey string
 	var expectedSHA sql.NullString
@@ -414,6 +422,9 @@ func (s *taskService) downloadArchiveReportBundle(c *gin.Context) {
 
 var errArchiveBundleTooLarge = errors.New("archive report bundle exceeds size limit")
 
+// prepareArchiveBundle 为每个未删除子任务、每种请求格式选择最新 ready 报告；删除的子任务、
+// 尚无所选报告及缺失格式都会保留在 manifest 中。只有至少有一份报告的子任务计为 included，
+// 可选源码仅从这些任务的 ready 项目收集，并对报告与源码声明大小施加 4 GiB 未压缩总上限。
 func (s *taskService) prepareArchiveBundle(
 	ctx context.Context, importID string, options archiveBundleOptions,
 ) (preparedArchiveBundle, error) {
@@ -646,6 +657,9 @@ func (s *taskService) prepareArchiveBundle(
 	return prepared, nil
 }
 
+// publishArchiveBundle 在写入 ZIP 时重新校验每份报告/源码的普通文件类型、大小和 SHA-256，
+// 避免准备清单后磁盘内容被替换。ZIP 完成、fsync 并计算整体摘要后才以硬链接发布为只读文件；
+// 数据库事务失败时由调用方删除，保持与单份报告一致的两阶段发布语义。
 func (s *taskService) publishArchiveBundle(
 	importID, bundleID string, prepared preparedArchiveBundle,
 ) (string, []byte, int64, error) {
@@ -740,6 +754,7 @@ func writeArchiveBundleBytes(archive *zip.Writer, name string, body []byte) erro
 	return err
 }
 
+// writeArchiveBundleFile 在流式写入 ZIP 的同时复算摘要，并检查读取字节数，捕获导出期间的内容变化。
 func writeArchiveBundleFile(
 	archive *zip.Writer, name, filename, expectedSHA string, expectedSize int64,
 ) error {
@@ -776,6 +791,7 @@ func archiveBundleChildDirectory(ordinal uint64, archivePath, taskID string) str
 	return fmt.Sprintf("%05d-%s-%s", ordinal, name, shortIdentifier(taskID))
 }
 
+// portableArchiveSourcePath 保留清洗后的目录层次，并给文件名附加内容摘要前缀，降低净化后重名风险。
 func portableArchiveSourcePath(logicalPath, digest string) string {
 	parts := strings.Split(filepath.ToSlash(logicalPath), "/")
 	for index, part := range parts {
@@ -792,6 +808,8 @@ func portableArchiveSourcePath(logicalPath, digest string) string {
 	return strings.Join(parts, "/")
 }
 
+// portableArchiveComponent 将归档成员名收敛为跨平台安全片段：限制字符和长度、去掉尾随点/空格，
+// 并避开 Windows 设备保留名，使同一 ZIP 可在主流桌面系统安全解压。
 func portableArchiveComponent(value string) string {
 	var cleaned strings.Builder
 	for _, character := range value {

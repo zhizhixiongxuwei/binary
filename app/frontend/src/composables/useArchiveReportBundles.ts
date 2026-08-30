@@ -30,6 +30,8 @@ function message(error: unknown, fallback: string): string {
 export function useArchiveReportBundles(
   options: UseArchiveReportBundlesOptions,
 ) {
+  // 报告包是归档导入的聚合产物，不在浏览器拼装：前端只提交格式/源码选项、
+  // 跟踪服务端产物，并负责把 URL 或 Blob 以安全方式交给浏览器下载。
   const bundles = shallowRef<readonly ArchiveReportBundle[]>([])
   const loading = shallowRef(false)
   const generating = shallowRef(false)
@@ -44,6 +46,7 @@ export function useArchiveReportBundles(
   let generation = 0
 
   function inputSignature(input: CreateArchiveReportBundleInput): string {
+    // 格式先排序，确保勾选顺序不同但语义相同的请求复用同一个幂等键。
     return `${[...input.formats].sort().join(',')}:${input.include_sources ? 'sources' : 'reports'}`
   }
 
@@ -62,6 +65,7 @@ export function useArchiveReportBundles(
   }
 
   function scheduleRelease(objectUrl: string): void {
+    // 点击下载后不能立即 revoke，部分浏览器会异步读取 Blob；延迟释放并在销毁时兜底。
     const timer = globalThis.setTimeout(() => {
       releaseTimers.delete(objectUrl)
       URL.revokeObjectURL(objectUrl)
@@ -72,6 +76,7 @@ export function useArchiveReportBundles(
   async function load(): Promise<void> {
     const importId = toValue(options.importId)
     if (!importId) return
+    // generation 同时标记 importId 作用域，避免快速切换归档时旧响应覆盖新列表。
     const current = ++generation
     loading.value = true
     error.value = ''
@@ -141,6 +146,7 @@ export function useArchiveReportBundles(
         throw new Error('当前浏览器不支持归档报告包下载')
       }
       const target = new URL(result.url, window.location.href)
+      // 服务端可返回相对下载地址，但不允许把带 Cookie 的页面跳转到跨域或含凭据 URL。
       if (
         target.origin !== window.location.origin ||
         target.username ||
@@ -183,6 +189,7 @@ export function useArchiveReportBundles(
   watch(
     () => toValue(options.importId),
     (importId) => {
+      // importId 变化代表完全不同的数据域，所有在途操作、错误和幂等意图都作废。
       generation += 1
       bundles.value = []
       loading.value = false

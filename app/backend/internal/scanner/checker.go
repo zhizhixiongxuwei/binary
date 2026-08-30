@@ -26,6 +26,7 @@ const (
 	checkerFindingLimit  = 10000
 )
 
+// checkerProject 绑定数据库中的源码项目身份与磁盘 manifest 摘要，作为调用外部 checker 前的信任锚。
 type checkerProject struct {
 	id             string
 	taskID         string
@@ -85,6 +86,9 @@ type validatedCheckerFinding struct {
 	snippetStartLine int
 }
 
+// check 把 checker 服务视为不可信外部边界。发送前会逐个验证源码路径、普通文件类型、大小、
+// SHA-256 和行数；返回后再验证项目身份、路径及 Monaco UTF-16 坐标。无效 finding 不入库，
+// 而是转为诊断并把结果标为 partial。最终 findings、证据制品元数据和运行状态在同一 fence 内替换。
 func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	project, err := e.loadCheckerProject(ctx, claim.RunID)
 	if err != nil {
@@ -109,6 +113,7 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	partial := false
 	batch := make([]checkerSource, 0, checkerBatchFiles)
 	batchBytes := 0
+	// 文件数与请求字节数共同控制批次，避免大型源码项目形成无界请求；总 finding 数另设全局上限。
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -346,6 +351,8 @@ func (e *Executor) checkerURL(language string) (string, error) {
 	return value + "/v1/check", nil
 }
 
+// openProject 从数据库允许的 source kind 推导根目录，拒绝链接目录，并核验 project.json 摘要及
+// 项目/反编译运行/语言身份。后续仍逐文件验摘要，防止 manifest 有效但源码内容被替换。
 func (e *Executor) openProject(project checkerProject) (string, storage.Manifest, error) {
 	if project.sourceKind != "native" && project.sourceKind != "jvm" && project.sourceKind != "pyc" {
 		return "", storage.Manifest{}, fmt.Errorf("invalid source project kind")
@@ -391,10 +398,8 @@ func sourceSnippet(lines []string, line, radius int) (string, int) {
 	return strings.Join(lines[start-1:end], "\n"), start
 }
 
-// utf16FindingEndColumn validates a checker-v1 Monaco column and returns an
-// exclusive end column spanning the Unicode scalar at that position. Monaco
-// columns are one-based UTF-16 code-unit offsets, so supplementary characters
-// occupy two columns while BMP characters occupy one.
+// utf16FindingEndColumn 校验 checker-v1 返回的 Monaco 列号，并给出覆盖当前位置 Unicode 标量的
+// 右开结束列。Monaco 使用从 1 开始的 UTF-16 code unit 偏移：补充平面字符占两列，BMP 字符占一列。
 func utf16FindingEndColumn(line string, startColumn int) (int, bool) {
 	maxColumn := utf16CodeUnitCount(line) + 1
 	if startColumn < 1 || startColumn > maxColumn {
@@ -415,8 +420,7 @@ func utf16FindingEndColumn(line string, startColumn int) (int, bool) {
 			return next + 1, true
 		}
 		if targetOffset < next {
-			// Reject a position between a supplementary character's two
-			// surrogate halves; it is not a stable source-character boundary.
+			// 代理对两个 code unit 之间不是稳定的源码字符边界，拒绝把 finding 锚定在这里。
 			return 0, false
 		}
 		consumed = next
@@ -435,6 +439,8 @@ func utf16CodeUnitCount(value string) int {
 	return count
 }
 
+// callChecker 对协议和响应体大小做严格校验。网络/读取错误以及 408、429、5xx 表示依赖暂不可用，
+// 可交给 worker 延迟重试；其他 HTTP 或 checker-v1 契约错误视为确定性失败，避免无意义重放。
 func callChecker(ctx context.Context, client *http.Client, url string, request checkerRequest) (checkerResponse, error) {
 	body, err := json.Marshal(request)
 	if err != nil {

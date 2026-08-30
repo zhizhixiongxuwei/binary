@@ -43,7 +43,7 @@
 
 ## 隔离产品验收记录（2026-08-23）
 
-以下业务与故障恢复记录来自移除 TLS 之前的最终镜像；其中证书相关结论仅是历史记录，不再代表当前入口。当前 HTTP 入口的回归记录见下一节。
+以下业务与故障恢复记录来自移除 TLS 之前的最终镜像；其中证书及“上传后自动 scan/Trivy”结论仅是历史记录，不再代表当前入口或当前手动分析流程。当前版本应按本页开头的最小验收步骤和当前 `deploy/scripts/smoke.sh` 复验。
 
 在仓库外数据根 `/Users/chenzhe/Documents/binary-data/acceptance-phase4`、回环端口 `18443` 和短期验收证书上，用最终 `linux/amd64` 镜像完成了以下检查：
 
@@ -63,11 +63,11 @@
 - `deploy/scripts/trivy-image-regression.sh` 对 Docker Save TAR、字节相同但后缀为 IMG 的 Docker archive，以及 OCI Layout TAR 使用当前离线 Trivy 数据库真实扫描；三者均需至少包含 `expected-trivy.json` 中固定的 4 个 Log4j CVE 基线。
 - ISO 9660 与 EXT4 归入 02 归档导入；两者均只读枚举一层 ELF/PE 并批量创建二进制任务，不进入 Trivy。`03-container/docker-save.img` 依靠内部 Docker manifest 识别为 `docker-tar`。
 
-## 纯 HTTP localhost 回归（2026-08-23）
+## 纯 HTTP localhost 历史回归（2026-08-23）
 
 - 根 `.env` 使用 `http://localhost:8080`，app 只发布 `127.0.0.1:8080`；Compose 不再挂载证书目录或注入 TLS/可信代理变量。
 - 重新构建 app 产品镜像后，正式 `binary` 项目的九个长期容器全部健康；首页、`healthz` 和 `readyz` 均通过 HTTP 访问。
-- topology 和三个真实 `checker-v1` contract 通过。完整 live smoke 任务 `91debe32-b5b3-4acc-8764-4d573eeb22b6` 完成 PYC 上传、scan/Trivy、pycdc、Python check 与报告 `92519a66-06d4-44ba-a61c-5e5bec387188` 下载。
+- topology 和三个真实 `checker-v1` contract 通过。该历史版本的完整 live smoke 任务 `91debe32-b5b3-4acc-8764-4d573eeb22b6` 曾完成 PYC 上传、scan/Trivy、pycdc、Python check 与报告 `92519a66-06d4-44ba-a61c-5e5bec387188` 下载；当前脚本已改为验证上传后无自动分析 run。
 - 临时 HTTP smoke 账号已停用且无 session；活跃 job、运行中 attempt 和占用 slot 均为零。
 - 旧备份恢复到新的 `/Users/chenzhe/Documents/binary-restore-http-final`，数据库计数和 4 个数据库到 storage 引用一致；恢复根没有 `tls` 目录，九服务健康后演练容器和网络已全部移除。调用环境中的其他 `COMPOSE_FILE` 未改变正式拓扑。
 - 新九镜像离线包为 `binary-runtime-0.1.0-dev-amd64-http.tar`（2.8 GB），SHA-256 为 `5df7f3034c13f90043fb3812366675f84b84f60e76b5de481b71b67608508434`。旧 direct-TLS 包只保留为历史证据，不得用于当前部署。

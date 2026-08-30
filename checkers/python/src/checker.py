@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""BinaryScan Python Checker。
+
+该进程接收 scanner 通过 checker-v1 发送的反编译 Python 源码，使用标准库 ``ast`` 完成
+结构化规则检测，并返回可定位到 Monaco 编辑器的 Finding。服务刻意保持无数据库、无业务卷；
+任务状态、重试、源码制品和报告均由主系统负责。这里的分析范围是单文件 AST 与导入别名解析，
+不宣称拥有跨模块调用图或运行时污点传播能力。
+"""
+
 import ast
 import json
 import os
@@ -10,6 +18,8 @@ MAX_FINDINGS = 10000
 
 
 class Analyzer(ast.NodeVisitor):
+    """单个源码文件的 AST 访问器，集中维护导入别名和 Finding 输出。"""
+
     def __init__(self, path, content):
         self.path = path
         self.lines = content.split("\n")
@@ -51,6 +61,8 @@ class Analyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node):
+        # 先把 ``import x as y`` / ``from x import y as z`` 还原成稳定的限定名，
+        # 规则无需为每种别名写重复分支，也能匹配 pycdc 常见的反编译结果。
         name = self.resolved_call_name(node.func)
         rule = None
         if name in {"eval", "exec"}:
@@ -106,7 +118,11 @@ class Analyzer(ast.NodeVisitor):
 
 
 def utf16_column(lines, line_number, utf8_byte_offset):
-    """Convert CPython's zero-based UTF-8 byte offset to a Monaco column."""
+    """把 CPython 的零基 UTF-8 字节偏移转换为 Monaco 的一基 UTF-16 列号。
+
+    Python AST 与浏览器编辑器使用的列坐标单位不同；中文、emoji 等字符会放大差异，若不转换，
+    报告中的行列虽然存在，点击后却会落在错误字符上。
+    """
     if line_number < 1 or line_number > len(lines) or utf8_byte_offset < 0:
         return 1
     line = lines[line_number - 1]
@@ -145,9 +161,8 @@ def has_boolean_keyword(node, name, expected):
     if any(keyword.arg == name and isinstance(keyword.value, ast.Constant)
            and keyword.value.value is expected for keyword in node.keywords):
         return True
-    # pycdc 3.9 renders keyword calls as positional values followed by a
-    # dictionary-unpack tuple, for example:
-    # requests.get(url, False, **('verify',))
+    # pycdc 3.9 可能把关键字参数反编译为“位置值 + 字典展开元组”，例如：
+    # requests.get(url, False, **('verify',))。兼容该形态才能避免反编译后漏报。
     for keyword in node.keywords:
         if keyword.arg is not None or not isinstance(keyword.value, (ast.Tuple, ast.List)):
             continue
@@ -167,6 +182,7 @@ def valid_path(path):
 
 
 def analyze(request):
+    """校验一个 checker-v1 项目批次并返回稳定、有上限的检测结果。"""
     if request.get("version") != "checker-v1" or request.get("language") != "python":
         raise ValueError("unsupported contract or language")
     project_id = request.get("projectId")
@@ -186,6 +202,7 @@ def analyze(request):
             analyzer.visit(tree)
             findings.extend(analyzer.findings)
         except SyntaxError as error:
+            # 单个反编译文件不完整时保留诊断并继续处理其他文件，最终状态标记为 partial。
             diagnostics.append(f"{path}:{error.lineno or 1}: parser rejected decompiled source")
         if len(findings) > MAX_FINDINGS:
             findings = findings[:MAX_FINDINGS]
@@ -201,6 +218,8 @@ def analyze(request):
 
 
 class Handler(BaseHTTPRequestHandler):
+    """最小内部 HTTP 适配层；业务编排、鉴权与持久化不放入 Checker。"""
+
     server_version = "BinaryScanPythonChecker/1"
 
     def do_GET(self):
@@ -215,6 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
+            # 在读取请求体之前先执行硬上限，避免恶意或错误调用占满进程内存。
             if size <= 0 or size > MAX_BODY:
                 raise ValueError("invalid body size")
             request = json.loads(self.rfile.read(size))

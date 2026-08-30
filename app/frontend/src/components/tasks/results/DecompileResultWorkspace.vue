@@ -82,6 +82,8 @@ const filteredSourceFiles = computed(() => {
   )
 })
 const visibleSourceFiles = computed(() => {
+  // 大型 Ghidra 项目可能包含数千文件，侧栏只渲染前 500 项以控制 DOM；当前选中
+  // 文件即使不在截断窗口内也必须保留，避免源码与选中项视觉脱节。
   const visible = filteredSourceFiles.value.slice(0, MAX_RENDERED_SOURCE_FILES)
   const selected = selectedSourceFile.value
   if (selected && !visible.some((file) => file.id === selected.id)) {
@@ -124,6 +126,8 @@ const filteredItems = computed(() => {
   )
   if (!normalizedQuery.value) return statusFiltered
   return statusFiltered.filter((item) => {
+    // 文件清单只为当前项目加载，因此文件路径命中只能提升当前项目，不能误认为
+    // 其他尚未展开项目也不匹配。
     const selectedProjectHasMatchingFile =
       item.id === props.selectedId &&
       props.sourceFiles.some((file) =>
@@ -158,6 +162,8 @@ const groupedItems = computed<readonly ResultGroup[]>(() => {
   return [...groups].map(([name, items]) => ({ name, items }))
 })
 const editorLanguage = computed<ReadOnlyCodeLanguage>(() => {
+  // 后端语言名称包含能力降级信息（如 java bytecode / python-bytecode），先匹配
+  // 具体形态再匹配通用语言，保证 Monaco 语法和字节码视图一致。
   const language = (
     selectedSourceFile.value?.language ?? selectedResult.value?.language ?? ''
   ).trim().toLowerCase()
@@ -191,6 +197,7 @@ const languageLabel = computed(() => {
   return language
 })
 const editorModelUri = computed(() => {
+  // 每个任务/项目/文件使用稳定且隔离的 Monaco URI，避免模型缓存把同名源码串线。
   const taskId = encodeURIComponent(props.taskId)
   const projectId = encodeURIComponent(props.selectedId || 'project')
   const fileId = encodeURIComponent(props.selectedSourceFileId || 'file')
@@ -295,6 +302,7 @@ function matchesResultFilter(
 
 function selectFilter(filter: ResultFilter): void {
   resultFilter.value = filter
+  // 当前项目被筛掉时主动选择该分类第一个项目，确保右侧详情始终属于可见列表。
   const selected = selectedResult.value
   if (selected && matchesResultFilter(selected, filter)) return
   const firstVisible = props.items.find((item) => matchesResultFilter(item, filter))

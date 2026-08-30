@@ -21,6 +21,8 @@ type Category string
 type AnalysisMode string
 
 const (
+	// Category 是服务端依据文件内容给出的推荐类别；AnalysisMode 是用户最终选择的处理流程。
+	// 两者故意分开，因此 TAR/ISO/EXT4 等多义载体可以保留真实识别结果，同时按用户选择尝试归档或映像流程。
 	CategoryBinary    Category = "binary"
 	CategoryArchive   Category = "archive"
 	CategoryContainer Category = "container"
@@ -35,10 +37,8 @@ type Result struct {
 	Format   string
 }
 
-// ErrInvalidInput marks parser failures caused by malformed or deliberately
-// over-complex user input. Callers may safely persist these as unsupported
-// uploads. Filesystem and other operational errors are intentionally not
-// wrapped with this sentinel so callers can return a retryable server error.
+// ErrInvalidInput 标记畸形或刻意构造得过于复杂的用户输入。调用方可把它持久化为“不支持”；
+// 文件系统等运行错误不包装该哨兵，从而仍能按可重试的服务端故障处理。
 var ErrInvalidInput = errors.New("invalid binary input")
 
 func ParseCategory(value string) (Category, bool) {
@@ -67,10 +67,8 @@ func ParseAnalysisMode(value string) (AnalysisMode, bool) {
 	}
 }
 
-// SupportsAnalysisMode reports whether the current engine can execute the
-// selected workflow. A caller may still create an unsupported task so the
-// audit trail can distinguish "not applicable" from a successful zero-finding
-// result.
+// SupportsAnalysisMode 判断当前引擎是否能执行用户选择的流程。即使返回 false，上层仍可创建任务并
+// 明确记录“不适用”，从审计语义上区分“不支持该模式”和“检测成功但零命中”。
 func SupportsAnalysisMode(format string, mode AnalysisMode) bool {
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch mode {
@@ -89,8 +87,8 @@ func SupportsAnalysisMode(format string, mode AnalysisMode) bool {
 	return false
 }
 
-// ArchiveFormat normalizes application packages and container TARs to the
-// one-layer archive reader they are physically compatible with.
+// ArchiveFormat 把 JAR/APK 等 ZIP 容器以及 Docker/OCI TAR 归一化到实际兼容的一层归档读取器；
+// 这里只决定读取方式，不等同于把文件业务类别永久改成“归档”。
 func ArchiveFormat(format string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "zip", "7z", "rar", "tar", "gzip", "xz", "deb", "rpm", "iso9660", "ext4":
@@ -122,16 +120,15 @@ func CategoryForFormat(format string) (Category, bool) {
 	}
 }
 
-// Detect returns the canonical server-side category and format. Extensions are
-// used only where the container format itself is ambiguous (ZIP and PYC).
+// Detect 通过受限头部读取和必要的结构检查返回规范格式。扩展名只在 PYC、ZIP 应用包等
+// 内容自身不足以消除歧义的场景作为辅助；IMG 后缀不会覆盖内部 Docker/OCI/TAR/EXT4 证据。
 func Detect(filename, logicalPath string) (Result, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return Result{}, fmt.Errorf("open file for detection: %w", err)
 	}
 	defer file.Close()
-	// ISO 9660 volume descriptors start at sector 16 (32 KiB). Keep the read
-	// bounded while including enough data for content-based ISO detection.
+	// ISO 9660 卷描述符从第 16 扇区（32 KiB）开始；固定读取 40 KiB，既覆盖识别区域又限制内存。
 	header := make([]byte, 40*1024)
 	count, err := io.ReadFull(file, header)
 	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -199,11 +196,9 @@ func Detect(filename, logicalPath string) (Result, error) {
 		}
 		return result("tar"), nil
 	}
-	// The EXT superblock starts at byte 1024 and s_magic is the little-endian
-	// value 0xEF53 at offset 0x38 within that superblock. Check it after TAR so
-	// a Docker/OCI archive renamed to .img cannot be misclassified because of
-	// coincidental layer bytes. Trivy remains explicitly not applicable to raw
-	// filesystem images until a rootfs materializer is added.
+	// EXT 超级块从 1024 字节开始，s_magic 位于块内 0x38。把该检查放在 TAR 之后，确保改名为
+	// .img 的 Docker/OCI archive 优先按真实容器结构识别。当前没有 rootfs 物化器，原始 EXT4
+	// 只能只读枚举归档成员，Trivy 明确判定为不适用。
 	const extMagicOffset = 1024 + 0x38
 	if len(header) >= extMagicOffset+2 && binary.LittleEndian.Uint16(header[extMagicOffset:extMagicOffset+2]) == 0xef53 {
 		return result("ext4"), nil

@@ -43,6 +43,7 @@ require_image() {
 }
 
 build_app() {
+  # App 镜像在多阶段构建中先编译 Vue，再将静态资源嵌入 Go 可执行文件；最终镜像无需 Node。
   docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/app/Dockerfile" -t "$APP_IMAGE" \
     --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
     --build-arg "NODE_BUILD_IMAGE=$NODE_BUILD_IMAGE" \
@@ -51,6 +52,7 @@ build_app() {
 }
 
 build_scanner() {
+  # Trivy 数据库来自预制离线镜像，构建阶段不临时联网下载，便于封存环境复现。
   docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/scanner.Dockerfile" -t "$SCANNER_IMAGE" \
     --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
     --build-arg "TRIVY_RUNTIME_DB_IMAGE=$TRIVY_RUNTIME_DB_IMAGE" \
@@ -103,6 +105,7 @@ build_checkers() {
 }
 
 build_all() {
+  # 先检查体积大、准备成本高的工具镜像，避免产品构建到一半才发现离线依赖缺失。
   require_image "$TRIVY_RUNTIME_DB_IMAGE"
   require_image "$GHIDRA_RUNTIME_IMAGE"
   require_image "$JVM_TOOLS_IMAGE"
@@ -139,6 +142,7 @@ case "${1:-}" in
   build-java-checker) build_java_checker ;;
   build-python-checker) build_python_checker ;;
   package)
+    # 产品包只导出九个运行镜像；自主验收所需的构建镜像由 create-deliveries.sh 单独封装。
     output=${2:?usage: release.sh package OUTPUT.tar}
     [ -d "$(dirname -- "$output")" ] || {
       echo "output directory does not exist: $(dirname -- "$output")" >&2

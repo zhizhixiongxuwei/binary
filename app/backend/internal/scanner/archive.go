@@ -16,6 +16,8 @@ import (
 	"binaryscan.local/backend/internal/storage"
 )
 
+// archiveItem 是归档流读取与数据库发布之间的内存交接对象；Blob 可以提前落入 CAS，
+// 但只有通过 WithFence 写入 file_nodes/archive_entries 后才成为当前运行可见的结果。
 type archiveItem struct {
 	ordinal      int
 	logicalPath  string
@@ -27,6 +29,8 @@ type archiveItem struct {
 	fileNodePath string
 }
 
+// archive 物化且仅物化输入归档的一层内容。条目 Blob 先写入内容寻址存储，随后所有索引、
+// 文件节点、任务状态和事件在同一个 fenced 事务中发布；重入时已有 archive_entries 会使事务短路。
 func (e *Executor) archive(ctx context.Context, claim job.Claim) error {
 	subject, format, err := e.loadArchiveSubject(ctx, claim.RunID)
 	if err != nil {
@@ -116,6 +120,8 @@ func (e *Executor) loadArchiveSubject(ctx context.Context, runID string) (subjec
 	return value, format, nil
 }
 
+// readArchive 同时施加条目数和累计展开字节上限，防止少量高压缩比成员绕过单一限制。
+// 每个逻辑路径必须唯一且安全，普通非空成员进入 CAS 后再按真实内容识别格式；嵌套归档只作为文件保留。
 func (e *Executor) readArchive(
 	ctx context.Context, inputPath, sourceName, format string,
 ) ([]archiveItem, int64, error) {
@@ -200,6 +206,8 @@ func (e *Executor) skippedArchiveItem(sourceName string, ordinal int, name strin
 	return archiveItem{ordinal: ordinal, logicalPath: logicalPath, fileNodePath: fileNodePath, status: "skipped"}, nil
 }
 
+// archivePaths 将不可信成员名收敛为 UTF-8 相对路径，并生成带“外层!/内层”语义的展示路径。
+// CleanRelativePath 负责拒绝绝对路径和向上穿越，长度上限保护数据库及后续 API 展示。
 func archivePaths(sourceName, entryName string) (string, string, error) {
 	if !utf8.ValidString(entryName) {
 		return "", "", fmt.Errorf("archive entry path is not UTF-8")
@@ -215,6 +223,7 @@ func archivePaths(sourceName, entryName string) (string, string, error) {
 	return cleaned, fileNodePath, nil
 }
 
+// contextReader 让可能较长的成员流复制在租约丢失或进程退出时可及时中断。
 type contextReader struct {
 	ctx    context.Context
 	reader io.Reader

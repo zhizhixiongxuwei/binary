@@ -43,6 +43,7 @@ dependency_digest() {
 }
 
 write_source_manifest() {
+  # 自主验收的源码清单只覆盖封存范围 app/backend + app/frontend 及其构建文件。
   bundle=$1
   manifest="$bundle/manifests/source.sha256"
   (
@@ -54,6 +55,7 @@ write_source_manifest() {
 }
 
 write_package_manifest() {
+  # data 与 build-output 是现场运行后才产生的可变目录，不应进入静态交付摘要。
   bundle=$1
   manifest="$bundle/manifests/package.sha256"
   (
@@ -81,6 +83,7 @@ write_image_inventory() {
 }
 
 render_env() {
+  # 两套交付各自生成独立数据库和管理员口令；口令只写入权限为 0600 的 .env。
   output=$1
   project=$2
   mysql_password=$(openssl rand -hex 24)
@@ -116,11 +119,16 @@ command -v docker >/dev/null 2>&1 || die "docker is required"
 command -v openssl >/dev/null 2>&1 || die "openssl is required"
 docker version >/dev/null
 
-if ! git -C "$repo_dir" diff --quiet HEAD -- app/backend app/frontend; then
-  die "app/backend or app/frontend has uncommitted changes; commit them before sealing source"
+if ! git -C "$repo_dir" diff --quiet HEAD -- \
+  app/backend app/frontend \
+  deploy/delivery/demo/Dockerfile deploy/delivery/demo/.dockerignore; then
+  # 源码包使用 git archive HEAD 制作，因此必须拒绝尚未提交的 App 源码，防止“工作树能运行、
+  # 封存包却缺少改动”的验收事故。
+  die "sealed App source or build inputs have uncommitted changes; commit them before sealing source"
 fi
-if [ -n "$(git -C "$repo_dir" ls-files --others --exclude-standard -- app/backend app/frontend)" ]; then
-  die "app/backend or app/frontend contains untracked source; commit it before sealing source"
+if [ -n "$(git -C "$repo_dir" ls-files --others --exclude-standard -- \
+  app/backend app/frontend deploy/delivery/demo/Dockerfile deploy/delivery/demo/.dockerignore)" ]; then
+  die "sealed App source or build inputs contain untracked files; commit them before sealing source"
 fi
 
 set -a
@@ -183,9 +191,10 @@ deploy_credentials=$(render_env "$deploy_stage/.env" binary-deploy)
 demo_credentials=$(render_env "$demo_stage/.env" binary-demo)
 
 echo "copying sealed backend and frontend source from Git HEAD"
+# 从提交对象而非工作目录取源码，source-git.txt、源码清单和现场构建输入由同一 HEAD 锚定。
 git -C "$repo_dir" archive --format=tar HEAD app/backend app/frontend | tar -xf - -C "$demo_stage"
-cp "$template_root/demo/Dockerfile" "$demo_stage/app/Dockerfile"
-cp "$template_root/demo/.dockerignore" "$demo_stage/app/.dockerignore"
+git -C "$repo_dir" show HEAD:deploy/delivery/demo/Dockerfile > "$demo_stage/app/Dockerfile"
+git -C "$repo_dir" show HEAD:deploy/delivery/demo/.dockerignore > "$demo_stage/app/.dockerignore"
 cp "$template_root/demo/build-app.sh" "$demo_stage/build-app.sh"
 cp "$template_root/demo/build-app.ps1" "$demo_stage/build-app.ps1"
 chmod 0755 "$demo_stage/build-app.sh"
@@ -214,6 +223,8 @@ docker build \
   "$repo_dir"
 
 echo "exporting nine runtime images"
+# 两套交付复用同一个临时运行镜像归档；macOS 上 copy_archive 尽量使用 clone copy，
+# 减少在制备阶段重复占用约数 GB 空间。
 runtime_archive="$shared_stage/runtime-images-linux-amd64.tar"
 # shellcheck disable=SC2086
 docker save -o "$runtime_archive" $runtime_images

@@ -17,6 +17,7 @@ import (
 )
 
 func Open(ctx context.Context, cfg config.Database) (*sql.DB, error) {
+	// 所有时间按 UTC 解析，文本使用 utf8mb4；连接池上限是进程级保护，重工具并发另由 job slot 控制。
 	dsnConfig := mysql.Config{
 		User:                 cfg.User,
 		Passwd:               cfg.Password,
@@ -46,6 +47,8 @@ func Open(ctx context.Context, cfg config.Database) (*sql.DB, error) {
 }
 
 func Migrate(ctx context.Context, db *sql.DB, migrationFS fs.FS) error {
+	// MySQL advisory lock 保证多个容器同时冷启动时只有一个实例迁移；每个编号 SQL 与
+	// schema_migrations 记录在同一事务提交，失败不会留下“脚本已改、版本未记”的半状态。
 	var locked int
 	if err := db.QueryRowContext(ctx, "SELECT GET_LOCK('binaryscan_schema_migration', 30)").Scan(&locked); err != nil {
 		return fmt.Errorf("acquire migration lock: %w", err)

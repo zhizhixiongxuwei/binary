@@ -1,5 +1,7 @@
 name: ${COMPOSE_PROJECT_NAME:?required}
 
+# 数据库连接参数只通过这个锚点注入需要访问 MySQL 的 App 与 Worker；
+# 三个 checker 不引用该锚点，因此交付时不会获得数据库账号或业务数据访问能力。
 x-db-client: &db-client
   BINARY_DB_HOST: mysql
   BINARY_DB_PORT: "3306"
@@ -7,6 +9,8 @@ x-db-client: &db-client
   BINARY_DB_USER: ${MYSQL_USER:?required}
   BINARY_DB_PASSWORD: ${MYSQL_PASSWORD:?required}
 
+# 产品容器的共同加固基线：只读根文件系统、非 root 用户、删除 Linux capabilities、
+# 禁止提权并限制临时目录和日志尺寸。各服务只额外挂载自己职责所需的数据目录。
 x-product-service: &product-service
   platform: ${BINARY_PLATFORM:?required}
   restart: unless-stopped
@@ -26,6 +30,8 @@ x-product-service: &product-service
       max-size: 20m
       max-file: "5"
 
+# checker 仅位于内部 checker-net，通过 HTTP checker-v1 接受 scanner 编排；
+# 不发布宿主机端口，也不挂载数据库、原始二进制或持久化业务目录。
 x-checker-service: &checker-service
   <<: *product-service
   networks:
@@ -35,6 +41,7 @@ x-checker-service: &checker-service
   pids_limit: 256
 
 services:
+  # MySQL 持久化任务状态、运行记录、报告索引和审计数据；文件内容不存入数据库。
   mysql:
     platform: ${BINARY_PLATFORM:?required}
     image: ${MYSQL_IMAGE:?required}
@@ -62,6 +69,7 @@ services:
         max-size: 20m
         max-file: "5"
 
+  # App 是唯一面向浏览器开放端口的服务，同时托管 Go API 与嵌入后的 Vue 静态资源。
   app:
     <<: *product-service
     image: ${APP_IMAGE:?required}
@@ -96,6 +104,8 @@ services:
       retries: 12
       start_period: 20s
 
+  # Scanner 负责格式识别、归档一层解析、Trivy 及源码 checker 编排；项目源码只读挂载，
+  # finding 和报告等新制品通过 artifacts 目录发布。
   scanner:
     <<: *product-service
     image: ${SCANNER_IMAGE:?required}
@@ -143,6 +153,8 @@ services:
       retries: 6
       start_period: 20s
 
+  # 三个反编译 Worker 按工具能力隔离，避免把 Ghidra、JVM 工具和 pycdc 塞入同一镜像；
+  # 它们共享数据库任务协议，但只能读取 blob 并写入自己命名空间下的源码项目。
   native-decompiler:
     <<: *product-service
     image: ${NATIVE_DECOMPILER_IMAGE:?required}
@@ -308,6 +320,8 @@ services:
       start_period: 10s
 
 networks:
+  # database-net 只承载数据库访问；edge-net 承载 App 对外入口；checker-net 标记为
+  # internal，容器无法经该网络直接访问外部地址，降低无状态检测器的权限面。
   database-net:
     internal: true
   checker-net:

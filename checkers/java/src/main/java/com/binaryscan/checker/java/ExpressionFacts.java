@@ -32,6 +32,13 @@ import java.util.Optional;
 import java.util.Set;
 
 /** Bounded local expression facts that do not require the original classpath. */
+/**
+ * JavaAnalyzer 使用的局部表达式事实求值器。
+ *
+ * <p>它不会尝试构建全程序数据流，而是在当前方法/构造器/初始化块内向前查找变量最近定义，
+ * 折叠字面量、简单拼接、条件表达式和常见编码调用。无法可靠证明为常量时统一标记为 dynamic，
+ * 这是静态检测中“宁可保留不确定性，也不把未知值伪装成安全常量”的设计边界。</p>
+ */
 final class ExpressionFacts {
     record Fact(String constant, String literalText, boolean dynamic, boolean concatenated,
                 boolean hardcodedBytes) {
@@ -80,6 +87,7 @@ final class ExpressionFacts {
 
     private static Fact inspect(Expression expression, Node callable, Node use,
                                 Set<String> resolving, int depth) {
+        // 深度与 resolving 集合共同阻止畸形反编译代码或循环赋值导致无限递归。
         if (depth > 24) return Fact.unknown();
         if (expression instanceof StringLiteralExpr literal) return Fact.constant(literal.asString());
         if (expression instanceof CharLiteralExpr literal) return Fact.constant(literal.getValue());
@@ -182,6 +190,7 @@ final class ExpressionFacts {
                 }
             }
             return definitions.stream().max(Comparator.comparing(definition -> begin(definition.node())))
+                // 只使用当前位置之前最近的一次定义，近似顺序执行下的局部值传播。
                 .map(definition -> inspect(definition.value(), callable, definition.node(), resolving, depth + 1))
                 .orElseGet(Fact::unknown);
         } finally {

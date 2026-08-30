@@ -12,12 +12,14 @@ import (
 
 var ErrBlobTooLarge = errors.New("blob exceeds the configured byte limit")
 
+// Blob 描述内容寻址存储中的不可变对象；StorageKey 由 SHA-256 推导，不包含用户输入路径。
 type Blob struct {
 	SHA256     [32]byte
 	SizeBytes  int64
 	StorageKey string
 }
 
+// BlobStore 管理按摘要去重的原始二进制对象和同文件系统内的发布暂存区。
 type BlobStore struct {
 	root string
 }
@@ -33,8 +35,9 @@ func NewBlobStore(root string) (*BlobStore, error) {
 	return &BlobStore{root: absRoot}, nil
 }
 
-// Ingest computes the only application-level content digest: once, while a new
-// blob crosses from an upload or archive stream into immutable storage.
+// Ingest 在上传流或归档成员首次进入持久化存储时计算应用层唯一的 SHA-256。
+// 数据先受 maxBytes+1 限流写入私有暂存文件，再通过硬链接原子发布到摘要路径并设为只读；
+// 并发写入相同内容时只有一个发布者获胜，其余调用在校验现有对象类型和大小后复用同一 Blob。
 func (s *BlobStore) Ingest(source io.Reader, maxBytes int64) (Blob, error) {
 	if maxBytes <= 0 {
 		return Blob{}, fmt.Errorf("blob byte limit must be positive")

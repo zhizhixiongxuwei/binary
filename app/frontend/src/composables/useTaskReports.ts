@@ -61,6 +61,8 @@ function replaceFormat(
 }
 
 export function useTaskReports(options: UseTaskReportsOptions) {
+  // 报告列表和生成状态以服务端为准；本地 generatingFormats 仅表示“创建请求正在
+  // 提交”，二者分离后刷新页面仍能继续显示 queued/generating 产物。
   const reports = shallowRef<readonly TaskReport[]>([])
   const loading = shallowRef(false)
   const error = shallowRef('')
@@ -84,6 +86,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
   let pollTimer: ReturnType<typeof globalThis.setTimeout> | null = null
 
   const roleCanGenerate = computed(() => {
+    // 前端权限只控制按钮可用性，后端仍会对生成接口执行最终授权。
     const role = toValue(options.userRole)
     return role === 'administrator' || role === 'operator'
   })
@@ -168,6 +171,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
       return
     }
     if (pollAttempts >= MAX_REPORT_POLL_ATTEMPTS) {
+      // 有界轮询避免长期后台请求；产物仍在服务端生成，用户可稍后手动刷新。
       if (!operationError.value) {
         operationError.value = '报告仍在生成，请稍后手动刷新状态。'
       }
@@ -191,6 +195,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
 
   async function load(background = false): Promise<void> {
     const taskId = toValue(options.taskId)
+    // 单飞锁防止定时轮询、手动刷新和生成回调同时覆盖同一报告列表。
     if (!taskId || !isEnabled() || listInFlight) return
 
     const requestGeneration = ++listGeneration
@@ -251,6 +256,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
     const generation = ++decompileProbeGeneration
     const currentScope = scopeGeneration
     try {
+      // 只探测一条可读项目来决定是否显示“查看/导出源码”，不在报告页加载源码内容。
       const page = await api.listDecompileResults(taskId, { page_size: 1 })
       if (
         generation !== decompileProbeGeneration ||
@@ -282,6 +288,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
   }
 
   function idempotencyKey(taskId: string, format: ReportFormat): string {
+    // taskId + format 定义一次生成意图；网络失败后沿用键，成功或明确冲突后释放。
     const key = operationKey(taskId, format)
     const existing = idempotencyKeys.get(key)
     if (existing) return existing
@@ -312,6 +319,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
       return
     }
 
+    // 每种格式独立快照和独立生成；重新生成只允许覆盖已完成格式，不干扰其他格式。
     const currentScope = scopeGeneration
     const intentKey = operationKey(taskId, format)
     generatingFormats.value = [...generatingFormats.value, format]
@@ -389,6 +397,7 @@ export function useTaskReports(options: UseTaskReportsOptions) {
       () => isEnabled(),
     ],
     ([taskId, enabled]) => {
+      // taskId 是报告、下载和幂等意图的边界；切换任务时清除轮询及所有本地操作态。
       scopeGeneration += 1
       listGeneration += 1
       decompileProbeGeneration += 1

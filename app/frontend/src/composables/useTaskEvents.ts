@@ -65,6 +65,8 @@ function isJsonValue(value: unknown): value is JsonValue {
 }
 
 export function parseTaskEvent(value: string): TaskEvent | null {
+  // SSE 内容属于运行时输入：严格限定字段集合、长度、坐标和 JSON 递归结构，
+  // 无效事件直接忽略，避免脏 payload 进入任务状态合并和执行日志。
   let parsed: unknown
   try {
     parsed = JSON.parse(value)
@@ -147,6 +149,9 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
   let serverRetryMs: number | null = null
   let disposed = false
 
+  // generation 是连接世代号。任务切换、禁用或销毁都会让旧 reader、定时器和
+  // 回调自然失效，防止上一任务的迟到事件写入当前详情页。
+
   function clearRetryTimer(): void {
     if (retryTimer === null) return
     globalThis.clearTimeout(retryTimer)
@@ -170,6 +175,7 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
   }
 
   function reconnectDelay(): number {
+    // 服务端 retry 指令优先；否则采用有上限的指数退避，避免断网时高频请求。
     if (serverRetryMs !== null) {
       return clampedDelay(serverRetryMs, maxRetryMs)
     }
@@ -215,6 +221,7 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
       Accept: 'text/event-stream',
       'Cache-Control': 'no-cache',
     })
+    // 重连时携带最后一个已成功交付给业务层的事件 ID，服务端可从断点续传。
     if (lastEventId.value) headers.set('Last-Event-ID', lastEventId.value)
 
     try {
@@ -249,6 +256,7 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
           if (!event) return
 
           try {
+            // 只有业务回调成功消费后才推进 lastEventId；回调异常时仍允许重连重放。
             options.onEvent({
               id: message.id,
               event: message.event,
@@ -263,6 +271,8 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
         },
       })
       const reader = response.body.getReader()
+      // fetch + ReadableStream 用于携带 Cookie、读取 Last-Event-ID，并复用自有的
+      // SSE parser；分片边界不等于事件边界，因此必须持续 push 到解析器。
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -309,6 +319,7 @@ export function useTaskEvents(options: UseTaskEventsOptions) {
   watch(
     () => [toValue(options.taskId), toValue(options.enabled ?? true)] as const,
     ([taskId, enabled]) => {
+      // taskId 是连接的数据边界；切换任务时清空断点，不能向新任务发送旧事件 ID。
       if (!enabled || !taskId) {
         stop()
         return

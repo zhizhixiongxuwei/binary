@@ -161,6 +161,8 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const session = useSessionStore()
+// 详情面板是任务结果的协调层：各结果组件独立加载数据，通过 stateChange 汇总出
+// 页签状态；这里不复制反编译、检测或报告明细，避免形成第二份数据源。
 const decompileResultState = shallowRef<TaskResultState>({
   status: 'loading',
 })
@@ -189,6 +191,8 @@ const liveDecompileResult = useTemplateRef<{
 }>(
   'liveDecompileResult',
 )
+// 结果页签按需挂载。来自 URL 或其他检测页的源码跳转可能早于组件实例出现，
+// 因此先保存意图，等 nextTick/template ref 就绪后再真正打开项目和文件。
 const pendingSourceTarget = shallowRef<SourceNavigationTarget>()
 const liveCAnalysisResult = useTemplateRef<{
   refresh: () => void
@@ -263,6 +267,7 @@ const sampleExpired = computed(
 const sampleDeleted = computed(
   () => sampleRetention.value.status === 'deleted',
 )
+// 文件真实类型和用户选择的分析模式共同决定可见页签；不在此处用扩展名猜测。
 const visibleResultTabs = computed(() =>
   taskResultTabsForInputType(
     task.value?.input_type ?? '',
@@ -406,6 +411,8 @@ function payloadRecord(
 }
 
 function mergeTaskEvent(message: TaskEventMessage): void {
+  // SSE 提供低延迟的局部字段，先乐观合并进当前任务；随后仍会拉取完整详情。
+  // payload 中缺失或非法的字段必须保留服务端上一次已确认值。
   const currentTask = task.value
   if (!currentTask || currentTask.id !== props.taskId) return
 
@@ -474,6 +481,7 @@ function resetExecutionLog(): void {
 function collectTaskEvent(
   message: TaskEventMessage,
 ): TaskExecutionLogEntry | null {
+  // 断线重放可能收到重复事件；按稳定 key 去重，并限制 500 条避免长任务撑大页面内存。
   const entry = toTaskExecutionLogEntry(message)
   if (!entry || executionLogKeys.has(entry.key)) return null
 
@@ -522,6 +530,8 @@ async function refreshTaskFromEvent(
 }
 
 function scheduleEventRefresh(): void {
+  // 一个后台阶段通常连续发出多条 task.* 事件；短暂防抖后读取一次完整任务，
+  // 兼顾实时反馈与接口负载，并以 generation 拒绝任务切换后的迟到响应。
   clearEventRefreshTimer()
   const taskId = props.taskId
   const loadVersion = loadGeneration
@@ -534,6 +544,8 @@ function scheduleEventRefresh(): void {
 
 function handleTaskEvent(message: TaskEventMessage): void {
   const logEntry = collectTaskEvent(message)
+  // 专项完成事件只刷新对应结果域，避免每条日志都重载整个详情；task.* 事件则
+  // 触发权威任务详情刷新，以校准状态、保留期和阶段字段。
   if (logEntry && message.data.type === 'decompile.completed') {
     void nextTick(() => {
       liveDecompileResult.value?.refresh()
@@ -586,6 +598,8 @@ function routeQueryPositiveInteger(value: unknown, fallback = 1): number {
 }
 
 function sourceTargetFromRoute(): SourceNavigationTarget | undefined {
+  // 源码定位写入查询参数后可刷新、复制并从检测结果返回。坐标在入口收敛为
+  // 正整数范围，项目 ID 是判定该查询是否完整的最小必需字段。
   const projectId = routeQueryString(route.query.sourceProject)
   if (!projectId) return undefined
   const startLine = routeQueryPositiveInteger(route.query.startLine)
@@ -633,6 +647,7 @@ async function replaceSourceRoute(target: SourceNavigationTarget): Promise<void>
   const targetKey = sourceTargetKey(target)
   activeSourceTargetKey = targetKey
   if (sourceTargetKey(sourceTargetFromRoute()) === targetKey) return
+  // 使用 replace 而非 push，连续切换文件或漏洞不会为每次光标定位污染浏览器历史。
   await router.replace({
     query: {
       ...route.query,
@@ -684,6 +699,8 @@ watch(
 )
 
 async function load(): Promise<void> {
+  // taskId 切换会重置所有子域和待执行意图；loadGeneration 保证上一任务的响应
+  // 即使更晚返回，也不能覆盖当前详情。
   const generation = ++loadGeneration
   eventRefreshGeneration += 1
   clearEventRefreshTimer()
@@ -816,6 +833,7 @@ async function openCAnalysisSource(target: SourceNavigationTarget): Promise<void
 }
 
 async function startCAnalysisProject(projectId: string): Promise<void> {
+  // 先切换到结果页签，再等待异步组件挂载；pending ID 让“点击检测”不依赖渲染时序。
   pendingCAnalysisProjectId.value = projectId
   activeDetailTab.value = 'results'
   activeResultTab.value = 'c-analysis'

@@ -58,10 +58,10 @@ BinaryScan 是面向单位内部多用户的二进制分析工作台。生产环
 
 开发和生产都使用 HTTP；开发覆盖只额外开放回环 MySQL 端口并允许 Vue 开发服务器的 Origin。
 
-发布 smoke 集中在一个脚本中：`deploy/scripts/smoke.sh topology` 检查九服务边界，`contracts` 对运行中的三个 checker 执行真实 `checker-v1` 请求，`live` 完成一条 PYC 上传、自动 scan/Trivy、手动反编译、手动检查和报告下载链路。完整参数和数据保留边界见 `docs/deployment.md`。
+发布 smoke 集中在一个脚本中：`deploy/scripts/smoke.sh topology` 检查九服务边界，`contracts` 对运行中的三个 checker 执行真实 `checker-v1` 请求，`live` 完成一条 PYC 上传、确认没有自动分析任务、再手动反编译、手动检查和下载报告的链路。完整参数和数据保留边界见 `docs/deployment.md`。
 
 ## 数据保证
 
 业务持久化数据只位于 `BINARY_DATA_ROOT/mysql` 和 `BINARY_DATA_ROOT/storage`。`work` 可随时清理，Docker 自身日志与元数据不属于业务备份。
 
-完整说明见 `docs/architecture.md`、`docs/deployment.md`、`docs/data-and-backup.md` 和 `docs/build-and-operations.md`。其中 `docs/build-and-operations.md` 集中列出 APP/checker 构建、Compose 启动、全新初始化、暂停和停止命令；需要直接用浏览器查看时可打开 [HTML 版运维手册](docs/build-and-operations.html)。支持 Windows PowerShell、Linux Shell 和 macOS Shell 的双交付流程分别参考 [binary-deploy 跨平台离线部署说明](docs/binary-直接部署.html) 和 [binary-demo 跨平台源码验真与现场修改说明](docs/binary-自主验收.html)。
+完整说明见 `docs/architecture.md`、`docs/deployment.md`、`docs/data-and-backup.md` 和 `docs/build-and-operations.md`。其中 `docs/build-and-operations.md` 集中列出 APP/checker 构建、Compose 启动、全新初始化、暂停和停止命令；需要直接用浏览器查看时可打开 [HTML 版运维手册](docs/build-and-operations.html)。支持 Windows PowerShell、Linux Shell 和 macOS Shell 的双交付流程分别参考 [binary-deploy 跨平台离线部署说明](docs/binary-直接部署.html) 和 [binary-demo 跨平台源码验真与现场修改说明](docs/binary-自主验收.html)。准备项目汇报、代码走读或技术答疑时，可使用 [BinaryScan 项目代码全模块讲解与 PPT 答疑手册](docs/BinaryScan项目代码全模块讲解与PPT答疑手册.md)。

@@ -59,7 +59,7 @@ worker Dockerfile 使用固定的 Ghidra、JVM tools、pycdc 和 Trivy 离线基
 
 - `topology`：静态确认服务集合恰好为九个。
 - `contracts`：在运行栈的 `checker-net` 上临时启动最终 Python checker 镜像作为 HTTP 客户端，对 C、Java、Python 三个 checker 发送真实 `checker-v1` 请求并核对代表性规则。临时容器使用 `--pull never`、只读根文件系统且不挂载业务数据。
-- `live`：上传内嵌的小型 Python 3.9 PYC，确认只有 scan 和 Trivy 自动运行，再依次手动触发 pycdc、Python checker 和 JSON 报告下载。
+- `live`：上传内嵌的小型 Python 3.9 PYC，确认完成格式识别后没有自动生成分析 run，再依次手动触发 pycdc、Python checker 和 JSON 报告下载。Trivy 只由用户在 Docker/OCI 容器映像任务中手动触发，不属于这条 PYC smoke。
 - `all`：依次执行以上三项。
 
 `contracts` 默认连接 `.env` 中 `COMPOSE_PROJECT_NAME` 对应的运行栈；隔离验收项目可用 `BINARY_SMOKE_PROJECT` 指定。`live` 需要一个已完成首次换密的 operator 或 administrator，凭据只通过进程环境临时提供，不写入 `.env`、参数或测试文件：

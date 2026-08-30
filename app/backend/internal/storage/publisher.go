@@ -15,6 +15,7 @@ import (
 	"binaryscan.local/backend/internal/identity"
 )
 
+// Manifest 是已发布源码项目的自描述索引，绑定输入 Blob、生成工具和每个源码文件的摘要。
 type Manifest struct {
 	Version     string         `json:"version"`
 	ProjectID   string         `json:"projectId"`
@@ -40,12 +41,14 @@ type ManifestFile struct {
 	LineCount int    `json:"lineCount"`
 }
 
+// Publication 返回不可变项目根目录及 manifest 本身的摘要，供数据库记录和后续完整性校验使用。
 type Publication struct {
 	Root           string
 	Manifest       Manifest
 	ManifestSHA256 [32]byte
 }
 
+// Workspace 是单次反编译运行的私有暂存区；所有输出先完成路径、大小和编码校验，再整体发布。
 type Workspace struct {
 	root     string
 	runID    string
@@ -58,6 +61,7 @@ func (w *Workspace) Stats() (int, int64) {
 	return len(w.files), w.written
 }
 
+// NewWorkspace 以已清洗的 runID 创建权限为 0700 的独立目录，并为整个项目设置累计字节上限。
 func NewWorkspace(workRoot, runID string, maxBytes int64) (*Workspace, error) {
 	runID, err := cleanIdentifier(runID)
 	if err != nil {
@@ -84,6 +88,8 @@ func NewWorkspace(workRoot, runID string, maxBytes int64) (*Workspace, error) {
 	return &Workspace{root: root, runID: runID, files: make(map[string]ManifestFile), maxBytes: maxBytes}, nil
 }
 
+// WriteFile 只接受规范化相对路径和 UTF-8 文本，拒绝重复路径及保留的 project.json。
+// SHA-256、大小和行数在写入时生成，累计上限阻止工具输出膨胀占满制品盘。
 func (w *Workspace) WriteFile(relativePath, language string, source io.Reader) error {
 	cleaned, err := CleanRelativePath(relativePath)
 	if err != nil {
@@ -141,6 +147,8 @@ func (w *Workspace) Publish(finalRoot, projectID string, manifest Manifest) (str
 	return publication.Root, err
 }
 
+// PublishProject 将排序后的文件清单写入 project.json，再以目录 rename 原子切换到最终项目 ID。
+// 目标必须不存在，发布后整个目录树转为只读；消费者因此只能看到完整项目，不会读到半成品。
 func (w *Workspace) PublishProject(finalRoot, projectID string, manifest Manifest) (Publication, error) {
 	projectID, err := cleanIdentifier(projectID)
 	if err != nil {
@@ -220,6 +228,7 @@ func makeReadOnly(root string) error {
 	})
 }
 
+// Cleanup 只删除尚未发布的暂存目录；PublishProject 成功后 root 会被清空，避免误删不可变项目。
 func (w *Workspace) Cleanup() error {
 	if w.root == "" {
 		return nil

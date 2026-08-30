@@ -31,6 +31,8 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function useArchiveImport(options: UseArchiveImportOptions) {
+  // archiveImport 保存服务端导入生命周期，entries 只保存当前游标页；选中集合则
+  // 跨页保留，使用户可从不同页凑齐一次批量创建（后端上限 10 个）。
   const archiveImport = shallowRef<ArchiveImport | null>(null)
   const entries = shallowRef<ArchiveImportEntry[]>([])
   const entryLabels = shallowRef<Record<string, string>>({})
@@ -60,6 +62,9 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
   let lifecycleGeneration = 0
   let initialSelectionApplied = options.applyInitialSelection === false
   let disposed = false
+
+  // 三类 generation 分别隔离“导入状态”“条目页”和整个生命周期。删除、切页或
+  // 组件销毁后，即使旧请求晚返回，也不能把过期数据重新写回界面。
 
   const currentCursor = computed(
     () => cursorHistory.value[pageIndex.value],
@@ -114,6 +119,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
   }
 
   function applyInitialSelection(items: readonly ArchiveImportEntry[]): void {
+    // 自动勾选只执行一次，并尊重用户已主动取消的条目，避免轮询/翻页把选择改回去。
     if (
       initialSelectionApplied ||
       !isReady.value ||
@@ -137,6 +143,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
   }
 
   function markDeleted(): void {
+    // 删除被视为终态：递增所有版本号让在途请求失效，再一次性清空派生状态。
     clearPoll()
     pollingBlocked.value = false
     lifecycleGeneration += 1
@@ -176,6 +183,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
       }
       entries.value = page.items
       entryLabels.value = {
+        // 条目列表按页加载，但批量结果可能引用其他页 ID；缓存路径用于结果回显。
         ...entryLabels.value,
         ...Object.fromEntries(page.items.map((entry) => [entry.id, entry.path])),
       }
@@ -217,6 +225,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
         return
       }
       if (value.upload_id !== options.uploadId) {
+        // importId 与 uploadId 同时校验，防止路由参数串用时展示或删除其他上传。
         throw new ApiError('归档导入与上传记录不一致', 502, {
           code: 'INVALID_ARCHIVE_IMPORT_RESPONSE',
         })
@@ -252,6 +261,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
       }
       importError.value = errorMessage(error, '无法读取归档导入状态')
       if (error instanceof ApiError && error.status === 403) {
+        // 权限错误不会随轮询自动恢复，停止请求风暴；其他瞬时故障继续定时重试。
         pollingBlocked.value = true
       } else {
         schedulePoll()
@@ -265,6 +275,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
     if (filter.value === value && pageIndex.value === 0) return
     entriesGeneration += 1
     filter.value = value
+    // 游标只在原查询条件下有效，筛选变化必须丢弃前后页历史并回到第一页。
     cursorHistory.value = [undefined]
     pageIndex.value = 0
     nextCursor.value = undefined
@@ -343,6 +354,8 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
     const lifecycle = lifecycleGeneration
     const entryIds = [...selectedIds.value].sort()
     const signature = entryIds.join('\n')
+    // 排序后的条目集合代表一次用户意图；完全相同的重试复用幂等键。批次出现
+    // 失败时释放键，让用户处理失败条目后能够重新提交。
     const idempotencyKey = batchKeys.get(signature) ?? createIdempotencyKey()
     batchKeys.set(signature, idempotencyKey)
     submitting.value = true
@@ -364,6 +377,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
           .filter((item) => item.outcome !== 'failed')
           .map((item) => item.entry_id),
       )
+      // 已创建或已存在的条目退出选择，仅失败条目留给用户继续处理。
       selectedIds.value = new Set(
         [...selectedIds.value].filter((id) => !completedIds.has(id)),
       )

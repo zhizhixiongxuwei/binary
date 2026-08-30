@@ -27,6 +27,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+/**
+ * 基于 JavaParser AST 的 Java 静态规则引擎。
+ *
+ * <p>Vineflower/CFR/JADX 产生的是可读源码而非原始工程，类型解析所需的依赖通常不存在。
+ * 因此本引擎采用“语法树 + 局部表达式事实”策略：先枚举调用与对象创建节点，再由
+ * {@link ExpressionFacts} 判断常量、动态拼接、变量最近定义和局部声明类型。这样既能覆盖常见
+ * 密码学、XXE、反序列化、SQL/命令注入和权限问题，又不会假装拥有完整类路径语义。</p>
+ */
 @Component
 final class JavaAnalyzer {
     private static final Rule WEAK_DIGEST = rule("java-weak-message-digest", "medium", "CWE-328", "Weak message digest");
@@ -67,6 +75,7 @@ final class JavaAnalyzer {
         try {
             CompilationUnit unit = StaticJavaParser.parse(file.content());
             Emitter emitter = new Emitter(file.path(), findings);
+            // 固定遍历顺序和最终排序，使相同源码在不同运行中生成稳定、可复核的 Finding。
             for (MethodCallExpr call : sorted(unit.findAll(MethodCallExpr.class))) {
                 evaluateCrypto(unit, call, emitter);
                 evaluateXxe(call, emitter);
@@ -87,6 +96,7 @@ final class JavaAnalyzer {
             findings.sort(Comparator.comparingInt(Models.Finding::line)
                 .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));
         } catch (RuntimeException exception) {
+            // 单个反编译文件可能因缺失语句或反编译器占位符无法解析，不应拖垮整个项目。
             diagnostics.add(file.path() + ": parser rejected decompiled source");
         }
         return new Analysis(findings, diagnostics);

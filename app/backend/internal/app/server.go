@@ -15,10 +15,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// Server 封装 HTTP 生命周期；路由、鉴权和业务服务在 NewServer 中一次性完成组装。
 type Server struct {
 	http *http.Server
 }
 
+// NewServer 是后端的 HTTP 组合根。它在同一个路由树上明确区分公开探针、登录入口、
+// 已认证只读接口和需要 CSRF/角色校验的变更接口，避免安全策略散落到各处理函数中。
 func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
@@ -32,6 +35,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize task service: %w", err)
 	}
+	// 恢复、请求关联 ID 和来源校验必须先于业务路由运行，确保失败请求同样可追踪且受边界保护。
 	router.Use(gin.Recovery(), requestID(), originGuard(cfg.App.AllowedOrigins))
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
 	router.GET("/readyz", func(c *gin.Context) {
@@ -49,6 +53,8 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 		c.JSON(http.StatusOK, gin.H{"name": "BinaryScan", "version": cfg.Version})
 	})
 	api.POST("/auth/login", auth.login)
+	// authenticate 是受保护 API 的共同门禁；所有状态变更再叠加 CSRF 与最小角色要求。
+	// 管理员写操作还先记录被拒绝的尝试，使权限失败也能进入审计链路。
 	protected := api.Group("")
 	protected.Use(auth.authenticate())
 	protected.GET("/auth/me", auth.me)
@@ -98,6 +104,8 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 		return nil, fmt.Errorf("open embedded frontend: %w", err)
 	}
 	assets := http.FileServer(http.FS(dist))
+	// 前端使用 SPA 回退，但 API 拼写错误必须保持 JSON 404；非只读方法也绝不能落到 index.html。
+	// 这条边界既保证客户端路由可刷新，又避免 API 与静态资源命名空间互相掩盖。
 	router.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not_found"})
@@ -135,6 +143,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// requestID 接受长度受限的上游关联 ID；缺失或异常长时生成随机值，并在响应头中回传。
 func requestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		value := strings.TrimSpace(c.GetHeader("X-Request-ID"))
@@ -147,6 +156,8 @@ func requestID() gin.HandlerFunc {
 	}
 }
 
+// originGuard 只约束可能改变状态的方法。浏览器携带 Origin 时必须命中配置白名单；
+// 不携带 Origin 的同源旧客户端、健康探针和非浏览器调用仍由会话鉴权与 CSRF 继续保护。
 func originGuard(allowed []string) gin.HandlerFunc {
 	allowlist := make(map[string]struct{}, len(allowed))
 	for _, value := range allowed {

@@ -126,6 +126,8 @@ type uploadValidationFailure struct {
 
 func (e *uploadValidationFailure) Error() string { return e.message }
 
+// createUpload 创建有期限的分片会话。Idempotency-Key 与“文件名、声明大小、内容类型”共同定义请求意图：
+// 同一用户以相同意图重放会得到原会话，复用同一键提交不同意图则返回冲突。
 func (s *taskService) createUpload(c *gin.Context) {
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if !validIdempotencyKey(idempotencyKey) {
@@ -184,7 +186,7 @@ func (s *taskService) createUpload(c *gin.Context) {
 		VALUES (?, ?, ?, ?, NULL, ?, 0, 'open', ?, 'pending', ?)`,
 		uploadID, user.ID, name, contentType, request.Size, idempotencyKey, expiresAt)
 	if err != nil {
-		// A concurrent retry may have won the unique idempotency-key insert.
+		// 并发重试可能先完成幂等键的唯一索引写入；重新读取并比较完整意图后即可安全返回其结果。
 		if existing, found, queryErr := s.loadUploadByIdempotency(c, user.ID, idempotencyKey); queryErr == nil && found {
 			if existing.OriginalName == name && existing.DeclaredSize == request.Size &&
 				existing.ContentType == contentType {
@@ -276,6 +278,8 @@ func (s *taskService) getUpload(c *gin.Context) {
 	s.writeUploadSession(c, record, http.StatusOK)
 }
 
+// createUploadTask 把已完成且验证有效的上传转换为指定分析模式的任务。
+// upload/mode 唯一性是最终幂等边界：并发请求即使携带不同请求键，也只会为该模式创建一个活动任务。
 func (s *taskService) createUploadTask(c *gin.Context) {
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if !validIdempotencyKey(idempotencyKey) {
@@ -317,7 +321,7 @@ func (s *taskService) createUploadTask(c *gin.Context) {
 	}
 	result, err := s.persistUploadAnalysisTask(c, record, mode, idempotencyKey)
 	if err != nil {
-		// A concurrent request may have won the unique upload/mode insert.
+		// 并发请求可能先完成 upload/mode 唯一索引写入；回读获胜结果即可把竞争转换为幂等成功。
 		if existing, found, queryErr := s.loadUploadTaskResponse(c, record.ID, mode); queryErr == nil && found {
 			c.JSON(http.StatusOK, existing)
 			return
@@ -330,6 +334,9 @@ func (s *taskService) createUploadTask(c *gin.Context) {
 	c.JSON(http.StatusCreated, result)
 }
 
+// putUploadPart 严格绑定 partNumber、Content-Range 和客户端声明的分片 SHA-256。
+// 数据先写临时文件并完成长度/摘要校验，再锁定上传会话更新元数据；相同分片重放会校验并在必要时
+// 修复磁盘副本，而同一序号的不同内容会被拒绝，避免网络重试破坏已接收数据。
 func (s *taskService) putUploadPart(c *gin.Context) {
 	partNumber64, err := strconv.ParseUint(c.Param("partNumber"), 10, 32)
 	if err != nil || partNumber64 == 0 {
@@ -484,6 +491,9 @@ func (s *taskService) putUploadPart(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// completeUpload 领取 assembly token 后重新校验连续分片及每个磁盘摘要，再流式写入内容寻址 BlobStore。
+// token 是组装阶段的 fence：同一时刻只有一个请求能发布最终状态，超时 token 可被后续请求接管；
+// 服务端始终根据完整文件内容识别格式，不信任上传时声明的 MIME 类型或扩展名。
 func (s *taskService) completeUpload(c *gin.Context) {
 	record, found, err := s.loadOwnedUpload(c, c.Param("uploadID"), mustCurrentUser(c).ID, false)
 	if err != nil {
@@ -579,7 +589,7 @@ func (s *taskService) completeUpload(c *gin.Context) {
 	detected, err := filetype.Detect(blobPath, record.OriginalName)
 	if err != nil {
 		if errors.Is(err, filetype.ErrInvalidInput) {
-			// Malformed archive metadata is a terminal input validation failure.
+			// 归档元数据损坏属于输入本身不可用，记录为终态校验失败，而不是可重试的服务故障。
 			detected = filetype.Result{Format: "unknown"}
 		} else {
 			slog.Error("server-side upload detection failed", "request_id", c.GetString("requestID"),
@@ -594,8 +604,7 @@ func (s *taskService) completeUpload(c *gin.Context) {
 		return
 	}
 	finalized = true
-	// The content-addressed blob is now durable. Upload parts are no longer
-	// needed and would otherwise duplicate every completed sample on disk.
+	// 内容寻址 Blob 已持久化，分片不再承担恢复职责；立即清理可避免每个完成样本在磁盘上保留两份。
 	if removeErr := os.RemoveAll(uploadDirectory); removeErr != nil {
 		slog.Warn("cleanup completed upload parts failed", "request_id", c.GetString("requestID"),
 			"upload_id", record.ID, "error", removeErr)
@@ -611,6 +620,8 @@ func (s *taskService) completeUpload(c *gin.Context) {
 	s.writeUploadSession(c, result, http.StatusOK)
 }
 
+// deleteUpload 只允许删除不会破坏活动分析引用的会话。归档任务需先确认没有排队/运行中的导入，
+// 已进入其他分析链路的完成上传则拒绝删除；数据库状态提交后才清理可再生的分片目录。
 func (s *taskService) deleteUpload(c *gin.Context) {
 	record, found, err := s.loadOwnedUpload(c, c.Param("uploadID"), mustCurrentUser(c).ID, false)
 	if err != nil {
@@ -710,6 +721,7 @@ func (s *taskService) deleteUpload(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// claimUploadAssembly 通过条件更新领取组装 fence；只有空闲或超过 stale 窗口的 token 可以被替换。
 func (s *taskService) claimUploadAssembly(
 	ctx *gin.Context, uploadID string, userID uint64,
 ) (string, bool, error) {
@@ -733,6 +745,7 @@ func (s *taskService) claimUploadAssembly(
 	return token, changed == 1, nil
 }
 
+// releaseUploadAssembly 仅清除调用方持有的 token，迟到请求不能释放后来者的组装权。
 func (s *taskService) releaseUploadAssembly(
 	ctx context.Context, uploadID string, userID uint64, token string,
 ) error {
@@ -743,6 +756,8 @@ func (s *taskService) releaseUploadAssembly(
 	return err
 }
 
+// persistUploadAnalysisTask 在一个事务中锁定上传并创建任务根文件、运行/作业、事件和审计记录。
+// 不适用的模式也会落下明确的 unsupported 终态运行，前端因此无需把“未排队”误判为系统故障。
 func (s *taskService) persistUploadAnalysisTask(
 	ctx *gin.Context, record uploadRecord, mode filetype.AnalysisMode, idempotencyKey string,
 ) (uploadTaskResponse, error) {
@@ -923,6 +938,8 @@ func analysisOptions(format string) []uploadAnalysisOption {
 	return options
 }
 
+// finalizeUpload 在 assembly token 仍匹配时，把内容摘要去重后的 Blob 与上传终态一并提交。
+// 未知格式保留 Blob 供审计但将上传标记为校验失败；有效格式则清除 fence 并记录检测结果和审计日志。
 func (s *taskService) finalizeUpload(
 	ctx *gin.Context, record uploadRecord, blob storage.Blob, detected filetype.Result, assemblyToken string,
 ) (uploadRecord, *uploadValidationFailure, error) {
@@ -1200,6 +1217,7 @@ func (s *taskService) loadUploadParts(ctx *gin.Context, uploadID string) ([]stor
 	return parts, rows.Err()
 }
 
+// uploadDirectory 只接受规范 UUID，并由服务端根目录拼接路径，阻断用户输入造成的目录穿越。
 func (s *taskService) uploadDirectory(uploadID string) (string, error) {
 	if !canonicalUUID(uploadID) {
 		return "", fmt.Errorf("invalid upload id")
@@ -1293,6 +1311,7 @@ func verifyUploadPart(path string, part storedUploadPart) error {
 	return nil
 }
 
+// validateUploadParts 验证从 1 开始、无缺口且恰好覆盖声明总长度的固定大小分片序列。
 func validateUploadParts(parts []storedUploadPart, total int64) error {
 	if total <= 0 || len(parts) == 0 {
 		return fmt.Errorf("upload has no parts")
@@ -1404,6 +1423,7 @@ func validUploadText(value string, limit int) bool {
 	return true
 }
 
+// equalDigest 对等长摘要累计全部字节差异，避免在首个不同字节处提前返回。
 func equalDigest(left, right []byte) bool {
 	if len(left) != len(right) {
 		return false

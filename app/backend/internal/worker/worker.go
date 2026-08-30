@@ -17,14 +17,19 @@ import (
 	"binaryscan.local/backend/internal/job"
 )
 
+// Executor 把通用的租约状态机与具体扫描、反编译或检测实现解耦。
 type Executor interface {
 	Execute(context.Context, job.Claim) error
 }
 
+// Factory 在 worker 完成数据库连接后构造对应角色的执行器。
 type Factory func(config.Config, *sql.DB, *job.Repository) (Executor, error)
 
 const checkerRetryBudget = 12 * time.Hour
 
+// Run 驱动所有后台角色共享的任务状态机：领取租约、登记尝试、执行并续租，最后重试或完成。
+// 执行本身允许因进程崩溃而至少一次发生；真正对外可见的结果由 Repository 的 fencing token
+// 和 published_at 提交点保护，从而避免旧 worker 在租约转移后覆盖新结果。
 func Run(role string, kinds []job.Kind, factory Factory) error {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		cfg, err := config.Load(role)
@@ -104,6 +109,7 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 			logger.Warn("job start rejected", "job_id", claim.ID, "error", err)
 			continue
 		}
+		// 上一次执行可能已经提交业务结果、却在写回任务完成状态前崩溃；此时跳过重复副作用。
 		published, err := repository.PublicationComplete(ctx, *claim)
 		if err != nil {
 			err = job.Retryable(err, 5*time.Second)
@@ -114,6 +120,7 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 			err = executeWithHeartbeat(executionCtx, repository, workerID, *claim, cfg.Worker.Lease, cfg.Worker.Heartbeat, executor)
 			executionCancel()
 			if err != nil {
+				// 执行器可能在事务提交后才因网络或上下文取消返回错误，以提交标记作为最终事实来源。
 				committed, inspectErr := repository.PublicationComplete(ctx, *claim)
 				if inspectErr == nil && committed {
 					logger.Warn("execution returned after publication; treating committed result as successful",
@@ -150,6 +157,8 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 	}
 }
 
+// executionContext 以任务创建时间而非单次尝试时间计算 checker 截止点，防止依赖长期不可用时
+// 通过反复重试无限延长任务寿命。
 func executionContext(parent context.Context, claim job.Claim) (context.Context, context.CancelFunc) {
 	if isCheckerKind(claim.Kind) {
 		return context.WithDeadline(parent, claim.CreatedAt.Add(checkerRetryBudget))
@@ -157,6 +166,7 @@ func executionContext(parent context.Context, claim job.Claim) (context.Context,
 	return context.WithCancel(parent)
 }
 
+// canRetry 同时受最大尝试次数和 checker 总重试预算约束。
 func canRetry(claim job.Claim, delay time.Duration) bool {
 	if claim.AttemptCount+1 >= claim.MaxAttempts {
 		return false
@@ -171,6 +181,8 @@ func isCheckerKind(kind job.Kind) bool {
 	return kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck
 }
 
+// executeWithHeartbeat 在业务执行期间续租；一旦续租失败便取消执行上下文，促使已失去 fence 的
+// worker 尽快停止。最终的持久化仍必须在 Repository.WithFence 内再次校验租约。
 func executeWithHeartbeat(
 	ctx context.Context,
 	repository *job.Repository,
@@ -202,6 +214,7 @@ func executeWithHeartbeat(
 	}
 }
 
+// openWithRetry 允许 worker 随依赖一起启动，并在数据库尚未就绪时等待到进程上下文取消。
 func openWithRetry(ctx context.Context, cfg config.Database) (*sql.DB, error) {
 	var lastErr error
 	for ctx.Err() == nil {

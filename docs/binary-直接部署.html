@@ -58,7 +58,7 @@
     <table>
       <thead><tr><th>路径</th><th>Windows</th><th>Linux / macOS</th><th>用途</th></tr></thead>
       <tbody>
-        <tr><td><code>verify.ps1 / verify.sh</code></td><td><code>verify.ps1</code></td><td><code>verify.sh</code></td><td>校验完整交付文件清单。</td></tr>
+        <tr><td><code>verify.ps1 / verify.sh</code></td><td><code>verify.ps1</code></td><td><code>verify.sh</code></td><td>校验封存清单中列出的全部文件内容。</td></tr>
         <tr><td><code>load-images.ps1 / load-images.sh</code></td><td><code>load-images.ps1</code></td><td><code>load-images.sh</code></td><td>校验镜像 TAR 后导入 Docker。</td></tr>
         <tr><td><code>manage.ps1 / manage.sh</code></td><td><code>manage.ps1</code></td><td><code>manage.sh</code></td><td>初始化、检查、启停、日志和安全重置。</td></tr>
         <tr><td><code>images/runtime/</code></td><td colspan="3">MySQL、App、scanner、三个反编译器和三个 checker 的统一离线归档。</td></tr>
@@ -109,6 +109,7 @@ uname -m</code></pre>
       </section>
     </div>
     <div class="callout danger"><strong>Windows 最重要的检查：</strong>Docker Desktop 托盘菜单如果显示“Switch to Linux containers”，说明当前仍在 Windows containers 模式，必须先切换；本交付不包含 Windows 容器镜像。</div>
+    <div class="callout">现场 Docker 需要支持 Compose v2 的 <code>up --wait</code> 与 <code>--pull never</code>。交付脚本会检查 Docker/Compose 是否存在，但正式验收前仍应在目标机实际执行 <code>doctor</code> 和一次完整启动，不能只根据版本号推断兼容。</div>
 
     <h2 id="verify">3. 封存验真：每个系统执行什么</h2>
     <div class="os-grid">
@@ -126,7 +127,7 @@ chmod +x ./*.sh
 ./verify.sh package
 shasum -a 256 manifests/package.sha256</code></pre></section>
     </div>
-    <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。</div>
+    <div class="callout warn">必须把 <code>manifests/package.sha256</code> 自身的 SHA-256 与用户封存日保存在交付目录之外的纸质、签字文件或可信介质记录比较。只检查目录内部文件不能建立最终可信根。脚本验证清单内文件内容，不拒绝目录中后来增加的额外文件；验收时不要运行来源不明的附加脚本。</div>
     <div class="callout"><strong>2026-08-26 本次交付锚点：</strong><code>manifests/package.sha256</code> 文件自身的 SHA-256 为 <code>fdde3c598cd6e052e0d16074bc0d01130627f71eabddee346d34953abc7b8fbe</code>。该值必须另行封存；目录重新生成后值会改变，不能继续沿用。</div>
 
     <h2 id="load">4. 离线导入九个运行镜像</h2>
@@ -151,6 +152,8 @@ Select-String -Path .env -Pattern '^INITIAL_ADMIN_'</code></pre></section>
       <section class="os-card linux"><h3>Linux 查看</h3><pre><code>sudo grep '^INITIAL_ADMIN_' .env</code></pre></section>
       <section class="os-card macos"><h3>macOS 查看</h3><pre><code>grep '^INITIAL_ADMIN_' .env</code></pre></section>
     </div>
+    <div class="callout warn">每套交付目录由制备脚本分别生成随机管理员密码，用户名默认 <code>admin</code>，实际密码以各自 <code>.env</code> 为准。初始账号只在空数据库首次启动时创建；普通重启后修改 <code>INITIAL_ADMIN_*</code> 不会覆盖数据库中的现有密码，只有清空数据库后才会重新引导。</div>
+    <div class="callout">修改 <code>.env</code> 属于封存验真后的受控现场配置变更，因为 <code>.env</code> 本身在 package 清单内，修改后再次执行原始 package 验真会失败，这是预期结果。应保留一份只读原始包，并记录配置变更，不能把修改后的目录继续宣称为原始封存包。</div>
     <div class="callout danger">不要把 <code>BINARY_DATA_ROOT</code> 改成盘符根目录、用户目录或其他路径。脚本固定要求 <code>./data</code>，并拒绝把符号链接或 Windows junction 当作数据根目录。</div>
 
     <h2 id="start">6. 初始化并启动九个服务</h2>
@@ -175,26 +178,30 @@ sudo ./manage.sh status</code></pre></section>
       <thead><tr><th>内容</th><th>Windows 示例</th><th>Linux 示例</th><th>容器内位置</th></tr></thead>
       <tbody>
         <tr><td>数据库</td><td><code>C:\BinaryScan\binary-deploy\data\mysql</code></td><td><code>/opt/binary-deploy/data/mysql</code></td><td><code>/var/lib/mysql</code></td></tr>
-        <tr><td>原始二进制</td><td><code>data\storage\blobs</code></td><td><code>data/storage/blobs</code></td><td><code>/data/storage/blobs</code></td></tr>
+        <tr><td>分片上传暂存</td><td><code>data\storage\uploads</code></td><td><code>data/storage/uploads</code></td><td><code>/data/storage/uploads</code></td></tr>
+        <tr><td>上传原件与归档成员（内容寻址）</td><td><code>data\storage\blobs</code></td><td><code>data/storage/blobs</code></td><td><code>/data/storage/blobs</code></td></tr>
         <tr><td>类 C 源码</td><td><code>data\storage\projects\native</code></td><td><code>data/storage/projects/native</code></td><td><code>/data/storage/projects/native</code></td></tr>
         <tr><td>Java 源码</td><td><code>data\storage\projects\jvm</code></td><td><code>data/storage/projects/jvm</code></td><td><code>/data/storage/projects/jvm</code></td></tr>
         <tr><td>Python 源码</td><td><code>data\storage\projects\pyc</code></td><td><code>data/storage/projects/pyc</code></td><td><code>/data/storage/projects/pyc</code></td></tr>
+        <tr><td>Scanner/checker/Trivy 制品</td><td><code>data\storage\artifacts</code></td><td><code>data/storage/artifacts</code></td><td><code>/data/storage/artifacts</code></td></tr>
         <tr><td>单任务报告</td><td><code>data\storage\reports</code></td><td><code>data/storage/reports</code></td><td><code>/data/storage/reports</code></td></tr>
         <tr><td>归档总报告 ZIP</td><td><code>data\storage\reports\archive-bundles</code></td><td><code>data/storage/reports/archive-bundles</code></td><td><code>/data/storage/reports/archive-bundles</code></td></tr>
+        <tr><td>可重建工作目录</td><td><code>data\work</code></td><td><code>data/work</code></td><td><code>/data/work</code></td></tr>
       </tbody>
     </table>
-    <p>Monaco Editor 和漏洞详情通过 App 读取数据库记录指向的持久化源码，不依赖容器临时文件系统。</p>
+    <p>用户、任务、run、finding、审计和文件索引主要保存在 MySQL；文件正文位于 storage。Monaco Editor 和漏洞详情通过 App 读取数据库记录指向的持久化源码，不依赖容器临时文件系统。备份时必须保持 MySQL 与 storage 的一致性时点。</p>
 
     <h2 id="acceptance">8. 当前版本业务验收主线</h2>
     <ol>
-      <li>上传 DLL、EXE、SYS、PYC、Mach-O、CLASS、ZIP、GZIP、TAR、RAR、JAR、APK、IMG、ISO 或 EXT4 文件；上传完成后再选择“二进制”“归档”或“容器/映像”分析模式。</li>
+      <li>服务端按内容而不只是扩展名识别 PE（EXE/DLL/SYS）、ELF、Mach-O、CLASS、JAR、WAR、EAR、DEX、APK、PYC，ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO 9660、EXT4，以及 Docker Save/OCI Layout TAR；上传完成后再选择“二进制”“归档”或“容器/映像”分析模式。<code>.img</code> 只是后缀，不能单独确定内部格式。</li>
       <li>二进制模式按实际识别结果进入 Ghidra、JVM 或 PYC 反编译，再手动启动 C、Java 或 Python 源码检查；源码、行列定位和 finding 均写入 <code>data/</code>。在线任务页的 Monaco Editor 可以读取持久化源码；下载后的离线 HTML 报告只展示路径、行列和代码片段，不提供依赖系统地址的“在源码中打开”链接。</li>
-      <li>归档模式只读拆分一层；ZIP、TAR、ISO 9660、EXT4 等可列出符合条件的成员并批量创建二进制子任务。每个子任务独立反编译、检查并导出 JSON、HTML 或 Word 报告。</li>
-      <li>从左侧“归档批次”展开对应批次，选择格式生成总报告 ZIP；总包只收集当时已经 ready 的子报告，可选包含反编译源码，缺失格式和未收录任务写入 <code>manifest.json</code> 与 <code>index.html</code>。</li>
-      <li>容器/映像模式由用户手动启动 Trivy。Docker Save TAR、OCI Layout TAR 以及内容实际为 Docker archive 的 IMG 可检测；ISO、EXT4 或其他不适用内容应明确显示“不适用/无结果”，不得伪造漏洞。</li>
+      <li>选择归档模式后自动排队一次只读解析；ZIP/TAR 内的嵌套归档不递归，<code>.tar.gz</code>/<code>.tar.xz</code> 的包装与 TAR 载荷算同一逻辑层。ISO 9660 和 EXT4 不执行宿主机 mount，而是只读遍历镜像目录树。解析后由用户选择符合条件的成员，每批最多 10 个，手动批量创建二进制子任务；各子任务再独立反编译、检查并导出 JSON、HTML 或 DOCX 报告。</li>
+      <li>从左侧“归档批次”展开对应批次，选择格式生成总报告 ZIP；每种所选格式取各子任务最新 ready 报告，可选包含已收录任务的 ready 反编译源码。<code>manifest.json</code> 完整记录缺失格式、运行和省略原因；<code>index.html</code> 提供已包含/已省略任务及报告链接的可读摘要。</li>
+      <li>容器/映像模式由用户手动启动 Trivy。只有识别为 Docker Save TAR 或 OCI Layout TAR 的内容可检测；二者改名 <code>.img</code> 后仍按内部结构识别。ISO、EXT4、普通 TAR、原始/分区磁盘 IMG 或其他不适用内容应明确显示“不适用/无结果”，不得伪造漏洞。</li>
     </ol>
-    <div class="callout warn">总报告不会自动替子任务启动反编译、checker 或单任务报告。验收总报告前，应先进入各子任务完成所需流程并生成对应格式报告，再返回“归档批次”汇总。</div>
-    <div class="callout"><strong>2026-08-26 制备机回归基线：</strong>使用随项目维护的 <code>binary-repo</code> 业务样本完成 25/25 上传，12/12 归档一层展开，实际创建 19 个归档子任务；29/29 反编译和对应 checker、3/3 Trivy 均到达完成状态，共记录 225 条 finding。31 个有结果任务生成并下载校验了 93 份 JSON/HTML/DOCX 单任务报告，12 个归档批次均生成总报告 ZIP。JAR 中单独拆出的一个内部类检测完成但为 0 命中，因此按“有结果才生成报告”策略不生成该子任务报告，并在总包清单中记为省略。该数字是本次制备机与本批测试样本的回归记录，不是对任意用户文件命中数量或现场耗时的承诺。</div>
+    <div class="callout warn">单任务报告只允许选择同一任务中已经终态的运行，最多 100 个；0 finding 也可生成报告。finding 超过 50,000 条时报告会明确标记截断。总报告不会自动替子任务启动反编译、checker 或单任务报告；至少要有一份符合所选格式的 ready 报告，报告及可选源码的声明未压缩总量上限为 4 GiB。</div>
+    <div class="callout warn"><strong>Trivy 时效边界：</strong>结果基于 scanner 镜像内封存的 Trivy 离线漏洞库快照，现场不会联网更新，只反映该快照已知漏洞。更新漏洞库必须重新制备、验证并封存 scanner 镜像。</div>
+    <div class="callout"><strong>2026-08-26 历史制备机回归基线：</strong>上一轮使用 <code>binary-repo</code> 固定样本完成 25/25 上传，12/12 归档解析，创建 19 个归档子任务；29/29 反编译和对应 checker、3/3 Trivy 完成，共记录 225 条 finding。回归自动化按“仅为有命中任务批量生成报告”的执行口径，对 31 个有结果任务生成并下载校验了 93 份 JSON/HTML/DOCX 报告，12 个归档批次均生成总报告 ZIP；一个 JAR 内部类检测完成但 0 命中，故该轮脚本跳过其个人报告。当前产品本身允许为 0 命中的终态运行生成报告。上述数字只属于该日期、该批样本和当时镜像，不是对任意文件命中数量或现场耗时的承诺；本次重新制备若未复跑完整样本，不应把该段改写为最新回归结果。</div>
 
     <h2 id="operate">9. 日常命令对照表</h2>
     <table class="command-table">
@@ -225,7 +232,7 @@ sudo ./manage.sh status</code></pre></section>
       <li><strong>Windows 文件共享或挂载失败：</strong>把交付目录移动到本机 NTFS 盘的短路径，例如 <code>C:\BinaryScan</code>，不要使用网络盘、OneDrive 按需文件或压缩包内路径。</li>
       <li><strong>平台不匹配：</strong>交付镜像是 <code>linux/amd64</code>；Windows ARM 设备不作为正式验证目标。</li>
       <li><strong>镜像缺失：</strong>Windows 重新执行 <code>.\load-images.ps1</code>；Linux/macOS 重新执行 <code>./load-images.sh</code>。</li>
-      <li><strong>端口占用：</strong>完成封存验真后修改 <code>APP_PORT</code>，同时修改 <code>PUBLIC_BASE_URL</code>。</li>
+      <li><strong>端口占用：</strong>完成封存验真后同步修改 <code>APP_PORT</code>、<code>PUBLIC_BASE_URL</code> 和 <code>APP_ALLOWED_ORIGINS</code>；若开放内网访问还要核对 <code>APP_BIND_IP</code>。三处地址不一致会导致浏览器 Origin 校验或写操作失败。</li>
     </ul>
     <footer>BinaryScan binary-deploy 跨平台操作说明 · HTML 位于源仓库 docs/，不复制进封存交付目录。</footer>
   </article>

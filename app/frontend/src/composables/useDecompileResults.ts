@@ -53,6 +53,8 @@ function normalizeTarget(target: SourceNavigationTarget): SourceNavigationTarget
 }
 
 export function useDecompileResults(options: UseDecompileResultsOptions) {
+  // 数据按“项目列表 -> 项目文件列表 -> 单文件内容”三级延迟加载。每一级都有独立
+  // generation，切换项目或文件时只废弃对应请求，不必阻塞其他层的界面更新。
   const items = shallowRef<readonly DecompileResult[]>([])
   const nextCursor = shallowRef<string>()
   const selectedResultId = shallowRef('')
@@ -149,6 +151,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
         return false
       }
       if (content.id !== fileId || content.projectId !== projectId) {
+        // 内容端点必须回显请求身份；校验失败视为契约/存储串线，不能交给 Monaco。
         throw new ApiError('源码文件内容与请求的项目或文件不匹配', 502, {
           code: 'SOURCE_FILE_IDENTITY_MISMATCH',
         })
@@ -175,6 +178,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
     files: readonly DecompileSourceFile[],
     target: SourceNavigationTarget,
   ): DecompileSourceFile | undefined {
+    // 报告/检测结果优先使用不可变 fileId；兼容历史数据时再按标准化逻辑路径定位。
     if (target.sourceFileId) {
       const byId = files.find((file) => file.id === target.sourceFileId)
       if (byId) return byId
@@ -189,6 +193,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
     projectId: string,
     requestedTarget?: SourceNavigationTarget,
   ): Promise<boolean> {
+    // 先更新选中项目并清空上一项目源码，避免请求期间短暂展示“新项目 + 旧代码”。
     const project = items.value.find((item) => item.id === projectId)
     selectedResultId.value = projectId
     resetProjectSource()
@@ -207,6 +212,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
         return false
       }
       if (page.files.some((file) => file.projectId !== projectId)) {
+        // 文件清单只允许属于当前项目，防止跨任务/跨项目内容被错误展示。
         throw new ApiError('源码文件列表包含其他项目的文件', 502, {
           code: 'SOURCE_PROJECT_IDENTITY_MISMATCH',
         })
@@ -289,6 +295,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
       if (generation !== listGeneration || taskId !== toValue(options.taskId)) {
         return
       }
+      // 游标追加不改变当前项目；完整刷新则尽量恢复原选择，否则打开首个项目。
       items.value = append ? [...items.value, ...page.items] : page.items
       nextCursor.value = page.next_cursor
 
@@ -329,6 +336,8 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
   }
 
   async function ensureProject(projectId: string): Promise<DecompileResult | undefined> {
+    // 深链接可能指向尚未加载的后续页。最多追 32 页，既支持定位也避免异常游标
+    // 导致无界请求。
     let target = items.value.find((item) => item.id === projectId)
     if (!target) {
       await load()
@@ -377,6 +386,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
   watch(
     [() => toValue(options.taskId), () => options.enabled === undefined || toValue(options.enabled)],
     ([taskId, enabled]) => {
+      // taskId 是源码数据的安全边界；切换时同时递增三级版本并清空旧内容。
       listGeneration += 1
       sourceFilesGeneration += 1
       sourceGeneration += 1

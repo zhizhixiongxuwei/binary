@@ -60,6 +60,8 @@ type Config struct {
 	Worker   Worker
 }
 
+// Load 是五个 Go 进程共用的配置入口。Compose 只给每个角色注入其能力需要的变量，
+// 因此结构体统一但实际权限仍由网络、挂载和环境变量共同收敛；App 专属配置只在 app 角色校验。
 func Load(role string) (Config, error) {
 	if role == "" {
 		role = strings.TrimSpace(os.Getenv("BINARY_ROLE"))
@@ -110,6 +112,7 @@ func Load(role string) (Config, error) {
 			ToolVersion:      strings.TrimSpace(os.Getenv("BINARY_TOOL_VERSION")),
 			ArchiveMaxBytes:  int64Value("BINARY_ARCHIVE_MAX_EXPANDED_BYTES", 10<<30),
 			ArchiveMaxFiles:  intValue("BINARY_ARCHIVE_MAX_ENTRIES", 20000),
+			// 槽位数量写入数据库资源池而不是只存在进程内，使多副本 Worker 也遵守同一并发预算。
 			SlotCounts: map[string]int{
 				"scanner":      intValue("BINARY_SLOT_SCANNER", 1),
 				"trivy":        intValue("BINARY_SLOT_TRIVY", 1),

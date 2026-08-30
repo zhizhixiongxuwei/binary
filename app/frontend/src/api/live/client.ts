@@ -136,6 +136,9 @@ interface LiveReport {
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '')
 
+// 后端实时 DTO 使用 camelCase，而页面和 demo 客户端共享稳定的 snake_case 模型。
+// 该文件集中完成协议适配，使业务组件不必感知两套字段命名和状态枚举。
+// CSRF 令牌与当前用户只保存在本页内存中，刷新后会由会话恢复接口重新取得。
 let csrfToken = ''
 let currentUser: Model.CurrentUser | null = null
 
@@ -157,6 +160,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
   if (!SAFE_METHODS.has(method) && csrfToken) {
+    // 认证 Cookie 由浏览器随 credentials 发送；有副作用的方法再叠加 CSRF 令牌。
     headers.set('X-CSRF-Token', csrfToken)
   }
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -166,6 +170,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'include',
   })
   if (!response.ok) {
+    // 页面只处理稳定的 code/status/message；这里同时兼容后端 JSON 错误和
+    // 反向代理偶尔返回的 HTML/纯文本错误页。
     let code = 'REQUEST_FAILED'
     let details: unknown
     try {
@@ -253,6 +259,8 @@ function taskStatus(value: string): Model.TaskStatus {
 }
 
 function taskProgress(value: string): { progress: number; indeterminate: boolean } {
+  // 列表接口没有精确百分比，因此这里只给状态级展示估值，并用 indeterminate
+  // 表明“仍在执行”；该数值不能作为后台流程真实完成度。
   switch (value) {
     case 'queued': return { progress: 5, indeterminate: true }
     case 'scanning': return { progress: 58, indeterminate: true }
@@ -302,6 +310,8 @@ export function buildLiveTaskListQuery(query: Model.TaskListQuery): string {
 }
 
 function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
+  // 根文件、运行阶段和失败原因来自不同集合：分别映射可避免某个子检测失败
+  // 覆盖任务的样本身份，或把已结束的失败 run 误当成当前阶段。
   const root = value.files.find((file) => file.parentId === null) ?? value.files[0]
   const active = value.runs.find((run) => run.status === 'running' || run.status === 'queued')
   const base = mapTask(value.task)
@@ -484,6 +494,7 @@ function positiveCoordinate(value: number | null | undefined, fallback: number):
 }
 
 function findingLocation(value: LiveFinding): Model.CAnalysisLocation {
+  // 检测器坐标可能缺字段或越界，进入 UI 前统一收敛为 Monaco 使用的 1 基范围。
   const startLine = positiveCoordinate(value.startLine ?? value.line, 1)
   const startColumn = positiveCoordinate(value.startColumn ?? value.column, 1)
   const endLine = Math.max(positiveCoordinate(value.endLine, startLine), startLine)
@@ -565,6 +576,8 @@ async function findingsWithProject(
   taskId: string,
   runId: string,
 ): Promise<{ findings: LiveFinding[]; projectId: string }> {
+  // finding 端点只返回检测结果；同时读取任务详情才能把 run.subjectId 补成
+  // 持久化源码项目 ID，供后续“在源码中定位”使用。
   const [findings, detail] = await Promise.all([
     loadFindings(taskId, runId),
     loadTask(taskId),
@@ -590,6 +603,8 @@ function unsupported(message: string): never {
 }
 
 export function createLiveApiClient(): ApiClient {
+  // 同一次报告生成重试必须沿用首次快照的 runIds，否则新完成的运行会让同一
+  // 幂等键对应不同请求体。成功或服务端明确报告冲突后才释放这份意图缓存。
   const reportRunIdsByIntent = new Map<string, readonly string[]>()
   const client: ApiClient = {
     async login(input) {
@@ -948,6 +963,8 @@ export function createLiveApiClient(): ApiClient {
         ? { items }
         : { items, next_cursor: String(result.nextBeforeId) }
     },
+    // 上传、归档和源码内容会驱动后续文件读写，不能只依赖 TypeScript 的编译期
+    // 类型。对应 parse* 在运行时校验服务端响应，并把契约漂移转换成明确的 502。
     async createUpload(input, idempotencyKey) {
       try {
         return parseCreatedUploadSession(

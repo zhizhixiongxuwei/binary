@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// runArtifactRecord 是运行级不可变制品的公开元数据；storage_key 永不暴露给客户端。
 type runArtifactRecord struct {
 	ID            string          `json:"id"`
 	TaskID        string          `json:"taskId"`
@@ -29,6 +30,7 @@ type runArtifactRecord struct {
 	Metadata      json.RawMessage `json:"metadata,omitempty"`
 }
 
+// listRunArtifacts 通过 run/task 关联和未删除任务共同限定可见范围，只列出 ready 且未软删除的制品。
 func (s *taskService) listRunArtifacts(c *gin.Context) {
 	rows, err := s.db.QueryContext(c, `SELECT a.id, a.task_id, a.run_id, a.artifact_kind,
 		a.media_type, HEX(a.sha256), a.size_bytes, a.schema_version, a.state, a.metadata
@@ -66,6 +68,9 @@ func (s *taskService) listRunArtifacts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"artifacts": artifacts})
 }
 
+// downloadRunArtifact 将数据库记录作为完整性锚：先清洗内部 storage_key，再拒绝链接/非普通文件，
+// 校验长度并在有摘要时复算 SHA-256。下载名仅由经过字符白名单收敛的 artifact kind 生成，
+// 防止内部元数据进入 Content-Disposition 时形成响应头注入或不安全文件名。
 func (s *taskService) downloadRunArtifact(c *gin.Context) {
 	var storageKey, mediaType, kind string
 	var size int64

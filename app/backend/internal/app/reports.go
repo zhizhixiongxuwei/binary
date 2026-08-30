@@ -40,6 +40,7 @@ type reportRecord struct {
 	CompletedAt time.Time `json:"completedAt,omitempty"`
 }
 
+// storedReport 保留响应字段之外的规范化运行集合和删除状态，用于精确比较幂等请求意图。
 type storedReport struct {
 	Record  reportRecord
 	RunIDs  []string
@@ -52,6 +53,10 @@ type reportRowScanner interface {
 
 const maxReportRequestBytes = 32 << 10
 
+// createReport 根据指定终态运行构造一次不可变快照，再渲染为 JSON、HTML 或 DOCX。
+// RunIDs 先排序为规范意图；同一用户/任务/幂等键只能重放完全相同的格式与运行集合。
+// 制品文件先原子发布，数据库记录后提交，任一步失败会删除本次文件；若 Commit 结果不确定，
+// 则按幂等键反查数据库决定保留文件还是返回并发请求已经创建的报告。
 func (s *taskService) createReport(c *gin.Context) {
 	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if !validIdempotencyKey(idempotencyKey) {
@@ -183,6 +188,7 @@ func (s *taskService) createReport(c *gin.Context) {
 		return
 	}
 	if err := tx.Commit(); err != nil {
+		// 连接中断不等于事务一定回滚；以唯一幂等记录回读结果，避免误删已经提交并被引用的制品。
 		committed, found, queryErr := s.loadReportByIdempotency(c, user.ID, taskID, idempotencyKey)
 		if queryErr == nil && found {
 			if committed.Record.ID == reportID {
@@ -268,6 +274,8 @@ func reportIntentMatches(stored storedReport, request reportRequest) bool {
 
 var errMutableReportRun = errors.New("report run is not in a terminal state")
 
+// buildReportSnapshot 只接受属于同一任务的终态运行，把当时的任务元数据、运行、发现及源码摘要
+// 固化进报告。发现超过 50000 条时显式标记截断，避免报告生成变成无界内存/文件操作。
 func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runIDs []string) (map[string]any, error) {
 	var displayName, taskStatus string
 	var detected sql.NullString
@@ -409,6 +417,8 @@ func (s *taskService) listReports(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"reports": reports})
 }
 
+// downloadReport 不仅依赖数据库 ready 状态，还在每次传输前复核磁盘对象的类型、大小和 SHA-256。
+// ETag 始终对应原始不可变报告；可选 gzip 只是传输编码，不改变数据库中记录的制品身份。
 func (s *taskService) downloadReport(c *gin.Context) {
 	encoding := c.Query("encoding")
 	if encoding != "" && encoding != "identity" && encoding != "gzip" {
@@ -473,6 +483,7 @@ func (s *taskService) downloadReport(c *gin.Context) {
 	c.File(filename)
 }
 
+// verifyReportFile 拒绝链接和非普通文件，并以数据库中的长度/摘要作为下载前完整性锚。
 func verifyReportFile(filename string, expectedSize sql.NullInt64, expectedSHA sql.NullString) error {
 	info, err := os.Lstat(filename)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
@@ -499,6 +510,8 @@ func verifyReportFile(filename string, expectedSize sql.NullInt64, expectedSHA s
 	return nil
 }
 
+// publishReportFile 将完整内容写入同文件系统暂存区并 fsync，再以硬链接无覆盖地发布到报告 ID 路径。
+// 发布成功后设为只读；数据库登记失败时由调用方删除该文件，实现可恢复的文件/事务两阶段流程。
 func publishReportFile(root, taskID, reportID, format string, body []byte) (string, int64, error) {
 	for _, value := range []string{taskID, reportID} {
 		if _, err := storage.CleanRelativePath(value); err != nil {

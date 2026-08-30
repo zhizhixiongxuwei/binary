@@ -53,7 +53,7 @@
   <header>
     <h1>binary-demo 跨平台源码验真与现场修改说明</h1>
     <p>Windows、Linux、macOS 均可完成“校验封存 → 导入镜像 → 断网编译原版 → 启动九服务 → 现场小改 → 再编译 → 替换 App → 对比证据”。Windows 全程使用交付包内 PowerShell 脚本。</p>
-    <div class="meta"><span class="pill">交付文档 V1.0</span><span class="pill">Windows：*.ps1</span><span class="pill">Linux/macOS：*.sh</span><span class="pill">构建网络：none</span><span class="pill">封存范围：backend + frontend + Dockerfile</span></div>
+    <div class="meta"><span class="pill">交付文档 V1.0</span><span class="pill">Windows：*.ps1</span><span class="pill">Linux/macOS：*.sh</span><span class="pill">构建网络：none</span><span class="pill">封存范围：backend + frontend + Dockerfile + .dockerignore</span></div>
   </header>
   <article>
     <nav><strong>验证主线：</strong> <a href="#os">选择系统</a> → <a href="#seal">校验封存</a> → <a href="#load">导入镜像</a> → <a href="#build-original">编译原版</a> → <a href="#run">启动</a> → <a href="#change">现场修改</a> → <a href="#rebuild">再次编译</a> → <a href="#evidence">证据对比</a></nav>
@@ -79,7 +79,7 @@
     <table>
       <thead><tr><th>内容</th><th>Windows</th><th>Linux / macOS</th><th>说明</th></tr></thead>
       <tbody>
-        <tr><td>完整包验真</td><td><code>verify.ps1</code></td><td><code>verify.sh</code></td><td>校验 package 和 source 清单。</td></tr>
+        <tr><td>完整包验真</td><td><code>verify.ps1</code></td><td><code>verify.sh</code></td><td>校验 package/source 清单中列出的全部文件内容。</td></tr>
         <tr><td>镜像导入</td><td><code>load-images.ps1</code></td><td><code>load-images.sh</code></td><td>导入运行镜像和 App 构建镜像。</td></tr>
         <tr><td>App 编译</td><td><code>build-app.ps1</code></td><td><code>build-app.sh</code></td><td>核对依赖锁并禁止构建网络。</td></tr>
         <tr><td>服务管理</td><td><code>manage.ps1</code></td><td><code>manage.sh</code></td><td>初始化、启停、替换 App 和重置数据。</td></tr>
@@ -135,6 +135,7 @@ uname -m</code></pre>
       </section>
     </div>
     <div class="callout danger"><strong>Windows 必须是 Linux containers：</strong>如果 Docker Desktop 菜单显示“Switch to Linux containers”，说明当前模式不正确。切换完成并等待 Docker Desktop 重新启动后再继续。不要在同一次验证中混用 PowerShell 脚本与 WSL 内的 Shell 脚本。</div>
+    <div class="callout">离线 App 构建还需要现代 Docker BuildKit，支持 <code>--network=none</code>、<code>--pull=false</code> 和 <code>--provenance=false</code>；运行管理需要 Compose v2 的 <code>up --wait</code> 与 <code>--pull never</code>。正式验收应在目标机实际执行构建和启动，不能只根据 Docker 版本号推断兼容。</div>
 
     <h2 id="seal">4. 阶段一：验证完整包和 App 源代码</h2>
     <div class="os-grid">
@@ -154,7 +155,7 @@ sha256sum manifests/source.sha256</code></pre></section>
 shasum -a 256 manifests/package.sha256
 shasum -a 256 manifests/source.sha256</code></pre></section>
     </div>
-    <p>两个清单文件自身的 SHA-256 必须与用户封存日在交付目录之外记录的可信值一致。建议记录设备、操作系统、操作人、时间、<code>manifests/source-git.txt</code> 和完整命令输出。</p>
+    <p>两个清单文件自身的 SHA-256 必须与用户封存日在交付目录之外记录的可信值一致。验证脚本核对清单中的内容，但不拒绝后来增加的额外文件，也不验证所有者、权限或时间戳；不要运行目录内来源不明的附加脚本。建议记录设备、操作系统、操作人、时间、<code>manifests/source-git.txt</code> 和完整命令输出。</p>
     <div class="callout"><strong>2026-08-26 本次源码交付锚点：</strong><code>source-git.txt</code> 记录提交 <code>cf42c36f06e1e2d24fbd1e3a7dfa01b8afd8388c</code>；<code>package.sha256</code> 文件自身摘要为 <code>c1b3ef52cae0794a4b892f467f5efc641ebff3394effb88b5226410c5d89e7fd</code>，<code>source.sha256</code> 文件自身摘要为 <code>db04b37b00fc72856c2a23609e9bb4190be71889f76824dcea7a7e4de04b3f0a</code>。三项都应保存在交付目录之外；重新生成交付后必须重新记录。</div>
 
     <h2 id="load">5. 阶段二：导入运行与构建镜像</h2>
@@ -207,18 +208,19 @@ sudo grep '^INITIAL_ADMIN_' .env</code></pre></section>
 ./manage.sh status
 grep '^INITIAL_ADMIN_' .env</code></pre></section>
     </div>
-    <p>默认访问 <code>http://localhost:8080</code>。最小冒烟验证应包含登录、二进制上传、反编译源码树、Monaco Editor 源码显示、对应 checker finding、容器 TAR 的手动 Trivy 分析，以及归档拆分后的子任务独立报告和归档总报告。</p>
+    <p>默认访问 <code>http://localhost:8080</code>。两套交付各自生成随机初始管理员密码，用户名默认 <code>admin</code>，密码以本目录 <code>.env</code> 为准；它只在空数据库时引导创建，普通重启后修改环境变量不会覆盖已有密码。最小冒烟验证应包含登录、二进制上传、反编译源码树、Monaco Editor 源码显示、对应 checker finding、容器 TAR 的手动 Trivy 分析，以及归档拆分后的子任务独立报告和归档总报告。</p>
 
     <h2 id="current-flow">7.1 当前封存源码应能验证的完整业务链路</h2>
     <ol>
-      <li>上传 DLL、EXE、SYS、PYC、Mach-O、CLASS、ZIP、GZIP、TAR、RAR、JAR、APK、IMG、ISO 或 EXT4；上传后再选择二进制、归档或容器/映像模式。</li>
+      <li>服务端按内容而不只是扩展名识别 PE（EXE/DLL/SYS）、ELF、Mach-O、CLASS、JAR、WAR、EAR、DEX、APK、PYC，ZIP、7Z、RAR、TAR、GZIP、XZ、DEB、RPM、ISO 9660、EXT4，以及 Docker Save/OCI Layout TAR；上传后再选择二进制、归档或容器/映像模式。<code>.img</code> 只是后缀。</li>
       <li>二进制任务手动反编译并调用对应 checker，在线漏洞详情能够根据持久化 source project/file ID 和行列范围打开 Monaco Editor。下载后的离线 HTML 报告只保留源码路径、行列、代码片段和证据，不生成无法脱离系统工作的任务链接。</li>
-      <li>归档、ISO 9660 和 EXT4 按一层只读解析，符合条件的 ELF、PE、CLASS、JAR、PYC 等成员可批量创建子任务；子任务互相独立，可分别生成 JSON、HTML、Word 报告。</li>
-      <li>“归档批次”页面可长期查看父子关系；选择报告格式后生成 ZIP 总报告，可选包含反编译源码。总包只收集已经 ready 的子报告，并在 <code>manifest.json</code> 中明确记录缺失与省略项。</li>
-      <li>Docker Save TAR、OCI Layout TAR 和实际内容为 Docker archive 的 IMG 可手动执行 Trivy；不适用的 ISO、EXT4 内容允许识别并显示“不适用/无结果”。</li>
+      <li>选择归档模式后自动排队一次只读解析：嵌套归档不递归，<code>.tar.gz</code>/<code>.tar.xz</code> 包装与 TAR 载荷算同一逻辑层；ISO 9660 和 EXT4 不挂载宿主机，而是只读遍历镜像目录树。解析后由用户选择符合条件的 ELF、PE、CLASS、JAR、PYC 等成员，每批最多 10 个，手动创建子任务；子任务再分别反编译、检查并生成 JSON、HTML 或 DOCX 报告。</li>
+      <li>“归档批次”页面可长期查看父子关系；选择报告格式后生成 ZIP 总报告，可选包含已收录任务的 ready 反编译源码。每种格式取各子任务最新 ready 报告；<code>manifest.json</code> 完整记录缺失与省略，<code>index.html</code> 提供已包含/已省略任务及报告链接的摘要。</li>
+      <li>只有识别为 Docker Save TAR 或 OCI Layout TAR 的内容可手动执行 Trivy；两者改名 IMG 后仍按结构识别。ISO、EXT4、普通 TAR 和原始/分区磁盘 IMG 选择容器模式时应显示“不适用/无结果”，不会真正调用 Trivy。</li>
     </ol>
-    <div class="callout warn">如果要演示总报告，必须先对至少一个归档子任务完成反编译、源码检查和单任务报告生成。总报告是已有结果的不可变合集，不会暗中替用户执行检测。</div>
-    <div class="callout"><strong>2026-08-26 制备机回归基线：</strong>封存所用运行镜像已针对 <code>binary-repo</code> 的 25 个业务样本执行端到端回归：25 个上传全部成功，12 个归档全部完成一层解析并实际创建 19 个子任务，29 个二进制任务全部完成反编译和对应 C/Java/Python checker，3 个 Docker/OCI 镜像任务全部完成 Trivy；共记录 225 条 finding、生成并校验 93 份 JSON/HTML/DOCX 单任务报告和 12 个归档总报告 ZIP。一个从 JAR 拆出的内部类为 0 命中，按当前策略不生成个人报告，总包明确记录省略。现场自主验收应使用同一批样本复现流程，但硬件性能会影响耗时，任意其他文件也不保证产生相同命中数量。</div>
+    <div class="callout warn">单任务报告只允许选择同一任务中已经终态的运行，最多 100 个；0 finding 也可生成报告，超过 50,000 条 finding 会明确标记截断。总报告不会暗中替用户执行检测，至少要有一份符合所选格式的 ready 报告，报告及可选源码的声明未压缩总量上限为 4 GiB。</div>
+    <div class="callout warn"><strong>Trivy 时效边界：</strong>结果基于 scanner 镜像中封存的离线漏洞库快照，现场不会联网更新。它反映该快照已知漏洞，不等同于验证日最新情报；更新数据库必须重新制备并封存 scanner 镜像。</div>
+    <div class="callout"><strong>2026-08-26 历史制备机回归基线：</strong>上一轮固定样本完成 25/25 上传、12/12 归档解析并创建 19 个子任务，29/29 二进制任务完成反编译和对应 checker，3/3 Docker/OCI 任务完成 Trivy，共记录 225 条 finding。该轮自动化按“仅为有命中任务批量生成报告”口径生成并校验 93 份单任务报告和 12 个归档总报告；一个 JAR 内部类为 0 命中，故脚本跳过其个人报告。当前产品本身允许为 0 命中的终态运行生成报告。上述数字只属于该日期、样本和当时镜像；本次重新制备若未复跑完整样本，不应宣称已经复现。</div>
 
     <h2 id="change">8. 阶段五：现场添加小功能</h2>
     <p>先复制一份已经验真的工作目录，原始副本保持只读。Windows 可使用 VS Code 打开 <code>C:\BinaryScan\binary-demo\app</code>；Linux/macOS 打开对应 <code>app/</code>。</p>
@@ -278,9 +280,9 @@ docker image inspect binaryscan/app:0.1.0-dev --format '{{json .Config.Labels}}'
     <h2 id="boundary">12. 能力边界</h2>
     <ul>
       <li>可证明 frontend、App HTTP API、App 参数校验、查询和展示类修改。</li>
-      <li><code>app/backend</code> 中也有 worker 共享包，但 App Dockerfile 只编译 <code>cmd/app</code>。</li>
-      <li>scanner、三个 checker、三个反编译器仍由预构建镜像提供，不属于本次源代码封存范围。</li>
-      <li>如果用户要求证明这些引擎也可修改，需要扩大源代码、Dockerfile 和依赖封存范围。</li>
+      <li><code>app/backend</code> 整体进入源码封存，因此包含 App、scanner、三个反编译 worker 的 Go 入口和共享包；但现场 App Dockerfile 只编译 <code>cmd/app</code>。</li>
+      <li>scanner 和三个反编译器的专用 Dockerfile及 Ghidra/JVM/pycdc 工具供给未纳入本次自主构建包，其运行镜像仍为预构建镜像；三个 checker 位于仓库 <code>checkers/</code>，源码也未进入 <code>binary-demo</code>。</li>
+      <li>如果用户要求现场从源码重建这些引擎，需要扩大源代码、专用 Dockerfile、工具镜像和依赖封存范围，不能仅凭已包含的共享 Go 包宣称完整覆盖。</li>
     </ul>
 
     <h2 id="reset">13. 停止与清空验证数据</h2>

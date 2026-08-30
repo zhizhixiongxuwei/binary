@@ -11,6 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Java Checker 的 HTTP 契约边界，负责校验、批处理、诊断合并与结果截断。
+ * 语法解析失败属于单文件可诊断问题，因此返回 partial；协议、路径或资源限额不合法则返回 400。
+ */
 @RestController
 final class CheckController {
     private final JavaAnalyzer analyzer;
@@ -33,6 +37,7 @@ final class CheckController {
         }
         String status = diagnostics.isEmpty() ? "complete" : "partial";
         if (findings.size() > 10_000) {
+            // 对外契约明确标记 partial，调用方不会把“被截断”误解为完整无遗漏结果。
             findings = new ArrayList<>(findings.subList(0, 10_000));
             diagnostics.add("finding limit reached");
             status = "partial";
@@ -52,6 +57,7 @@ final class CheckController {
     }
 
     private static void validatePath(String path) {
+        // 仅允许项目内相对路径，保证 Finding 可以安全定位到已经登记的源码制品。
         if (path == null || path.isBlank() || path.startsWith("/") || path.contains("..") || path.contains("\\")) {
             throw new InvalidRequest();
         }

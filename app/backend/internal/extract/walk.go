@@ -26,6 +26,7 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
+// Entry 是各归档库统一后的最小成员元数据；Size 为 -1 表示格式无法预先给出展开大小。
 type Entry struct {
 	Ordinal int
 	Name    string
@@ -33,11 +34,12 @@ type Entry struct {
 	Regular bool
 }
 
+// Visitor 必须在回调返回前消费需要的内容，底层成员流的生命周期由 Walk 管理。
 type Visitor func(Entry, io.Reader) error
 
-// Walk visits exactly one logical archive layer. Compression wrappers around a
-// tar stream (.tar.gz/.tgz and .tar.xz/.txz) count as part of that layer; archive
-// members are never recursively expanded.
+// Walk 将 ZIP、7Z、RAR、TAR、软件包和文件系统镜像统一为一次成员遍历，并且严格只访问一个逻辑层。
+// .tar.gz/.tgz 与 .tar.xz/.txz 的压缩包装属于同一层；遇到成员中的归档文件不会递归展开，
+// 上层可据此给每次导入施加清晰的条目数和累计字节上限。
 func Walk(ctx context.Context, filename, sourceName, format string, maxEntries int, visit Visitor) error {
 	if maxEntries <= 0 {
 		return fmt.Errorf("archive entry limit must be positive")
@@ -310,11 +312,9 @@ func walkRPM(ctx context.Context, filename string, maxEntries int, visit Visitor
 	if err != nil {
 		return fmt.Errorf("parse RPM package: %w", err)
 	}
-	// Read the cpio stream directly. PayloadReaderExtended additionally relies
-	// on a complete RPM file-metadata tag set (for example FILEUSERNAME), while
-	// valid minimal RPMs and older packages may omit those optional tags.
-	// Uploaded files are capped below 4 GiB, so the classic cpio reader's size
-	// representation is sufficient here.
+	// 直接读取 cpio 流。PayloadReaderExtended 还依赖完整的 RPM 文件元数据标签（如 FILEUSERNAME），
+	// 而合法的最小化 RPM 或旧软件包可能省略这些可选标签。上传上限低于 4 GiB，经典 cpio
+	// 读取器的大小表示已足够，并能兼容更多真实样本。
 	payload, err := packageFile.PayloadReader()
 	if err != nil {
 		return fmt.Errorf("open RPM payload: %w", err)
@@ -339,6 +339,7 @@ func walkRPM(ctx context.Context, filename string, maxEntries int, visit Visitor
 	}
 }
 
+// walkISO9660 以只读后端解析镜像，不挂载到宿主文件系统，避免镜像内容获得宿主路径语义。
 func walkISO9660(ctx context.Context, filename string, maxEntries int, visit Visitor) error {
 	storage, err := diskfile.OpenFromPath(filename, true)
 	if err != nil {
@@ -361,6 +362,7 @@ func walkISO9660(ctx context.Context, filename string, maxEntries int, visit Vis
 	return nil
 }
 
+// walkEXT4 与 ISO 路径相同，只通过只读文件后端遍历镜像内文件系统。
 func walkEXT4(ctx context.Context, filename string, maxEntries int, visit Visitor) error {
 	storage, err := diskfile.OpenFromPath(filename, true)
 	if err != nil {
@@ -382,6 +384,7 @@ func walkEXT4(ctx context.Context, filename string, maxEntries int, visit Visito
 	return nil
 }
 
+// walkFilesystem 为镜像目录和文件共享同一全局 ordinal/条目上限，目录也计入限制以防深宽目录树消耗资源。
 func walkFilesystem(ctx context.Context, filesystem iofs.FS, maxEntries int, visit Visitor) error {
 	ordinal := 0
 	return iofs.WalkDir(filesystem, ".", func(name string, directoryEntry iofs.DirEntry, walkErr error) error {
@@ -424,6 +427,7 @@ func walkFilesystem(ctx context.Context, filesystem iofs.FS, maxEntries int, vis
 	})
 }
 
+// call 在进入每个不可信成员前检查取消信号，并为目录等无内容条目提供空 Reader，简化上层处理契约。
 func call(ctx context.Context, visit Visitor, entry Entry, reader io.Reader) error {
 	select {
 	case <-ctx.Done():

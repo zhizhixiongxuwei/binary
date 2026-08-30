@@ -22,6 +22,8 @@ import { formatBytes } from '@/utils/formatters'
 const router = useRouter()
 const uploads = useUnifiedUpload()
 const warningMessage = shallowRef('')
+// 普通二进制/容器模式创建后直接进入任务详情；归档模式需要先在当前页完成
+// 一层解析和成员选择，因此只保留正在交互的 archive import 身份。
 const activeArchive = shallowRef<{
   id: string
   uploadId: string
@@ -72,6 +74,8 @@ async function chooseMode(
 ): Promise<void> {
   const created = await uploads.selectMode(item.localId, mode)
   if (!created) return
+  // 归档任务的顶层 task 只是导入载体，真正的二进制子任务要由用户在解析结果中
+  // 批量创建；上传卡片可移除，因为后续状态以服务端 archive import 为准。
   if (
     created.analysis_mode === 'archive' &&
     created.archive_import_id &&
@@ -85,6 +89,8 @@ async function chooseMode(
     uploads.forget(item.localId)
     return
   }
+  // “不支持”不是禁止创建：验收要求允许用户按任意模式分析，后端会持久化
+  // supported=false 的不适用记录，页面仍提供可审计的任务详情。
   uploads.forget(item.localId)
   openCreatedTask(created)
 }

@@ -31,6 +31,8 @@ const (
 	maxTrivyFindings    = 10000
 )
 
+// Executor 是格式识别、归档导入、容器漏洞扫描和源码 checker 的统一调度入口；
+// 具体执行路径共享 BlobStore、任务 Repository 和同一套 fenced 发布语义。
 type Executor struct {
 	cfg   config.Config
 	db    *sql.DB
@@ -63,6 +65,7 @@ type trivyReport struct {
 	} `json:"Results"`
 }
 
+// New 校验所有持久化根目录为绝对路径，并预建仅 worker 可写的暂存区。
 func New(cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, error) {
 	for _, root := range []string{cfg.Worker.WorkRoot, cfg.Worker.BlobRoot, cfg.Worker.ArtifactRoot} {
 		if !filepath.IsAbs(root) {
@@ -82,6 +85,7 @@ func New(cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, 
 	return &Executor{cfg: cfg, db: db, jobs: jobs, blobs: blobs}, nil
 }
 
+// Execute 只按已领取 job 的 Kind 分派，未知类型立即失败，避免错误角色静默消费不属于自己的任务。
 func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	switch claim.Kind {
 	case job.KindScan:
@@ -97,6 +101,8 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	}
 }
 
+// scan 对持久化 Blob 再做一次内容识别，并核对上传阶段记录的类别，防止元数据漂移或错误引用。
+// 识别为归档时，在同一个 fenced 事务中以 scan run 派生的幂等键创建一次自动导入运行和作业。
 func (e *Executor) scan(ctx context.Context, claim job.Claim) error {
 	subject, err := e.loadTaskSubject(ctx, claim.RunID)
 	if err != nil {
@@ -165,6 +171,9 @@ func (e *Executor) scan(ctx context.Context, claim job.Claim) error {
 	})
 }
 
+// trivy 在单次运行目录中准备离线数据库和输入，限制总执行时间、报告大小及最多入库的发现数。
+// 原始 JSON 制品以 fence 代次写入不可变路径；发现、制品元数据和完成事件再通过 WithFence 一次发布，
+// 旧 worker 即使晚到也只能留下不可引用的代次文件，不能覆盖当前运行结果。
 func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 	subject, err := e.loadTrivySubject(ctx, claim.RunID)
 	if err != nil {
@@ -328,12 +337,9 @@ func trivyImageArgs(cacheRoot, reportPath, inputPath string) []string {
 		"--cache-dir", cacheRoot, "--skip-db-update", "--skip-java-db-update", "--offline-scan"}
 }
 
-// prepareTrivyCache keeps the large, image-baked vulnerability databases
-// immutable while giving Trivy a per-run writable cache root. Trivy creates a
-// fanal cache below --cache-dir even when all database updates are disabled,
-// so pointing it directly at /opt/trivy-cache fails in the read-only scanner
-// container. The database directories are linked into the writable workspace
-// and remain read-only.
+// prepareTrivyCache 保持镜像内置的大型漏洞数据库只读，同时给 Trivy 提供每次运行独立的可写缓存根。
+// 即使禁用全部数据库更新，Trivy 仍会在 --cache-dir 下创建 fanal 缓存，因此不能直接指向只读的
+// /opt/trivy-cache；这里只把已校验的 db/java-db 目录链接到运行目录，数据库本体不会被修改。
 func prepareTrivyCache(databaseRoot, workDirectory string) (string, error) {
 	if !filepath.IsAbs(databaseRoot) || !filepath.IsAbs(workDirectory) {
 		return "", fmt.Errorf("trivy cache paths must be absolute")
@@ -367,6 +373,8 @@ func prepareTrivyCache(databaseRoot, workDirectory string) (string, error) {
 	return cacheDirectory, nil
 }
 
+// prepareTrivyInput 对 Docker save TAR 直接传递文件；Trivy 只接受目录形式的 OCI layout，
+// 因而后者必须先在受限运行目录中安全展开。
 func prepareTrivyInput(
 	ctx context.Context,
 	inputPath, detectedFormat, workDirectory string,
@@ -387,11 +395,9 @@ func prepareTrivyInput(
 	}
 }
 
-// extractOCIImageLayout materializes an uploaded OCI layout tar into the
-// per-run workspace because Trivy accepts OCI layouts as directories, whereas
-// Docker save archives are accepted directly with --input. Only regular files
-// and directories are allowed; links and special files are rejected so a
-// crafted layout cannot escape or alias the workspace.
+// extractOCIImageLayout 将上传的 OCI layout TAR 物化到单次运行目录，因为 Trivy 的 OCI 输入要求目录。
+// 成员名必须是安全相对路径，只允许目录和以 O_EXCL 创建的普通只读文件；链接与特殊文件全部拒绝，
+// 同时限制条目数和累计展开字节，最后验证 oci-layout、index.json 与 blobs 的基本拓扑。
 func extractOCIImageLayout(
 	ctx context.Context,
 	inputPath, layoutRoot string,
@@ -509,6 +515,8 @@ func detectFile(filename, logicalPath string) (string, error) {
 	return detected.Format, nil
 }
 
+// publishArtifact 以 task/run/fence/name 隔离每次租约代次，经 fsync 的暂存文件通过硬链接原子发布。
+// 已存在目标只有在仍为同大小普通文件时才可复用，最终权限设为只读；数据库是否引用它由后续 fence 决定。
 func publishArtifact(root, taskID, runID string, fence uint64, name, source string) (string, int64, error) {
 	for _, value := range []string{taskID, runID, name} {
 		if _, err := storage.CleanRelativePath(value); err != nil {

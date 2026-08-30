@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// Repository 是任务、运行、尝试记录和资源槽位的统一状态机入口。
+// 所有会改变租约归属或发布状态的操作都在数据库事务中校验 fencing token，调用方不应绕过它写状态。
 type Repository struct {
 	db *sql.DB
 }
@@ -17,6 +19,8 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+// EnsurePool 将配置的并发数映射为持久化资源槽位。缩容时只禁用空闲的多余槽位，
+// 已占用槽位会在任务释放后自然退出，避免运行中的作业被配置刷新强行打断。
 func (r *Repository) EnsurePool(ctx context.Context, pool string, count int) error {
 	if pool == "" || count < 0 {
 		return fmt.Errorf("invalid resource pool definition")
@@ -43,6 +47,8 @@ func (r *Repository) EnsurePool(ctx context.Context, pool string, count int) err
 	return nil
 }
 
+// Claim 在同一事务内锁定一个可运行任务和一个对应资源槽位，并递增 fencing token。
+// SKIP LOCKED 让多个 worker 无需串行等待；任务与槽位任一更新失败都会回滚，防止“有租约无配额”或相反状态。
 func (r *Repository) Claim(ctx context.Context, workerID string, kinds []Kind, lease time.Duration) (*Claim, error) {
 	if workerID == "" || len(kinds) == 0 || lease <= 0 {
 		return nil, fmt.Errorf("invalid claim request")
@@ -136,6 +142,8 @@ func (r *Repository) Claim(ctx context.Context, workerID string, kinds []Kind, l
 	return &claim, nil
 }
 
+// Start 把已领取的租约推进到 running，并原子创建本次 attempt、启动关联 run。
+// owner、token 和未过期租约必须同时匹配，旧 worker 即使仍持有 Claim 也无法重新启动任务。
 func (r *Repository) Start(ctx context.Context, workerID string, claim Claim) (uint32, error) {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -176,6 +184,7 @@ func (r *Repository) Start(ctx context.Context, workerID string, claim Claim) (u
 	return attemptNumber, nil
 }
 
+// Heartbeat 仅为当前 owner/token 且尚未过期的租约续期；过期后不允许“复活”，必须重新领取并获得新 token。
 func (r *Repository) Heartbeat(ctx context.Context, workerID string, claim Claim, lease time.Duration) error {
 	leaseSeconds := int64(lease / time.Second)
 	result, err := r.db.ExecContext(ctx, `UPDATE jobs
@@ -193,6 +202,8 @@ func (r *Repository) Heartbeat(ctx context.Context, workerID string, claim Claim
 	return nil
 }
 
+// Complete 在一个事务中结束 job、attempt 和 run，更新任务聚合状态并释放资源槽。
+// 任一行不再匹配当前 fence 时整体失败，避免部分完成造成状态撕裂。
 func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim, attempt uint32, completion Completion) error {
 	if completion.RunStatus == "" || completion.JobStatus == "" || completion.AttemptStatus == "" {
 		return fmt.Errorf("completion status is incomplete")
@@ -254,6 +265,8 @@ func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim,
 	return nil
 }
 
+// Retry 记录本次失败尝试，把 job/run 退回 queued，并在释放资源槽后按延迟重新可见。
+// 它只处理可重试依赖错误；是否超出尝试次数或总预算由 worker 在调用前决定。
 func (r *Repository) Retry(
 	ctx context.Context,
 	workerID string,
@@ -320,6 +333,7 @@ func (r *Repository) Retry(
 	return nil
 }
 
+// PublicationComplete 查询业务结果是否已越过提交点。它用于恢复“结果已提交、任务完成状态尚未写回”的窗口。
 func (r *Repository) PublicationComplete(ctx context.Context, claim Claim) (bool, error) {
 	var published bool
 	if err := r.db.QueryRowContext(ctx, `SELECT published_at IS NOT NULL
@@ -329,6 +343,9 @@ func (r *Repository) PublicationComplete(ctx context.Context, claim Claim) (bool
 	return published, nil
 }
 
+// WithFence 是执行器发布数据库可见结果的唯一提交门。
+// 它先锁定仍在运行且租约有效的 job，执行 apply 后再于同一事务设置 published_at；
+// 因此 reaper 能区分“可安全重试的未发布执行”和“只需补齐完成状态的已发布执行”。
 func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql.Tx) error) error {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -358,6 +375,7 @@ func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql
 	return nil
 }
 
+// updateTaskForCompletion 只维护会改变任务总体可用性的运行类型；其余派生运行不会覆盖任务主状态。
 func updateTaskForCompletion(ctx context.Context, tx *sql.Tx, claim Claim, completion Completion) error {
 	var status string
 	switch claim.Kind {
@@ -382,6 +400,9 @@ func updateTaskForCompletion(ctx context.Context, tx *sql.Tx, claim Claim, compl
 	return nil
 }
 
+// RequeueExpired 回收崩溃 worker 遗留的过期租约。已发布的运行直接补齐成功状态；
+// 未发布的运行将当前 attempt 标为 lease_lost，并在剩余次数内重新排队，否则终止失败。
+// 批量选择使用 SKIP LOCKED，可由多个回收者安全分担而不阻塞正常领取。
 func (r *Repository) RequeueExpired(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {
 		limit = 20
@@ -427,6 +448,7 @@ func (r *Repository) RequeueExpired(ctx context.Context, limit int) (int, error)
 
 	for _, item := range expired {
 		if item.published {
+			// 业务结果已经在 WithFence 中提交，不能再次执行；这里只修复崩溃窗口内未落下的状态尾部。
 			if _, err := tx.ExecContext(ctx, `UPDATE job_attempts
 				SET status = 'succeeded', error_code = NULL, error_message = NULL,
 					completed_at = UTC_TIMESTAMP(6)

@@ -36,6 +36,7 @@ const monacoModule = shallowRef<MonacoModule>()
 const editor = shallowRef<ReturnType<MonacoModule['editor']['create']>>()
 const model = shallowRef<ReturnType<MonacoModule['editor']['createModel']>>()
 let targetDecorations: string[] = []
+// 未提供业务 URI 时仍给每个组件实例唯一模型地址，防止 Monaco 复用其他编辑器模型。
 const fallbackModelUri = `inmemory://binaryscan/read-only/${Math.random().toString(36).slice(2)}`
 
 const statusText = computed(() => {
@@ -58,6 +59,7 @@ function focusSearch(): void {
 }
 
 async function mountEditor(): Promise<void> {
+  // SSR、测试环境或浏览器能力不足时不加载 Monaco，模板中的 <pre> 始终提供可读兜底。
   if (!supportsMonacoRuntime()) {
     state.value = 'fallback'
     return
@@ -65,6 +67,7 @@ async function mountEditor(): Promise<void> {
 
   state.value = 'loading'
   try {
+    // Monaco 体积较大，运行时按需加载；加载期间 source 仍由安全文本视图展示。
     const monaco = await loadMonacoEditor()
     await nextTick()
     if (!editorHost.value) return
@@ -117,6 +120,8 @@ function replaceModel(): void {
   targetDecorations = currentEditor.deltaDecorations(targetDecorations, [])
   const previous = model.value
   const next = createModel(monaco)
+  // modelUri 表示源码身份而不只是内容；身份变化必须换模型并释放旧模型，避免
+  // undo/搜索状态和诊断装饰泄漏到另一文件。
   model.value = next
   currentEditor.setModel(next)
   previous?.dispose()
@@ -132,6 +137,7 @@ function applyTargetRange(): void {
     targetDecorations = currentEditor.deltaDecorations(targetDecorations, [])
     return
   }
+  // 后端/路由坐标先交给 Monaco 按真实行列裁剪，损坏或过期坐标不会抛出越界异常。
   const range = currentModel.validateRange({
     startLineNumber: target.startLine,
     startColumn: target.startColumn,
@@ -159,6 +165,7 @@ function applyTargetRange(): void {
 watch(
   () => props.source,
   (source) => {
+    // 同一文件内容刷新时保留模型和编辑器状态，仅替换文本并重新应用目标高亮。
     if (model.value && model.value.getValue() !== source) {
       model.value.setValue(source)
       applyTargetRange()
@@ -202,6 +209,7 @@ onMounted(() => {
 })
 
 onScopeDispose(() => {
+  // Monaco 模型不随 Vue DOM 自动销毁；显式释放装饰、编辑器和模型以避免内存泄漏。
   if (editor.value) {
     targetDecorations = editor.value.deltaDecorations(targetDecorations, [])
   }

@@ -41,6 +41,8 @@ function emptySummary(): VulnerabilitySummary {
 export function useTaskVulnerabilities(
   options: UseTaskVulnerabilitiesOptions,
 ) {
+  // 列表项用于快速浏览，详情按选择单独读取完整证据和引用；两条请求链使用不同
+  // generation，快速切换严重度或漏洞时不会展示上一选择的迟到详情。
   const items = shallowRef<readonly VulnerabilityFinding[]>([])
   const summary = shallowRef<VulnerabilitySummary>(emptySummary())
   const severity = shallowRef<VulnerabilitySeverity>()
@@ -97,6 +99,7 @@ export function useTaskVulnerabilities(
       ) {
         return
       }
+      // 详情端点的结果只在 taskId 和当前选择都未变化时生效。
       selectedFinding.value = detail
     } catch (caught) {
       if (
@@ -116,6 +119,7 @@ export function useTaskVulnerabilities(
     selectedFindingId.value = findingId
     detailGeneration += 1
     detailError.value = ''
+    // 先用列表摘要立即填充详情区，再异步用完整记录替换，减少点击后的空白时间。
     selectedFinding.value = items.value.find((item) => item.id === findingId)
     if (findingId) void loadDetail(findingId)
   }
@@ -154,6 +158,7 @@ export function useTaskVulnerabilities(
         (item) => item.id === selectedFindingId.value,
       )
       if (!selectedStillExists) {
+        // 筛选或刷新后原选择可能消失，自动选择首项，保证列表与详情身份一致。
         const first = items.value[0]
         selectedFindingId.value = ''
         selectedFinding.value = undefined
@@ -186,6 +191,7 @@ export function useTaskVulnerabilities(
   function setSeverity(nextSeverity?: VulnerabilitySeverity): void {
     if (severity.value === nextSeverity) return
     severity.value = nextSeverity
+    // 严重度属于服务端查询条件；切换时清空选择和详情版本，再从第一页读取。
     selectedFindingId.value = ''
     selectedFinding.value = undefined
     detailGeneration += 1
@@ -203,6 +209,7 @@ export function useTaskVulnerabilities(
   watch(
     [() => toValue(options.taskId), () => options.enabled === undefined || toValue(options.enabled)],
     ([taskId, enabled]) => {
+      // taskId 变化时汇总、游标和选择全部失效，禁止跨任务复用 finding ID。
       listGeneration += 1
       detailGeneration += 1
       items.value = []

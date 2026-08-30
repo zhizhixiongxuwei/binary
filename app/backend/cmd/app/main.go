@@ -19,6 +19,8 @@ import (
 	"binaryscan.local/backend/migrations"
 )
 
+// main 是 API 服务进程的组合入口：完成配置加载、数据库迁移和初始管理员引导后，
+// 才开始对外监听。这个顺序保证任何请求都不会观察到“代码已升级、表结构尚未升级”的中间状态。
 func main() {
 	cfg, err := config.Load("app")
 	if err != nil {
@@ -33,6 +35,7 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	// 数据库连接、迁移和管理员引导共享进程级上下文；收到退出信号时，启动流程也会及时中止。
 	db, err := database.Open(ctx, cfg.Database)
 	if err != nil {
 		log.Fatal(err)
@@ -55,6 +58,7 @@ func main() {
 	go func() { errCh <- server.Run() }()
 	select {
 	case <-ctx.Done():
+		// 给正在处理的请求一个有界的排空窗口，避免容器停止时直接截断报告下载或上传完成事务。
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer shutdownCancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
@@ -67,6 +71,8 @@ func main() {
 	}
 }
 
+// healthcheck 将通配监听地址转换为本机可访问地址，并探测 /readyz 而不是仅检查端口。
+// 因此容器健康状态同时覆盖 HTTP 服务存活和数据库可用性。
 func healthcheck(cfg config.Config) error {
 	host, port, err := net.SplitHostPort(cfg.App.ListenAddr)
 	if err != nil {

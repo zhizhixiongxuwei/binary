@@ -28,6 +28,7 @@ const (
 	maxToolLogBytes = 1 << 20
 )
 
+// Mode 表示三条相互隔离的反编译工具链；它同时决定支持格式、输出语言和资源池。
 type Mode string
 
 const (
@@ -36,6 +37,7 @@ const (
 	ModePYC    Mode = "pyc"
 )
 
+// Executor 编排外部反编译器、受限输出收集、不可变源码项目发布和 fenced 数据库登记。
 type Executor struct {
 	mode Mode
 	cfg  config.Config
@@ -72,6 +74,7 @@ func PYC(cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, 
 	return newExecutor(ModePYC, cfg, db, jobs)
 }
 
+// newExecutor 要求工作、Blob 和项目根目录都是绝对路径，避免不同进程工作目录导致制品落点漂移。
 func newExecutor(mode Mode, cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, error) {
 	for _, root := range []string{cfg.Worker.WorkRoot, cfg.Worker.BlobRoot, cfg.Worker.ProjectRoot} {
 		if !filepath.IsAbs(root) {
@@ -87,6 +90,9 @@ func newExecutor(mode Mode, cfg config.Config, db *sql.DB, jobs *job.Repository)
 	return &Executor{mode: mode, cfg: cfg, db: db, jobs: jobs}, nil
 }
 
+// Execute 先在单次运行私有目录中执行外部工具，再把经过类型、数量、大小和 UTF-8 校验的源码
+// 写入不可变项目。项目目录发布完成后，只有仍持有有效 fence 的 worker 才能登记 source_project、
+// source_files 和完成事件，因此失去租约的旧执行不会成为数据库可见结果。
 func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	subject, err := e.loadSubject(ctx, claim.RunID)
 	if err != nil {
@@ -179,6 +185,7 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	})
 }
 
+// runTool 依据已由服务端识别的格式选择工具链，而不是依赖原始文件扩展名。
 func (e *Executor) runTool(ctx context.Context, workRoot, inputPath string, subject subject) (toolResult, error) {
 	switch e.mode {
 	case ModeNative:
@@ -211,6 +218,8 @@ func (e *Executor) runGhidra(ctx context.Context, workRoot, inputPath string) (t
 	return toolResult{outputRoot: outputRoot, toolName: "ghidra", quality: quality, extension: ".c"}, nil
 }
 
+// runJVM 对 APK/DEX 使用 JADX；类文件与 JVM 归档优先 Vineflower，失败时回退 CFR。
+// 回退结果标记为 partial_source，向后续 checker 和报告显式传递工具降级事实。
 func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format string) (toolResult, error) {
 	stagedInput := filepath.Join(workRoot, "input."+jvmInputExtension(format))
 	if err := os.Symlink(inputPath, stagedInput); err != nil {
@@ -263,6 +272,8 @@ func jvmInputExtension(format string) string {
 	}
 }
 
+// runPYC 保留 pycdc 在非零退出前已经产生的有效文本，并把这种结果标记为 partial_source；
+// 若没有任何输出则按工具失败处理，避免发布空项目。
 func (e *Executor) runPYC(ctx context.Context, workRoot, inputPath string) (toolResult, error) {
 	outputRoot := filepath.Join(workRoot, "source")
 	if err := os.MkdirAll(outputRoot, 0o700); err != nil {
@@ -356,6 +367,8 @@ func (e *Executor) language() string {
 	}
 }
 
+// collectSources 把外部工具输出视为不可信目录树：拒绝符号链接和非普通文件，只接收目标扩展名，
+// 并以文件数、单文件大小及 Workspace 总大小三层上限约束资源消耗。被上限略过时返回 partial。
 func collectSources(workspace *storage.Workspace, root, extension, language string) (bool, error) {
 	partial := false
 	count := 0
@@ -406,6 +419,8 @@ func collectSources(workspace *storage.Workspace, root, extension, language stri
 	return partial, err
 }
 
+// runCommand 为外部工具设置独立 HOME/TMPDIR、硬超时和有界 stderr。
+// 这些约束用于隔离临时状态与控制日志/时间资源，并不替代容器或主机层面的进程沙箱。
 func runCommand(ctx context.Context, timeout time.Duration, workRoot, executable string, args ...string) error {
 	executionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -424,6 +439,7 @@ func runCommand(ctx context.Context, timeout time.Duration, workRoot, executable
 	return nil
 }
 
+// limitedBuffer 即使截断保存内容也报告已消费完整输入，防止外部进程因 stderr 管道回压而阻塞。
 type limitedBuffer struct {
 	buffer bytes.Buffer
 	limit  int

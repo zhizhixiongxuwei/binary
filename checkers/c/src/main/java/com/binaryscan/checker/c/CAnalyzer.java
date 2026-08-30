@@ -19,9 +19,14 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Rules migrated from binary_new's ANTLR C checker. The input is usually
- * Ghidra pseudo-C, so evaluation is intentionally tolerant of incomplete
- * declarations while retaining token-based source coordinates.
+ * 面向 Ghidra 伪 C 产物的轻量静态规则引擎。
+ *
+ * <p>输入通常不是能够再次编译的完整 C 工程，因此这里没有采用要求完整语义模型的编译器前端，
+ * 而是使用 ANTLR 词法记号恢复调用、局部变量、数组和指针的有限事实。该取舍允许不完整声明、
+ * Ghidra 类型名和外部 thunk 继续参与检测，同时仍保留精确的行列坐标。</p>
+ *
+ * <p>规则分为调用类规则、数组边界、返回局部地址、除零等几组；最终统一通过 Emitter 去重并
+ * 转换为 checker-v1 Finding。它是启发式静态分析，不宣称等价于完整控制流或跨函数数据流分析。</p>
  */
 @Component
 final class CAnalyzer {
@@ -49,6 +54,7 @@ final class CAnalyzer {
         "undefined4", "undefined8", "byte", "word", "dword", "qword", "float10");
 
     List<Models.Finding> analyze(Models.SourceFile file) {
+        // 一次只分析一个逻辑源码文件，避免不同反编译文件的符号表相互污染。
         var lexer = new PseudoCLexer(CharStreams.fromString(file.content()));
         var stream = new CommonTokenStream(lexer);
         stream.fill();
@@ -59,6 +65,7 @@ final class CAnalyzer {
         List<CallSite> calls = collectCalls(tokens);
         Emitter emitter = new Emitter(file.path(), sourceLines);
 
+        // 先执行依赖调用点/符号事实的规则，再补充面向整个 token 流的结构规则。
         evaluateCalls(tokens, calls, symbols, emitter);
         evaluateArrayBounds(tokens, symbols, emitter);
         evaluateReturns(tokens, symbols, emitter);
@@ -236,6 +243,8 @@ final class CAnalyzer {
     }
 
     private static Symbols collectSymbols(List<Token> tokens) {
+        // 这里只收集当前函数体内可可靠识别的局部事实；无法确认的声明宁可忽略，
+        // 避免把 Ghidra 生成的类型噪声误判成数组或堆指针。
         Map<String, List<Long>> arrays = new LinkedHashMap<>();
         Set<String> locals = new HashSet<>();
         Set<String> pointers = new HashSet<>();
@@ -282,6 +291,7 @@ final class CAnalyzer {
     }
 
     private static List<CallSite> collectCalls(List<Token> tokens) {
+        // 根据成对括号切分实参，不要求语法树完整；函数定义和 Ghidra thunk 会在后续条件中排除。
         List<CallSite> calls = new ArrayList<>();
         for (int index = 0; index + 1 < tokens.size(); index++) {
             if (!isIdentifier(tokens.get(index)) || !text(tokens.get(index + 1), "(")) continue;
@@ -535,13 +545,17 @@ final class CAnalyzer {
                           String message, Map<String, Object> evidence) {
             int line = Math.max(1, token.getLine());
             int column = utf16Column(sourceLines, line, token.getCharPositionInLine());
+            // 同一规则在同一坐标只输出一次，防止多个启发式分支重复命中后放大漏洞数量。
             if (!dedupe.add(ruleId + ':' + line + ':' + column)) return;
             findings.add(new Models.Finding(ruleId, severity, cwe, path, line, column,
                 title, message, new HashMap<>(evidence)));
         }
     }
 
-    /** Convert ANTLR's code-point offset to Monaco's one-based UTF-16 column. */
+    /**
+     * 将 ANTLR 的 Unicode code point 偏移转换为 Monaco 使用的一基 UTF-16 列号。
+     * 如果不做这一步，包含中文或非 BMP 字符的伪源码在页面中会跳到错误位置。
+     */
     private static int utf16Column(String[] sourceLines, int line, int codePointOffset) {
         if (line < 1 || line > sourceLines.length || codePointOffset < 0) return 1;
         String sourceLine = sourceLines[line - 1];
