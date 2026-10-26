@@ -43,6 +43,7 @@ function normalizeTarget(target: SourceNavigationTarget): SourceNavigationTarget
   )
   return {
     projectId: target.projectId,
+    ...(target.reveal !== undefined ? { reveal: target.reveal } : {}),
     ...(target.sourceFileId ? { sourceFileId: target.sourceFileId } : {}),
     ...(target.path ? { path: target.path } : {}),
     startLine,
@@ -229,7 +230,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
         if (normalizedTarget) sourceFilesError.value = '定位的源码文件不存在'
         return normalizedTarget === undefined
       }
-      if (normalizedTarget && targetFile) targetRange.value = normalizedTarget
+      if (normalizedTarget && targetFile) targetRange.value = normalizedTarget.reveal === false ? undefined : normalizedTarget
       const loaded = await readSourceFile(projectId, nextFile.id)
       if (normalizedTarget && !targetFile) {
         sourceFilesError.value = '定位的源码文件不存在，已打开项目中的第一个文件'
@@ -376,7 +377,7 @@ export function useDecompileResults(options: UseDecompileResultsOptions) {
         sourceFilesError.value = '定位的源码文件不存在'
         return false
       }
-      targetRange.value = normalizedTarget
+      targetRange.value = normalizedTarget.reveal === false ? undefined : normalizedTarget
       if (file.id === selectedSourceFileId.value && sourceFile.value) return true
       return readSourceFile(project.id, file.id)
     }

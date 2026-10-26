@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Activity,
+  BrainCircuit,
   DatabaseZap,
   FolderCog,
   ScrollText,
@@ -23,6 +24,7 @@ defineSlots<{
   runtime: () => unknown
   storage: () => unknown
   analyzers: () => unknown
+  llm: () => unknown
   access: () => unknown
   audit: () => unknown
 }>()
@@ -38,6 +40,7 @@ const tabs: readonly MaintenanceTabDefinition[] = [
   { id: 'runtime', label: '运行状态', caption: '服务与任务', icon: Activity },
   { id: 'storage', label: '存储路径', caption: '挂载与容量', icon: FolderCog },
   { id: 'analyzers', label: '分析器 / 离线库', caption: '工具与数据批次', icon: DatabaseZap },
+  { id: 'llm', label: '大模型设置', caption: '源码解释 / DeepSeek', icon: BrainCircuit },
   { id: 'access', label: '用户与角色', caption: '本地权限边界', icon: ShieldCheck },
   { id: 'audit', label: '审计日志', caption: '操作事件', icon: ScrollText },
 ]
@@ -136,6 +139,7 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
       <slot v-if="activeTab === 'runtime'" name="runtime" />
       <slot v-else-if="activeTab === 'storage'" name="storage" />
       <slot v-else-if="activeTab === 'analyzers'" name="analyzers" />
+      <slot v-else-if="activeTab === 'llm'" name="llm" />
       <slot v-else-if="activeTab === 'access'" name="access" />
       <slot v-else name="audit" />
     </div>

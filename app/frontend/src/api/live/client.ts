@@ -152,10 +152,10 @@ function encode(value: string): string {
   return encodeURIComponent(value)
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function fetchLiveResponse(path: string, init: RequestInit = {}): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
-  headers.set('Accept', 'application/json')
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   if (init.body && !(init.body instanceof FormData) && !(init.body instanceof Blob)) {
     headers.set('Content-Type', 'application/json')
   }
@@ -163,12 +163,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     // 认证 Cookie 由浏览器随 credentials 发送；有副作用的方法再叠加 CSRF 令牌。
     headers.set('X-CSRF-Token', csrfToken)
   }
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  return fetch(`${API_BASE_URL}${path}`, {
     ...init,
     method,
     headers,
     credentials: 'include',
   })
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetchLiveResponse(path, init)
   if (!response.ok) {
     // 页面只处理稳定的 code/status/message；这里同时兼容后端 JSON 错误和
     // 反向代理偶尔返回的 HTML/纯文本错误页。
@@ -190,6 +194,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
 }
+
+export { request as requestLiveJSON }
 
 function errorMessage(code: string, status: number): string {
   const messages: Record<string, string> = {

@@ -35,6 +35,10 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize task service: %w", err)
 	}
+	models, err := newLLMService(tasks)
+	if err != nil {
+		return nil, fmt.Errorf("initialize model settings: %w", err)
+	}
 	// 恢复、请求关联 ID 和来源校验必须先于业务路由运行，确保失败请求同样可追踪且受边界保护。
 	router.Use(gin.Recovery(), requestID(), originGuard(cfg.App.AllowedOrigins))
 	router.GET("/healthz", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
@@ -64,6 +68,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.POST("/admin/users", admin.auditRejectedMutation("admin.user.create"), auth.requireCSRF(), requireAdministrator(), admin.createUser)
 	protected.PATCH("/admin/users/:userID", admin.auditRejectedMutation("admin.user.update"), auth.requireCSRF(), requireAdministrator(), admin.patchUser)
 	protected.GET("/admin/audit", requireAdministrator(), admin.listAudit)
+	registerLLMRoutes(protected, auth, models)
 	protected.GET("/tasks", tasks.list)
 	protected.GET("/tasks/:taskID", tasks.get)
 	protected.GET("/tasks/:taskID/events", tasks.events)

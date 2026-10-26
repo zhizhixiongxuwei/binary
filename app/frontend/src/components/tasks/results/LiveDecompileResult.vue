@@ -48,6 +48,7 @@ watch(
       startColumn: matchingTarget?.startColumn ?? 1,
       endLine: matchingTarget?.endLine ?? 1,
       endColumn: matchingTarget?.endColumn ?? 2,
+      reveal: Boolean(matchingTarget) && matchingTarget?.reveal !== false,
     })
   },
 )
@@ -92,6 +93,7 @@ defineExpose({
     :loading-more-results="results.loadingMore.value"
     @select="results.selectResult"
     @select-source-file="results.selectSourceFile"
+    @open-source="results.openSource"
     @load-more-results="results.loadMoreResults"
   />
 </template>

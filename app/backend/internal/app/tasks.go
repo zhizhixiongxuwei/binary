@@ -599,6 +599,10 @@ func (s *taskService) delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "task_not_found"})
 		return
 	}
+	if _, err := tx.ExecContext(c, `DELETE FROM llm_explanations WHERE task_id = ?`, taskID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})
+		return
+	}
 	if _, err := tx.ExecContext(c, `INSERT INTO task_events
 		(task_id, event_type, message) VALUES (?, 'task.deleted', '任务已删除')`, taskID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_deletion_failed"})

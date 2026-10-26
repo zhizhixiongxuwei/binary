@@ -11,6 +11,7 @@ import SystemStatusPanel from '@/components/system/SystemStatusPanel.vue'
 import AnalyzerStatusPanel from '@/components/system/maintenance/AnalyzerStatusPanel.vue'
 import AuditLogLivePanel from '@/components/system/maintenance/AuditLogLivePanel.vue'
 import MaintenanceWorkspaceTabs from '@/components/system/maintenance/MaintenanceWorkspaceTabs.vue'
+import LLMSettingsPanel from '@/components/system/maintenance/LLMSettingsPanel.vue'
 import OperationalMetricsPanel from '@/components/system/maintenance/OperationalMetricsPanel.vue'
 import StorageStatusPanel from '@/components/system/maintenance/StorageStatusPanel.vue'
 import UserManagementPanel from '@/components/system/maintenance/UserManagementPanel.vue'
@@ -89,6 +90,9 @@ onMounted(() => {
         :error-message="system.errorMessage.value"
         @retry="system.load"
       />
+    </template>
+    <template #llm>
+      <LLMSettingsPanel />
     </template>
     <template #access>
       <UserManagementPanel

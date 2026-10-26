@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import type { UserRole } from '@/api/types'
 import { passwordRouteRedirect } from '@/router/guards'
+import { scrollBehavior } from '@/router/scrollBehavior'
 import { useSessionStore } from '@/stores/session'
 
 declare module 'vue-router' {
@@ -73,7 +74,7 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior,
 })
 
 router.beforeEach(async (to) => {

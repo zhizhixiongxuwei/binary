@@ -619,6 +619,7 @@ function sourceTargetFromRoute(): SourceNavigationTarget | undefined {
   const path = routeQueryString(route.query.sourcePath)
   return {
     projectId,
+    reveal: Boolean(routeQueryString(route.query.startLine)),
     ...(sourceFileId ? { sourceFileId } : {}),
     ...(path ? { path } : {}),
     startLine,
@@ -638,6 +639,7 @@ function sourceTargetKey(target: SourceNavigationTarget | undefined): string {
     target.startColumn,
     target.endLine,
     target.endColumn,
+    target.reveal === false ? 'file' : 'range',
   ].join('\u0000')
 }
 
@@ -656,10 +658,10 @@ async function replaceSourceRoute(target: SourceNavigationTarget): Promise<void>
       sourceProject: target.projectId,
       sourceFile: target.sourceFileId,
       sourcePath: target.path,
-      startLine: String(target.startLine),
-      startColumn: String(target.startColumn),
-      endLine: String(target.endLine),
-      endColumn: String(target.endColumn),
+      startLine: target.reveal === false ? undefined : String(target.startLine),
+      startColumn: target.reveal === false ? undefined : String(target.startColumn),
+      endLine: target.reveal === false ? undefined : String(target.endLine),
+      endColumn: target.reveal === false ? undefined : String(target.endColumn),
     },
   })
 }
@@ -962,7 +964,7 @@ function handleReportState(state: TaskResultState): void {
     retryable
     @retry="load"
   />
-  <div v-else-if="task" class="task-detail">
+  <div v-else-if="task" class="task-detail" :class="{ 'task-detail--source': activeDetailTab === 'results' && activeResultTab === 'decompile' }">
     <div
       v-if="lifecycleActions.feedbackMessage.value"
       class="action-feedback"
@@ -988,7 +990,9 @@ function handleReportState(state: TaskResultState): void {
       {{ lifecycleActions.errorMessage.value }}
     </p>
 
-    <TaskAnalysisActions
+    <component :is="activeDetailTab === 'results' && activeResultTab === 'decompile' ? 'details' : 'div'" class="task-analysis-wrapper">
+      <summary v-if="activeDetailTab === 'results' && activeResultTab === 'decompile'" class="task-analysis-summary">分析操作<span>查看可用操作</span></summary>
+      <TaskAnalysisActions
       :task="task"
       :node="analysisTarget"
       :user-role="session.user?.role ?? null"
@@ -997,7 +1001,8 @@ function handleReportState(state: TaskResultState): void {
       @open-files="openAnalysisFiles"
       @open-vulnerabilities="openVulnerabilityResults"
       @decompile-completed="handleDecompileCompleted"
-    />
+      />
+    </component>
 
     <TaskDetailTabs v-model:active-tab="activeDetailTab">
       <template #progress>
@@ -1390,6 +1395,16 @@ function handleReportState(state: TaskResultState): void {
   color: var(--danger);
   font-size: 13px;
 }
+
+.task-analysis-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink-700); font-size: 12px; cursor: pointer; list-style: none; }
+.task-analysis-summary span { color: var(--primary); font-size: 11px; }
+.task-analysis-wrapper[open] .task-analysis-summary { margin-bottom: 8px; }
+.task-detail--source { gap: 10px; }
+.task-detail--source :deep(.detail-tabs__list) { min-height: 40px; padding: 3px; }
+.task-detail--source :deep(.detail-tabs__tab) { min-height: 34px; padding-block: 6px; }
+.task-detail--source :deep(.task-result-workspace__tab) { min-height: 39px; padding-block: 6px; }
+.task-detail--source :deep(.result-pane__toolbar) { min-height: 36px; padding: 5px 12px; }
+.task-detail--source :deep(.result-pane__command) { height: 26px; min-width: 26px; }
 
 @container (max-width: 620px) {
   .detail-grid {

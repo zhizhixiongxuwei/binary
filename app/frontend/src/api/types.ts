@@ -338,6 +338,8 @@ export interface SourceNavigationTarget {
   startColumn: number
   endLine: number
   endColumn: number
+  /** False opens a file without overriding its saved reading position. */
+  reveal?: boolean
 }
 
 export type DecompileProjectLayoutVersion = 'project-v1' | 'legacy-v1'
