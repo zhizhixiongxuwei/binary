@@ -360,7 +360,7 @@ const sampleRelationLabels: Readonly<
   gap: 16px;
   padding: 9px 16px;
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .report-workspace__heading div,
@@ -381,14 +381,14 @@ const sampleRelationLabels: Readonly<
 .report-workspace__heading strong,
 .report-row__identity strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .report-workspace__heading span,
 .report-row__identity small,
 .report-workspace__count {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .report-source-action {
@@ -399,19 +399,19 @@ const sampleRelationLabels: Readonly<
   justify-content: center;
   gap: 6px;
   padding: 0 9px;
-  border: 1px solid #c8d3d2;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--surface);
   cursor: pointer;
   font: inherit;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .report-source-action--primary {
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary-hover);
 }
 
 .report-source-action:disabled {
@@ -425,14 +425,14 @@ const sampleRelationLabels: Readonly<
   align-items: center;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .report-source-option input {
   width: 14px;
   height: 14px;
-  accent-color: var(--teal);
+  accent-color: var(--primary);
 }
 
 .report-workspace__count {
@@ -446,10 +446,10 @@ const sampleRelationLabels: Readonly<
   gap: 8px;
   margin: 0;
   padding: 10px 16px;
-  border-bottom: 1px solid #e8b9b9;
-  color: #7e3030;
-  background: #fff4f4;
-  font-size: 11px;
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -480,7 +480,7 @@ const sampleRelationLabels: Readonly<
   min-width: 0;
   align-items: center;
   gap: 10px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .report-row__identity svg {
@@ -494,23 +494,23 @@ const sampleRelationLabels: Readonly<
 }
 
 .report-row__status code {
-  color: var(--red);
-  font-size: 9px;
+  color: var(--danger);
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
 .sample-relation {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .sample-relation--expired {
-  color: #73530e;
+  color: var(--warning);
 }
 
 .sample-relation--deleted {
-  color: #7e3030;
+  color: var(--danger);
 }
 
 .report-status {
@@ -520,31 +520,31 @@ const sampleRelationLabels: Readonly<
   gap: 5px;
   padding: 2px 7px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f5f7f7;
-  font-size: 9px;
+  background: var(--surface-muted);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .report-status--complete {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #edf8f6;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .report-status--failed {
-  border-color: #e0b7b7;
-  color: #8a3030;
-  background: #fff2f2;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .report-status--queued,
 .report-status--generating {
-  border-color: #d6c58e;
-  color: #73530e;
-  background: #fff8e8;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .report-row__metadata {
@@ -562,14 +562,14 @@ const sampleRelationLabels: Readonly<
 .report-row__metadata dt {
   margin-bottom: 3px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .report-row__metadata dd {
   min-width: 0;
   margin: 0;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -578,17 +578,17 @@ const sampleRelationLabels: Readonly<
 }
 
 .report-row__hash code {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .report-row__failure {
   grid-column: 1 / -1;
   margin: -5px 0 0;
   padding: 8px 10px;
-  border-left: 3px solid var(--red);
-  color: #7e3030;
-  background: #fff5f5;
-  font-size: 10px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -612,20 +612,20 @@ const sampleRelationLabels: Readonly<
   justify-content: center;
   gap: 5px;
   padding: 6px 9px;
-  border: 1px solid #b9c5c7;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--surface);
   cursor: pointer;
   font: inherit;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .report-regenerate:hover:not(:disabled) {
-  border-color: var(--teal);
-  background: #f0f8f7;
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .report-regenerate:disabled {
@@ -641,30 +641,30 @@ const sampleRelationLabels: Readonly<
   justify-content: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid #b9c5c7;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .report-action:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
-  background: #f0f8f7;
+  border-color: var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .report-action--primary {
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary-hover);
 }
 
 .report-action--primary:hover:not(:disabled) {
-  color: #fff;
-  background: #075f59;
+  color: var(--surface);
+  background: var(--primary-hover);
 }
 
 .report-action:disabled {
@@ -674,7 +674,7 @@ const sampleRelationLabels: Readonly<
 
 .report-row__no-action {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .spin {

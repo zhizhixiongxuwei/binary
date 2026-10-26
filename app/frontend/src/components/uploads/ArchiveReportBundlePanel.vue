@@ -169,8 +169,8 @@ async function generate(): Promise<void> {
 .bundle-panel {
   margin: 0 14px 14px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #f8fbfa;
+  border-radius: 12px;
+  background: var(--surface-raised);
 }
 
 .bundle-panel__header,
@@ -220,14 +220,14 @@ async function generate(): Promise<void> {
 .bundle-panel__empty,
 .bundle-panel__readonly {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .bundle-panel__icon,
 .bundle-row__icon {
   display: grid;
   place-items: center;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .bundle-panel__header button {
@@ -237,9 +237,9 @@ async function generate(): Promise<void> {
   place-items: center;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -268,7 +268,7 @@ async function generate(): Promise<void> {
   float: left;
   margin-right: 3px;
   color: var(--ink-700);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -278,7 +278,7 @@ async function generate(): Promise<void> {
   align-items: center;
   gap: 5px;
   color: var(--ink-700);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .bundle-panel__sources > span {
@@ -287,7 +287,7 @@ async function generate(): Promise<void> {
 
 .bundle-panel__sources small {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .bundle-panel__error,
@@ -296,18 +296,18 @@ async function generate(): Promise<void> {
   gap: 7px;
   margin: 0 12px 12px;
   padding: 9px 10px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .bundle-panel__error {
-  color: var(--red);
-  background: #fff3f1;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .bundle-panel__loading,
 .bundle-panel__empty {
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
 }
 
 .bundle-list {
@@ -320,8 +320,8 @@ async function generate(): Promise<void> {
   gap: 10px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 4px;
-  background: #fff;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .bundle-row__identity {
@@ -330,13 +330,13 @@ async function generate(): Promise<void> {
 
 .bundle-row__identity strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .bundle-row__metadata {
   flex: 0 1 220px;
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
   text-align: right;
 }
 

@@ -63,7 +63,9 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   async function changePassword(input: ChangePasswordInput): Promise<void> {
-    user.value = await api.changePassword(input)
+    await api.changePassword(input)
+    // 修改密码会撤销所有会话；成功后必须使用新密码重新登录。
+    user.value = null
     restored.value = true
   }
 

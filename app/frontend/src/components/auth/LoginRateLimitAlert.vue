@@ -43,15 +43,15 @@ const seconds = computed(() =>
   align-items: center;
   gap: 10px;
   padding: 9px 11px;
-  border-left: 3px solid var(--amber);
-  color: #674817;
-  background: #fff8e9;
-  font-size: 11px;
+  border-left: 3px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .rate-limit-alert__icon {
-  color: #a46d17;
+  color: var(--warning);
 }
 
 .rate-limit-alert__copy {
@@ -61,7 +61,7 @@ const seconds = computed(() =>
 }
 
 .rate-limit-alert__copy strong {
-  color: #51370e;
+  color: var(--warning);
   font-size: 12px;
 }
 
@@ -73,13 +73,13 @@ const seconds = computed(() =>
   align-items: center;
   justify-content: center;
   gap: 2px;
-  border-left: 1px solid #e7cf9f;
-  color: #6e4d1b;
+  border-left: 1px solid var(--warning-border);
+  color: var(--warning);
 }
 
 .rate-limit-alert__countdown b {
   min-width: 2ch;
-  color: #8f5e12;
+  color: var(--warning);
   font-size: 15px;
   text-align: right;
 }

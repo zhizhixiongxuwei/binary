@@ -93,15 +93,15 @@ function submit(): void {
   min-height: 32px;
   padding: 5px 26px 5px 8px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .report-download__variant select:focus-visible,
 .report-download__command:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 
@@ -113,17 +113,17 @@ function submit(): void {
   justify-content: center;
   gap: 6px;
   padding: 6px 10px;
-  border: 1px solid var(--teal);
-  border-radius: 4px;
-  color: #fff;
-  background: var(--teal-strong);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--surface);
+  background: var(--primary-hover);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .report-download__command:hover:not(:disabled) {
-  background: #075f59;
+  background: var(--primary-hover);
 }
 
 .report-download__command:disabled,

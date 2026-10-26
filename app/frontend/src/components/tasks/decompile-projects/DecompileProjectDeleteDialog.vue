@@ -155,21 +155,21 @@ function confirm(): void {
 .delete-project p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
 .delete-project__warning {
   padding: 10px 12px;
-  border-left: 3px solid var(--red);
-  color: #7e3030 !important;
-  background: #fff2f2;
+  border-left: 3px solid var(--danger);
+  color: var(--danger) !important;
+  background: var(--danger-soft);
 }
 
 .delete-project dl {
   margin: 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .delete-project dl div {
@@ -186,19 +186,19 @@ function confirm(): void {
 
 .delete-project dt {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .delete-project dd {
   min-width: 0;
   margin: 0;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .delete-project__error {
-  color: var(--red) !important;
+  color: var(--danger) !important;
 }
 
 .delete-project__preview-state {
@@ -206,8 +206,8 @@ function confirm(): void {
   display: grid;
   place-items: center;
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 11px;
+  background: var(--surface-raised);
+  font-size: 12px;
 }
 
 .delete-project__impact {
@@ -218,7 +218,7 @@ function confirm(): void {
 .delete-project__impact h3 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .delete-project__impact dl {
@@ -234,18 +234,18 @@ function confirm(): void {
   display: grid;
   gap: 6px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .delete-project__typed-confirmation code {
-  color: var(--red);
-  font-size: 10px;
+  color: var(--danger);
+  font-size: 12px;
   font-weight: 700;
 }
 
 .delete-project__expiry {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 @media (max-width: 560px) {

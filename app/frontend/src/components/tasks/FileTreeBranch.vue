@@ -282,21 +282,21 @@ function sourceHintTitle(node: FileNode): string {
   grid-template-columns: 28px 30px minmax(210px, 1fr) minmax(118px, 0.32fr) 104px 132px;
   align-items: center;
   gap: 7px;
-  border-bottom: 1px solid #e8ebec;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-800);
 }
 
 .file-node__row:hover {
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .file-node__row--selected {
-  background: #edf6f5;
-  box-shadow: 3px 0 0 var(--teal) inset;
+  background: var(--primary-soft);
+  box-shadow: 3px 0 0 var(--primary) inset;
 }
 
 .file-node__row--selected:hover {
-  background: #e7f2f1;
+  background: var(--primary-soft);
 }
 
 .tree-command {
@@ -306,15 +306,15 @@ function sourceHintTitle(node: FileNode): string {
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: transparent;
   cursor: pointer;
 }
 
 .tree-command:hover {
-  color: var(--teal-strong);
-  background: #eaf3f2;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .tree-command--placeholder {
@@ -334,10 +334,10 @@ function sourceHintTitle(node: FileNode): string {
   width: 28px;
   height: 28px;
   place-items: center;
-  border: 1px solid #dce2e3;
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f5f8fa;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--surface-raised);
 }
 
 .file-node__identity,
@@ -349,7 +349,7 @@ function sourceHintTitle(node: FileNode): string {
   width: 100%;
   padding: 5px 4px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: inherit;
   background: transparent;
   text-align: left;
@@ -357,7 +357,7 @@ function sourceHintTitle(node: FileNode): string {
 }
 
 .file-node__identity:hover {
-  background: #eaf3f2;
+  background: var(--primary-soft);
 }
 
 .file-node__identity strong,
@@ -372,14 +372,14 @@ function sourceHintTitle(node: FileNode): string {
 
 .file-node__identity strong,
 .file-node__type strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .file-node__identity small,
 .file-node__type small {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .file-node__type strong {
@@ -387,13 +387,13 @@ function sourceHintTitle(node: FileNode): string {
 }
 
 .source-format-hint {
-  color: var(--teal-strong);
+  color: var(--primary-hover);
   text-transform: uppercase;
 }
 
 .file-node__size {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .file-node__result {
@@ -410,29 +410,29 @@ function sourceHintTitle(node: FileNode): string {
   align-items: center;
   padding: 2px 7px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f7f8f8;
-  font-size: 10px;
+  background: var(--surface-raised);
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .extraction-status--success {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .extraction-status--warning {
-  border-color: #decba7;
-  color: #83551a;
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .extraction-status--failed {
-  border-color: #e4bebe;
-  color: #a52f2f;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .node-error {
@@ -444,8 +444,8 @@ function sourceHintTitle(node: FileNode): string {
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 4px;
-  color: var(--red);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
   cursor: pointer;
   list-style: none;
 }
@@ -455,7 +455,7 @@ function sourceHintTitle(node: FileNode): string {
 }
 
 .node-error summary:hover {
-  background: #fff0f0;
+  background: var(--danger-soft);
 }
 
 .node-error__content {
@@ -465,11 +465,11 @@ function sourceHintTitle(node: FileNode): string {
   right: 0;
   width: min(320px, 70vw);
   padding: 11px 12px;
-  border: 1px solid #e3bcbc;
-  border-radius: 5px;
-  color: #7e4040;
-  background: #fffafa;
-  box-shadow: 0 5px 18px rgb(23 36 39 / 14%);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: var(--danger-soft);
+  box-shadow: 0 5px 18px rgb(30 41 59 / 10%);
   max-height: min(360px, calc(100vh - 64px));
   overflow-y: auto;
 }
@@ -481,20 +481,20 @@ function sourceHintTitle(node: FileNode): string {
 }
 
 .node-error__content strong {
-  color: var(--red);
-  font-size: 10px;
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .node-error__content span {
   margin-top: 5px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .file-node__children {
   margin-left: 27px;
   padding-left: 16px;
-  border-left: 1px solid #cfd8da;
+  border-left: 1px solid var(--line-strong);
 }
 
 .branch-state {
@@ -503,14 +503,14 @@ function sourceHintTitle(node: FileNode): string {
   align-items: center;
   gap: 8px;
   padding: 9px 12px;
-  border-bottom: 1px solid #e8ebec;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .branch-state--error {
-  color: var(--red);
-  background: #fffafa;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .branch-state--empty {
@@ -529,10 +529,10 @@ function sourceHintTitle(node: FileNode): string {
   justify-content: center;
   gap: 5px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -544,15 +544,15 @@ function sourceHintTitle(node: FileNode): string {
 .load-more-command {
   width: 100%;
   border-width: 0 0 1px;
-  border-color: #e8ebec;
+  border-color: var(--line);
   border-radius: 0;
-  background: #f9fafa;
+  background: var(--surface-raised);
 }
 
 .inline-command:hover,
 .load-more-command:hover {
-  color: var(--teal-strong);
-  background: #edf5f4;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .spin {
@@ -593,7 +593,7 @@ function sourceHintTitle(node: FileNode): string {
   .file-node__type small {
     display: inline;
     margin: 0 6px 0 0;
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .file-node__size {

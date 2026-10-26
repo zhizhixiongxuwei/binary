@@ -490,16 +490,16 @@ watch(
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgb(23 36 39 / 5%);
+  box-shadow: var(--shadow-sm);
   container-type: inline-size;
 }
 
 .task-result-workspace__tab-scroll {
   overflow-x: auto;
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
   scrollbar-width: thin;
 }
 
@@ -511,17 +511,17 @@ watch(
   position: relative;
   display: inline-flex;
   min-width: 0;
-  min-height: 46px;
+  min-height: 52px;
   align-items: center;
   justify-content: center;
   gap: 7px;
   padding: 8px 14px;
   border: 0;
-  border-right: 1px solid #e4e8e9;
+  border-right: 0;
   color: var(--ink-600);
   background: transparent;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -541,17 +541,17 @@ watch(
 }
 
 .task-result-workspace__tab:hover {
-  color: var(--teal-strong);
-  background: #f0f6f5;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .task-result-workspace__tab--active {
-  color: var(--teal-strong);
-  background: var(--surface);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .task-result-workspace__tab--active::after {
-  background: var(--teal);
+  background: var(--primary);
 }
 
 .task-result-workspace__panel {

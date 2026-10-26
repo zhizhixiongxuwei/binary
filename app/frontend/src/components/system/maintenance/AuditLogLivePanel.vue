@@ -240,8 +240,8 @@ function actorLabel(log: AuditLog): string {
 .section-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -258,7 +258,7 @@ function actorLabel(log: AuditLog): string {
 .section-heading p {
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .heading-actions {
@@ -274,11 +274,11 @@ function actorLabel(log: AuditLog): string {
   gap: 6px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .heading-actions button:first-child {
@@ -289,7 +289,7 @@ function actorLabel(log: AuditLog): string {
 
 button:disabled {
   color: var(--ink-400);
-  background: #eef1f1;
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
@@ -303,7 +303,7 @@ button:disabled {
   gap: 9px;
   padding: 11px 17px;
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .filter-mark {
@@ -322,7 +322,7 @@ button:disabled {
 
 .audit-filters label > span {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -333,10 +333,10 @@ button:disabled {
   min-height: 32px;
   padding: 5px 7px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .filter-actions {
@@ -353,18 +353,18 @@ button:disabled {
   gap: 5px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .filter-actions .search-command {
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal);
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
 }
 
 .audit-list {
@@ -383,7 +383,7 @@ button:disabled {
   gap: 12px;
   min-height: 68px;
   padding: 10px 17px;
-  border-bottom: 1px solid #e7ebeb;
+  border-bottom: 1px solid var(--line);
 }
 
 .audit-icon {
@@ -392,7 +392,7 @@ button:disabled {
   height: 30px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface-raised);
 }
@@ -413,14 +413,14 @@ button:disabled {
 
 .event-time strong {
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .event-time span,
 .request-meta span {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .event-main > div {
@@ -432,7 +432,7 @@ button:disabled {
 
 .event-main strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -440,25 +440,25 @@ button:disabled {
   display: block;
   margin-top: 4px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
 .action-label {
   flex: 0 0 auto;
   padding: 2px 5px;
-  border: 1px solid #c0d1e4;
-  border-radius: 3px;
-  color: var(--blue);
-  background: #f2f6fa;
-  font-size: 8px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 11px;
 }
 
 .event-main code,
 .request-meta code {
   color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .outcome-label {
@@ -467,11 +467,11 @@ button:disabled {
   align-items: center;
   gap: 5px;
   padding: 2px 6px;
-  border: 1px solid #b8d7d3;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  font-size: 9px;
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  color: var(--success);
+  background: var(--success-soft);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -480,19 +480,19 @@ button:disabled {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--success);
 }
 
 .outcome-label--denied,
 .outcome-label--failure {
-  border-color: #e4bebe;
-  color: var(--red);
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .outcome-label--denied i,
 .outcome-label--failure i {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .audit-footer {
@@ -503,8 +503,8 @@ button:disabled {
   gap: 12px;
   padding: 8px 17px;
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 @container audit-live (max-width: 1050px) {

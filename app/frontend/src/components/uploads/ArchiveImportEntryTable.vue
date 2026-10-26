@@ -211,15 +211,15 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
   padding: 10px 9px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   text-align: left;
   vertical-align: top;
 }
 
 .entry-table th {
   color: var(--ink-400);
-  background: #f4f7f7;
-  font-size: 10px;
+  background: var(--surface-muted);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -248,7 +248,7 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
 .entry-table__select input {
   width: 15px;
   height: 15px;
-  accent-color: var(--teal);
+  accent-color: var(--primary);
 }
 
 .entry-table__path {
@@ -262,7 +262,7 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
 .entry-table__path svg {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .entry-table__path span {
@@ -290,21 +290,21 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
   height: 30px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .entry-table__command button:hover,
 .entry-pagination button:hover:not(:disabled) {
-  color: var(--teal-strong);
-  background: #f1f8f7;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .entry-pagination button:disabled {
   color: var(--ink-400);
-  background: #f2f4f4;
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
@@ -315,11 +315,11 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
 
 .entry-status--eligible,
 .entry-status--created {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .entry-status--failed {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .entry-table__reason {
@@ -346,12 +346,12 @@ function entryStatusLabel(entry: ArchiveImportEntry): string {
   justify-content: space-between;
   padding: 8px 10px;
   border-top: 1px solid var(--line);
-  background: #fafcfc;
+  background: var(--surface-raised);
 }
 
 .entry-pagination > span {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .entry-pagination > div {

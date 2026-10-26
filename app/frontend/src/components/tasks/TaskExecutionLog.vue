@@ -105,11 +105,11 @@ watch(
 
 .execution-log__header {
   display: flex;
-  min-height: 46px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -123,20 +123,20 @@ watch(
 
 .execution-log__heading {
   gap: 7px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .execution-log__heading h2 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .execution-log__count {
   padding-left: 7px;
   border-left: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -144,7 +144,7 @@ watch(
   flex: 0 1 auto;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -153,11 +153,11 @@ watch(
 }
 
 .execution-log__connection--connected {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .execution-log__connection--reconnecting {
-  color: var(--amber);
+  color: var(--warning);
 }
 
 .execution-log__list {
@@ -172,11 +172,11 @@ watch(
 .execution-log__item {
   display: grid;
   min-height: 46px;
-  grid-template-columns: 132px 8px minmax(150px, 1fr) 64px 46px 52px;
+  grid-template-columns: 144px 8px minmax(150px, 1fr) 64px 52px 52px;
   align-items: center;
   gap: 10px;
-  padding: 7px 14px;
-  border-bottom: 1px solid #e8ebec;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
 .execution-log__item:last-child {
@@ -186,7 +186,7 @@ watch(
 .execution-log__item time,
 .execution-log__sequence {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -200,18 +200,18 @@ watch(
 }
 
 .execution-log__item--info .execution-log__marker {
-  border-color: var(--teal);
-  background: #bfe3df;
+  border-color: var(--primary);
+  background: var(--primary-border);
 }
 
 .execution-log__item--warning .execution-log__marker {
-  border-color: var(--amber);
-  background: #f4dba7;
+  border-color: var(--warning);
+  background: var(--warning-border);
 }
 
 .execution-log__item--error .execution-log__marker {
-  border-color: var(--red);
-  background: #f2bcbc;
+  border-color: var(--danger);
+  background: var(--danger-border);
 }
 
 .execution-log__event {
@@ -228,7 +228,7 @@ watch(
   min-width: 0;
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -238,10 +238,10 @@ watch(
   flex: 0 0 auto;
   padding: 1px 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface-raised);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -249,14 +249,14 @@ watch(
   min-width: 0;
   overflow: hidden;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .execution-log__progress {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -265,15 +265,15 @@ watch(
 }
 
 .execution-log__item--warning .execution-log__severity {
-  border-color: #d9c992;
-  color: #7c5b12;
-  background: #fffaf0;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .execution-log__item--error .execution-log__severity {
-  border-color: #e3bcbc;
-  color: #8c3131;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .execution-log__sequence {
@@ -286,7 +286,7 @@ watch(
   place-items: center;
   padding: 12px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @container execution-log (max-width: 700px) {

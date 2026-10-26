@@ -247,7 +247,7 @@ const limitSnapshot = [
   gap: 12px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line);
-  background: #f8fafa;
+  background: var(--surface-raised);
 }
 
 .section-heading > div {
@@ -255,18 +255,18 @@ const limitSnapshot = [
   min-width: 0;
   align-items: center;
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .section-heading h3 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .section-heading > span {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -282,7 +282,7 @@ const limitSnapshot = [
   align-items: center;
   gap: 11px;
   padding: 11px 14px;
-  border-bottom: 1px solid #e5e9ea;
+  border-bottom: 1px solid var(--line);
 }
 
 .artifact-row:last-child {
@@ -290,7 +290,7 @@ const limitSnapshot = [
 }
 
 .artifact-row__icon {
-  color: var(--teal);
+  color: var(--primary);
 }
 
 .artifact-row__identity {
@@ -302,14 +302,14 @@ const limitSnapshot = [
 .artifact-row__identity strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .artifact-row__identity span {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -319,7 +319,7 @@ const limitSnapshot = [
   justify-content: flex-end;
   gap: 7px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .artifact-row__meta code {
@@ -330,15 +330,15 @@ const limitSnapshot = [
 .artifact-row__ready {
   padding: 2px 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
-  font-size: 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .artifact-row__ready {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .artifact-row__download {
@@ -349,9 +349,9 @@ const limitSnapshot = [
   justify-content: center;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
-  color: #a4adaf;
-  background: #f2f4f4;
+  border-radius: var(--radius-sm);
+  color: var(--ink-400);
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
@@ -377,25 +377,25 @@ const limitSnapshot = [
   gap: 10px;
   padding: 7px 12px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfc;
+  background: var(--surface);
 }
 
 .document-preview__heading > span {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .document-preview__heading strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .document-preview__heading code {
   color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .json-preview {
@@ -404,16 +404,16 @@ const limitSnapshot = [
   margin: 0;
   overflow: auto;
   padding: 14px;
-  color: #d8e7e7;
-  background: #172427;
+  color: var(--ink-800);
+  background: var(--surface);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.65;
   tab-size: 2;
 }
 
 .json-preview:focus-visible {
-  outline: 2px solid #58a9cf;
+  outline: 2px solid var(--primary);
   outline-offset: -3px;
 }
 
@@ -436,13 +436,13 @@ const limitSnapshot = [
   align-items: center;
   gap: 9px;
   padding: 8px 12px;
-  border-bottom: 1px solid #e5e9ea;
+  border-bottom: 1px solid var(--line);
 }
 
 .html-toc__number {
-  color: var(--teal);
+  color: var(--primary);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
 }
 
@@ -454,12 +454,12 @@ const limitSnapshot = [
 
 .html-toc__content strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .html-toc__content small {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -467,8 +467,8 @@ const limitSnapshot = [
   min-height: 52px;
   padding: 10px 12px;
   color: var(--ink-600);
-  background: #f8fafa;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
   line-height: 1.55;
 }
 
@@ -491,7 +491,7 @@ const limitSnapshot = [
   grid-template-columns: 92px minmax(0, 1fr);
   align-items: center;
   padding: 7px 14px;
-  border-bottom: 1px solid #e5e9ea;
+  border-bottom: 1px solid var(--line);
 }
 
 .snapshot-list > div:last-child {
@@ -501,7 +501,7 @@ const limitSnapshot = [
 .snapshot-list dt,
 .limit-grid dt {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .snapshot-list dd {
@@ -509,7 +509,7 @@ const limitSnapshot = [
   margin: 0;
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -529,8 +529,8 @@ const limitSnapshot = [
   flex-direction: column;
   gap: 6px;
   padding: 12px 14px;
-  border-right: 1px solid #e5e9ea;
-  border-bottom: 1px solid #e5e9ea;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .limit-grid > div:nth-child(3n) {
@@ -555,8 +555,8 @@ const limitSnapshot = [
   padding: 10px 14px;
   border-top: 1px solid var(--line);
   color: var(--ink-600);
-  background: #f8fafa;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -605,7 +605,7 @@ const limitSnapshot = [
   .json-preview {
     height: 260px;
     padding: 12px 10px;
-    font-size: 8px;
+    font-size: 11px;
   }
 
   .limit-grid {
@@ -613,7 +613,7 @@ const limitSnapshot = [
   }
 
   .limit-grid > div:nth-child(3n) {
-    border-right: 1px solid #e5e9ea;
+    border-right: 1px solid var(--line);
   }
 
   .limit-grid > div:nth-child(2n) {
@@ -621,7 +621,7 @@ const limitSnapshot = [
   }
 
   .limit-grid > div:nth-last-child(3) {
-    border-bottom: 1px solid #e5e9ea;
+    border-bottom: 1px solid var(--line);
   }
 }
 </style>

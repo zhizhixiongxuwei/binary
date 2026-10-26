@@ -1,26 +1,12 @@
+@import './theme.css';
+
 :root {
-  color: #172427;
-  background: #eef2f2;
-  font-family: "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink-950);
+  background: var(--surface-muted);
+  font-family: var(--el-font-family);
   font-synthesis: none;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
-  --ink-950: #172427;
-  --ink-800: #314246;
-  --ink-600: #617176;
-  --ink-400: #96a2a5;
-  --line: #d9dfe0;
-  --line-strong: #c4ccce;
-  --surface: #ffffff;
-  --surface-muted: #eef2f2;
-  --surface-raised: #f9fafa;
-  --teal: #087f78;
-  --teal-strong: #046a64;
-  --blue: #2563a8;
-  --red: #c23d3d;
-  --amber: #9a6419;
-  --sidebar-width: 248px;
-  --radius: 6px;
 }
 
 * {
@@ -64,7 +50,7 @@ a {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 1px 2px rgb(23 36 39 / 5%);
+  box-shadow: var(--shadow-panel);
 }
 
 .mono {
@@ -85,48 +71,52 @@ a {
 }
 
 .el-button {
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   letter-spacing: 0;
+  font-weight: 500;
 }
 
 .el-button > span {
   min-width: 0;
 }
 
-.el-button--primary {
-  --el-button-bg-color: var(--teal);
-  --el-button-border-color: var(--teal);
-  --el-button-hover-bg-color: var(--teal-strong);
-  --el-button-hover-border-color: var(--teal-strong);
-}
-
 .el-input__wrapper,
 .el-select__wrapper {
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 0 0 1px var(--line-strong) inset;
 }
 
 .el-table {
-  --el-table-header-bg-color: #f2f5f5;
-  --el-table-border-color: #e1e5e6;
-  --el-table-row-hover-bg-color: #f5f9f8;
+  --el-table-header-bg-color: var(--surface-raised);
+  --el-table-border-color: var(--line);
+  --el-table-row-hover-bg-color: var(--primary-soft);
   color: var(--ink-800);
 }
 
 .el-table th.el-table__cell {
   color: var(--ink-600);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 500;
+}
+
+.el-dialog,
+.el-message-box {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.el-tag {
+  border-radius: 6px;
 }
 
 ::selection {
-  color: var(--ink-950);
-  background: #bfe3df;
+  color: var(--primary-active);
+  background: var(--primary-border);
 }
 
 :focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -134,5 +124,8 @@ a {
   *::before,
   *::after {
     scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

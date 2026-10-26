@@ -327,7 +327,7 @@ watch(
   inset: 0;
   place-items: center;
   padding: 20px;
-  background: rgb(23 36 39 / 48%);
+  background: rgb(15 23 42 / 42%);
 }
 
 .user-dialog {
@@ -335,9 +335,9 @@ watch(
   max-height: calc(100vh - 40px);
   overflow-y: auto;
   border: 1px solid var(--line-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--surface);
-  box-shadow: 0 18px 46px rgb(23 36 39 / 24%);
+  box-shadow: 0 18px 46px rgb(30 58 138 / 14%);
 }
 
 .user-dialog > header {
@@ -352,8 +352,8 @@ watch(
 .dialog-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -369,7 +369,7 @@ watch(
   height: 30px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
@@ -385,7 +385,7 @@ watch(
   display: grid;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -395,15 +395,15 @@ watch(
   min-height: 36px;
   padding: 6px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .user-dialog label small {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 400;
 }
 
@@ -413,11 +413,11 @@ watch(
   gap: 7px;
   min-height: 32px;
   padding: 6px 8px;
-  border: 1px solid #decba7;
-  border-radius: 4px;
-  color: var(--amber);
-  background: #fff9ef;
-  font-size: 9px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 11px;
   font-weight: 400;
 }
 
@@ -430,9 +430,9 @@ watch(
 
 .dialog-subject {
   padding: 10px;
-  border-left: 3px solid var(--blue);
+  border-left: 3px solid var(--primary);
   color: var(--ink-600);
-  background: #f2f6fa;
+  background: var(--primary-soft);
 }
 
 .dialog-subject strong,
@@ -442,31 +442,31 @@ watch(
 
 .dialog-subject strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .dialog-subject code {
   margin-top: 3px;
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .confirmation-note,
 .form-error {
   margin: 0;
   padding: 9px 10px;
-  border: 1px solid #decba7;
-  border-radius: 4px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff9ef;
-  font-size: 9px;
+  background: var(--warning-soft);
+  font-size: 11px;
   line-height: 1.6;
 }
 
 .form-error {
-  border-color: #e4bebe;
-  color: var(--red);
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .user-dialog footer {
@@ -480,23 +480,23 @@ watch(
   min-height: 32px;
   padding: 5px 10px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .user-dialog footer .confirm-command {
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal);
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
 }
 
 .user-dialog footer .danger-command {
-  border-color: var(--red);
-  color: #fff;
-  background: var(--red);
+  border-color: var(--danger);
+  color: var(--surface);
+  background: var(--danger);
 }
 
 .user-dialog button:disabled {

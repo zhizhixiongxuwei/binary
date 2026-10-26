@@ -155,61 +155,54 @@ onMounted(load)
 <style scoped>
 .overview {
   display: grid;
-  gap: 18px;
+  gap: 24px;
   container: overview / inline-size;
 }
 
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
   padding: 0;
   margin: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: #fff;
 }
 
 .metric {
   display: flex;
-  min-height: 96px;
+  min-height: 122px;
   align-items: center;
-  gap: 13px;
-  padding: 18px;
-  border-right: 1px solid var(--line);
-}
-
-.metric:last-child {
-  border-right: 0;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .metric__icon {
   display: grid;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  color: var(--ink-600);
-  background: #f4f6f6;
+  border-radius: 12px;
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .metric__icon--teal {
-  border-color: #bdd5d2;
-  color: var(--teal);
-  background: #f1f8f7;
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .metric__icon--blue {
-  border-color: #c0d1e4;
-  color: var(--blue);
-  background: #f2f6fa;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .metric__icon--red {
-  border-color: #e3c5c5;
-  color: var(--red);
-  background: #fff5f5;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .metric__copy {
@@ -224,31 +217,42 @@ onMounted(load)
 
 .metric__copy dt {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 
 .metric__copy dd {
-  margin-top: 5px;
+  margin-top: 7px;
   color: var(--ink-950);
-  font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 21px;
+  font-size: 30px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.activity {
+  overflow: hidden;
 }
 
 .section-heading {
   display: flex;
-  min-height: 52px;
+  min-height: 68px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px 0 18px;
+  gap: 16px;
+  padding: 12px 22px;
   border-bottom: 1px solid var(--line);
 }
 
 .section-heading h2 {
   margin: 0;
-  color: var(--ink-800);
-  font-size: 14px;
+  color: var(--ink-950);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.section-heading :deep(.el-button) {
+  color: var(--primary);
 }
 
 .section-heading :deep(.el-button > span) {
@@ -263,17 +267,18 @@ onMounted(load)
 
 .activity-row {
   display: grid;
-  min-height: 64px;
-  grid-template-columns: 5px minmax(220px, 1fr) auto 142px;
+  min-height: 82px;
+  grid-template-columns: 6px minmax(220px, 1fr) auto 156px;
   align-items: center;
-  gap: 14px;
-  padding: 8px 16px;
+  gap: 18px;
+  padding: 16px 24px;
   border: 0;
-  border-bottom: 1px solid #e7eaeb;
+  border-bottom: 1px solid var(--line);
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   text-align: left;
   cursor: pointer;
+  transition: background 160ms ease;
 }
 
 .activity-row:last-child {
@@ -281,35 +286,36 @@ onMounted(load)
 }
 
 .activity-row:hover {
-  background: #f7f9f9;
+  background: var(--primary-soft);
 }
 
 .activity-row:focus-visible {
   position: relative;
   z-index: 1;
+  outline-offset: -3px;
 }
 
 .activity-row__marker {
-  width: 3px;
-  height: 26px;
-  border-radius: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: var(--ink-400);
 }
 
 .activity-row__marker--active {
-  background: var(--blue);
+  background: var(--primary);
 }
 
 .activity-row__marker--succeeded {
-  background: var(--teal);
+  background: var(--success);
 }
 
 .activity-row__marker--failed {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .activity-row__marker--partial {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .activity-row__copy {
@@ -321,7 +327,7 @@ onMounted(load)
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 8px;
 }
 
 .activity-row__copy strong,
@@ -333,46 +339,43 @@ onMounted(load)
 }
 
 .activity-row__copy strong {
-  color: var(--ink-800);
-  font-size: 13px;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .activity-row__copy small,
 .activity-row time {
-  margin-top: 4px;
-  color: var(--ink-400);
-  font-size: 10px;
+  margin-top: 6px;
+  color: var(--ink-500);
+  font-size: 12px;
+}
+
+.activity-row time {
+  margin-top: 0;
+  text-align: right;
 }
 
 .attention-strip {
   display: flex;
-  min-height: 42px;
+  min-height: 48px;
   align-items: center;
   gap: 9px;
-  padding: 8px 13px;
-  border: 1px solid #dfc8a2;
-  border-left: 3px solid var(--amber);
-  border-radius: 4px;
-  color: #7f541b;
-  background: #fffaf1;
-  font-size: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 13px;
 }
 
-@container overview (max-width: 980px) {
+@container overview (max-width: 780px) {
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
 
-  .metric:nth-child(2) {
-    border-right: 0;
-  }
-
-  .metric:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--line);
-  }
-
   .activity-row {
-    grid-template-columns: 5px minmax(180px, 1fr) auto;
+    grid-template-columns: 6px minmax(180px, 1fr) auto;
   }
 
   .activity-row time {
@@ -381,32 +384,40 @@ onMounted(load)
 }
 
 @container overview (max-width: 620px) {
+  .metrics {
+    gap: 12px;
+  }
+
   .metric {
-    min-height: 82px;
+    min-height: 106px;
     gap: 10px;
     padding: 14px;
   }
 
   .metric__icon {
-    width: 34px;
-    height: 34px;
-    flex-basis: 34px;
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+    border-radius: 10px;
+  }
+
+  .metric__copy dd {
+    font-size: 26px;
   }
 
   .activity-row {
     grid-template-areas:
       "marker copy"
       "marker badges";
-    grid-template-columns: 4px minmax(0, 1fr);
-    gap: 8px 10px;
-    padding: 11px 12px;
+    grid-template-columns: 6px minmax(0, 1fr);
+    gap: 10px 12px;
+    padding: 16px;
   }
 
   .activity-row__marker {
     grid-area: marker;
-    width: 4px;
-    height: auto;
-    align-self: stretch;
+    align-self: start;
+    margin-top: 7px;
   }
 
   .activity-row__copy {
@@ -420,8 +431,21 @@ onMounted(load)
   }
 
   .section-heading {
-    padding-right: 10px;
-    padding-left: 14px;
+    padding-right: 12px;
+    padding-left: 16px;
+  }
+}
+
+@container overview (max-width: 360px) {
+  .metric {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-row {
+    transition: none;
   }
 }
 </style>

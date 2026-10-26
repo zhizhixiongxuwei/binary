@@ -229,13 +229,13 @@ watch(
 
 .file-tree-toolbar {
   display: flex;
-  min-height: 48px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfc;
+  background: var(--surface);
 }
 
 .file-tree-toolbar__summary {
@@ -247,12 +247,12 @@ watch(
 
 .file-tree-toolbar__summary strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .file-tree-toolbar__summary span {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .refresh-command {
@@ -263,15 +263,15 @@ watch(
   padding: 0;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
 }
 
 .refresh-command:hover {
-  color: var(--teal-strong);
-  background: #edf5f4;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .file-tree-state {
@@ -285,13 +285,13 @@ watch(
 
 .file-tree-columns {
   display: grid;
-  min-height: 35px;
+  min-height: 40px;
   grid-template-columns: 65px minmax(210px, 1fr) minmax(118px, 0.32fr) 104px 132px;
   align-items: center;
   gap: 7px;
   border-bottom: 1px solid var(--line-strong);
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -309,15 +309,15 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border-bottom: 1px solid #e8ebec;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  background: #f9fafa;
-  font-size: 11px;
+  background: var(--surface-raised);
+  font-size: 12px;
 }
 
 .root-page-state--error {
-  color: var(--red);
-  background: #fffafa;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .root-page-state button,
@@ -328,10 +328,10 @@ watch(
   justify-content: center;
   gap: 5px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -342,15 +342,15 @@ watch(
 .root-load-more {
   width: 100%;
   border-width: 0 0 1px;
-  border-color: #e8ebec;
+  border-color: var(--line);
   border-radius: 0;
-  background: #f9fafa;
+  background: var(--surface-raised);
 }
 
 .root-page-state button:hover,
 .root-load-more:hover {
-  color: var(--teal-strong);
-  background: #edf5f4;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .spin {

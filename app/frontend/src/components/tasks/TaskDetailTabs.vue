@@ -122,9 +122,15 @@ function handleKeydown(event: KeyboardEvent, tab: TaskDetailTab): void {
 
 .detail-tabs__list {
   display: flex;
+  width: fit-content;
+  max-width: 100%;
   min-width: 0;
-  gap: 2px;
-  border-bottom: 1px solid var(--line);
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
 .detail-tabs__tab {
@@ -135,19 +141,20 @@ function handleKeydown(event: KeyboardEvent, tab: TaskDetailTab): void {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  padding: 8px 16px;
+  padding: 10px 20px;
   border: 0;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .detail-tabs__tab::after {
   position: absolute;
   right: 14px;
-  bottom: -1px;
+  bottom: 3px;
   left: 14px;
   height: 2px;
   background: transparent;
@@ -155,23 +162,24 @@ function handleKeydown(event: KeyboardEvent, tab: TaskDetailTab): void {
 }
 
 .detail-tabs__tab:hover {
-  color: var(--teal-strong);
-  background: #f4f8f8;
+  color: var(--primary-hover);
+  background: var(--surface-raised);
 }
 
 .detail-tabs__tab--active {
-  color: var(--teal-strong);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .detail-tabs__tab--active::after {
-  background: var(--teal);
+  background: var(--primary);
 }
 
 .detail-tabs__panel {
   display: grid;
   min-width: 0;
-  gap: 12px;
-  padding-top: 12px;
+  gap: 16px;
+  padding-top: 16px;
 }
 
 .detail-tabs__panel[hidden] {

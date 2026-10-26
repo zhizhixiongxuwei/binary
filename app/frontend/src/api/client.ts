@@ -1061,12 +1061,11 @@ async function createArchiveReportBundle(
   }
 }
 
-async function changePassword(input: ChangePasswordInput): Promise<CurrentUser> {
-  const user = await request<CurrentUser | undefined>('/me/password', {
+async function changePassword(input: ChangePasswordInput): Promise<void> {
+  await request<void>('/me/password', {
     method: 'PUT',
     body: JSON.stringify(input),
   })
-  return user ?? request<CurrentUser>('/me')
 }
 
 async function taskRequest(

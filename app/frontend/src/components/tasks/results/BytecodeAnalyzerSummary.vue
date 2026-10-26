@@ -113,9 +113,9 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 <style scoped>
 .analyzer-summary {
   min-width: 0;
-  border-bottom: 1px solid #34464a;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-800);
-  background: #f5f8f8;
+  background: var(--surface-raised);
 }
 
 .analyzer-summary__heading {
@@ -126,7 +126,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   justify-content: space-between;
   gap: 12px;
   padding: 7px 12px;
-  border-bottom: 1px solid #d8e0e1;
+  border-bottom: 1px solid var(--line);
 }
 
 .analyzer-summary__title,
@@ -139,7 +139,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 
 .analyzer-summary__title {
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .analyzer-summary__title > span {
@@ -150,13 +150,13 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 
 .analyzer-summary__title strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .analyzer-summary__title small {
   color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .analyzer-summary__provenance {
@@ -169,11 +169,11 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 .analyzer-summary__example {
   min-height: 23px;
   padding: 3px 6px;
-  border: 1px solid #b9d2cc;
-  border-radius: 3px;
-  color: #17665f;
-  background: #fff;
-  font-size: 11px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--surface);
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.35;
 }
@@ -183,9 +183,9 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 }
 
 .analyzer-summary__example {
-  border-color: #d6a84d;
-  color: #68490c;
-  background: #fff6da;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .analyzer-summary__identity,
@@ -197,8 +197,8 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 
 .analyzer-summary__identity {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-bottom: 1px solid #d8e0e1;
-  background: #fff;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .analyzer-summary__identity > div,
@@ -208,7 +208,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   align-content: center;
   gap: 2px;
   padding: 8px 11px;
-  border-right: 1px solid #e0e6e7;
+  border-right: 1px solid var(--line);
 }
 
 .analyzer-summary__identity > div:last-child,
@@ -219,7 +219,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 .analyzer-summary__identity dt,
 .analyzer-summary__metrics dt {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .analyzer-summary__identity dd,
@@ -228,7 +228,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -238,50 +238,50 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 
 .analyzer-summary__metrics {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: #eef3f3;
+  background: var(--surface-raised);
 }
 
 .analyzer-summary__metric--warning dd {
-  color: #76560d;
+  color: var(--warning);
 }
 
 .analyzer-summary__metric--danger dd {
-  color: #9b352a;
+  color: var(--danger);
 }
 
 .analyzer-summary__issues {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-top: 1px solid #d8e0e1;
-  background: #fff;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .analyzer-summary__issue-group {
   min-width: 0;
   padding: 8px 12px 9px;
-  border-left: 3px solid #d6a84d;
+  border-left: 3px solid var(--warning-border);
 }
 
 .analyzer-summary__issue-group + .analyzer-summary__issue-group {
   border-left-width: 1px;
-  border-left-color: #e0e6e7;
+  border-left-color: var(--line);
 }
 
 .analyzer-summary__issue-group--error:first-child {
-  border-left-color: #bd574a;
+  border-left-color: var(--danger);
 }
 
 .analyzer-summary__issue-title {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #76560d;
-  font-size: 11px;
+  color: var(--warning);
+  font-size: 12px;
 }
 
 .analyzer-summary__issue-group--error .analyzer-summary__issue-title {
-  color: #9b352a;
+  color: var(--danger);
 }
 
 .analyzer-summary__issue-group ul {
@@ -291,7 +291,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   margin: 5px 0 0;
   padding-left: 18px;
   color: var(--ink-700);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -303,7 +303,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   display: block;
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @media (max-width: 720px) {
@@ -328,7 +328,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
 
   .analyzer-summary__identity > div:nth-child(n + 3),
   .analyzer-summary__metrics > div:nth-child(n + 3) {
-    border-top: 1px solid #e0e6e7;
+    border-top: 1px solid var(--line);
   }
 }
 
@@ -338,9 +338,9 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
   }
 
   .analyzer-summary__issue-group + .analyzer-summary__issue-group {
-    border-top: 1px solid #e0e6e7;
+    border-top: 1px solid var(--line);
     border-left-width: 3px;
-    border-left-color: #d6a84d;
+    border-left-color: var(--warning-border);
   }
 }
 </style>

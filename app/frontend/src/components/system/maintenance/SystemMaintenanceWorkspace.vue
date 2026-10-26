@@ -30,21 +30,21 @@ import SystemMaintenanceLiveWorkspace from '@/components/system/maintenance/Syst
   align-items: center;
   gap: 11px;
   padding: 9px 13px;
-  border: 1px solid #b8d7d3;
-  border-left: 3px solid var(--teal);
-  border-radius: 5px;
+  border: 1px solid var(--primary-border);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
   color: var(--ink-600);
-  background: #f3f9f8;
+  background: var(--primary-soft);
 }
 
 .preview-notice__mark {
   flex: 0 0 auto;
   padding: 3px 6px;
-  border: 1px solid #a8cbc6;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #e7f4f2;
-  font-size: 9px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -59,12 +59,12 @@ import SystemMaintenanceLiveWorkspace from '@/components/system/maintenance/Syst
 
 .preview-notice strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .preview-notice > div span {
   margin-top: 2px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }

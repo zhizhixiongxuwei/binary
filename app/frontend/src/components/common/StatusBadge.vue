@@ -84,18 +84,19 @@ const tone = computed(() => {
 <style scoped>
 .status-badge {
   display: inline-flex;
-  min-width: 66px;
-  min-height: 24px;
+  min-width: 70px;
+  min-height: 26px;
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--ink-600);
-  background: #f7f8f8;
-  font-size: 11px;
-  font-weight: 600;
+  background: var(--surface-raised);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
   white-space: nowrap;
 }
 
@@ -108,53 +109,53 @@ const tone = computed(() => {
 
 .status-badge--running,
 .status-badge--queued {
-  border-color: #b9cde4;
-  color: #245a92;
-  background: #f1f6fb;
+  border-color: var(--primary-border);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .status-badge--running .status-badge__dot,
 .status-badge--queued .status-badge__dot {
-  background: var(--blue);
+  background: var(--primary);
 }
 
 .status-badge--succeeded,
 .status-badge--none,
 .status-badge--low {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .status-badge--succeeded .status-badge__dot,
 .status-badge--none .status-badge__dot,
 .status-badge--low .status-badge__dot {
-  background: var(--teal);
+  background: var(--success);
 }
 
 .status-badge--failed,
 .status-badge--high,
 .status-badge--critical {
-  border-color: #e4bebe;
-  color: #a52f2f;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .status-badge--failed .status-badge__dot,
 .status-badge--high .status-badge__dot,
 .status-badge--critical .status-badge__dot {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .status-badge--medium,
 .status-badge--partial {
-  border-color: #decba7;
-  color: #83551a;
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .status-badge--medium .status-badge__dot,
 .status-badge--partial .status-badge__dot {
-  background: var(--amber);
+  background: var(--warning);
 }
 </style>

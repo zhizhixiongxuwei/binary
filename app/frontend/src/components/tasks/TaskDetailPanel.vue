@@ -1228,20 +1228,24 @@ function handleReportState(state: TaskResultState): void {
   gap: 16px;
 }
 
+.detail-section {
+  overflow: hidden;
+}
+
 .detail-section header {
   display: flex;
-  min-height: 48px;
+  min-height: 56px;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--line);
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .detail-section h2 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .detail-section dl {
@@ -1253,8 +1257,8 @@ function handleReportState(state: TaskResultState): void {
   min-height: 44px;
   grid-template-columns: 110px minmax(0, 1fr);
   align-items: center;
-  padding: 8px 16px;
-  border-bottom: 1px solid #e8ebec;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
 }
 
 .detail-section dl div:last-child {
@@ -1263,7 +1267,7 @@ function handleReportState(state: TaskResultState): void {
 
 .detail-section dt {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .detail-section dd {
@@ -1271,13 +1275,13 @@ function handleReportState(state: TaskResultState): void {
   margin: 0;
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hash {
-  font-size: 10px !important;
+  font-size: 12px !important;
 }
 
 .error-band {
@@ -1285,11 +1289,11 @@ function handleReportState(state: TaskResultState): void {
   align-items: flex-start;
   gap: 10px;
   padding: 13px 15px;
-  border: 1px solid #e3bcbc;
-  border-left: 3px solid var(--red);
-  border-radius: 4px;
-  color: var(--red);
-  background: #fff5f5;
+  border: 1px solid var(--danger-border);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .partial-band {
@@ -1297,11 +1301,11 @@ function handleReportState(state: TaskResultState): void {
   align-items: flex-start;
   gap: 10px;
   padding: 13px 15px;
-  border: 1px solid #d9c992;
-  border-left: 3px solid #a87913;
-  border-radius: 4px;
-  color: #7c5b12;
-  background: #fffaf0;
+  border: 1px solid var(--warning-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .expired-band {
@@ -1309,11 +1313,11 @@ function handleReportState(state: TaskResultState): void {
   align-items: flex-start;
   gap: 10px;
   padding: 13px 15px;
-  border: 1px solid #c8ced0;
+  border: 1px solid var(--line-strong);
   border-left: 3px solid var(--ink-600);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .expired-band strong,
@@ -1322,13 +1326,13 @@ function handleReportState(state: TaskResultState): void {
 }
 
 .expired-band strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .expired-band span {
   margin-top: 4px;
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .action-feedback {
@@ -1338,19 +1342,21 @@ function handleReportState(state: TaskResultState): void {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 12px;
-  border-left: 3px solid var(--teal);
+  border-left: 3px solid var(--primary);
   color: var(--ink-800);
-  background: #eef8f6;
-  font-size: 11px;
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
 }
 
 .action-error {
   margin: 0;
   padding: 9px 12px;
-  border-left: 3px solid var(--red);
-  color: #7e3030;
-  background: #fff2f2;
-  font-size: 11px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
 }
 
 .partial-band strong,
@@ -1359,14 +1365,14 @@ function handleReportState(state: TaskResultState): void {
 }
 
 .partial-band strong {
-  color: #5f450e;
-  font-size: 11px;
+  color: var(--warning);
+  font-size: 12px;
 }
 
 .partial-band span {
   margin-top: 4px;
-  color: #725c2b;
-  font-size: 12px;
+  color: var(--warning);
+  font-size: 13px;
 }
 
 .error-band strong,
@@ -1376,13 +1382,13 @@ function handleReportState(state: TaskResultState): void {
 
 .error-band strong {
   font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .error-band span {
   margin-top: 4px;
-  color: #7e4040;
-  font-size: 12px;
+  color: var(--danger);
+  font-size: 13px;
 }
 
 @container (max-width: 620px) {

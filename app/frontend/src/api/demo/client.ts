@@ -533,8 +533,8 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
 
     async changePassword() {
       await delay()
-      currentUser = { ...requireUser(), must_change_password: false }
-      return { ...currentUser }
+      requireUser()
+      currentUser = null
     },
 
     async listTasks(query) {

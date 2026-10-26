@@ -257,13 +257,13 @@ function runAction(action: TaskResultPaneAction): void {
 
 .result-pane__toolbar {
   display: flex;
-  min-height: 48px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 7px 14px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfc;
+  background: var(--surface);
 }
 
 .result-pane__identity,
@@ -275,13 +275,13 @@ function runAction(action: TaskResultPaneAction): void {
 
 .result-pane__identity {
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .result-pane__identity strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -293,36 +293,36 @@ function runAction(action: TaskResultPaneAction): void {
   align-items: center;
   padding: 1px 6px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f5f7f7;
-  font-size: 9px;
+  background: var(--surface-muted);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .result-pane__status--ready {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .result-pane__status--loading {
-  border-color: #b9cde4;
-  color: #245a92;
-  background: #f1f6fb;
+  border-color: var(--primary-border);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .result-pane__status--error {
-  border-color: #e4bebe;
-  color: #a52f2f;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .result-pane__preview {
-  border-color: #d7c894;
-  color: #73571d;
-  background: #fffaf0;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .result-pane__commands {
@@ -339,23 +339,23 @@ function runAction(action: TaskResultPaneAction): void {
   gap: 5px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .result-pane__command:hover:not(:disabled) {
-  border-color: #9fc5c1;
-  color: var(--teal-strong);
-  background: #edf5f4;
+  border-color: var(--primary-border);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .result-pane__command:disabled {
-  color: #a4adaf;
-  background: #f2f4f4;
+  color: var(--ink-400);
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
@@ -384,27 +384,27 @@ function runAction(action: TaskResultPaneAction): void {
 }
 
 .result-pane__state--error .result-pane__state-icon {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .result-pane__state strong {
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .result-pane__error-code {
   padding: 2px 5px;
-  border-radius: 3px;
-  color: #9b3030;
-  background: #fff0f0;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: var(--danger-soft);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .result-pane__description {
   max-width: 520px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 

@@ -90,7 +90,7 @@ export interface ApiClient {
   login(input: LoginInput): Promise<CurrentUser>
   logout(): Promise<void>
   getMe(): Promise<CurrentUser>
-  changePassword(input: ChangePasswordInput): Promise<CurrentUser>
+  changePassword(input: ChangePasswordInput): Promise<void>
   listTasks(query: TaskListQuery): Promise<TaskPage>
   getTask(id: string): Promise<TaskDetail>
   cancelTask(id: string, idempotencyKey: string): Promise<TaskDetail>

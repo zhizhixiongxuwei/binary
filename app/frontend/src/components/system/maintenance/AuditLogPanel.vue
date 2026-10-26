@@ -135,8 +135,8 @@ function onFilterChange(event: Event): void {
 .preview-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -153,7 +153,7 @@ function onFilterChange(event: Event): void {
 .audit-toolbar p {
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
@@ -171,10 +171,10 @@ function onFilterChange(event: Event): void {
   gap: 7px;
   padding-left: 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .type-filter span {
@@ -188,7 +188,7 @@ function onFilterChange(event: Event): void {
   border-left: 1px solid var(--line);
   color: var(--ink-800);
   background: var(--surface-raised);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .audit-toolbar__actions button {
@@ -198,10 +198,10 @@ function onFilterChange(event: Event): void {
   gap: 6px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-400);
-  background: #eef1f1;
-  font-size: 10px;
+  background: var(--surface-muted);
+  font-size: 12px;
   cursor: not-allowed;
 }
 
@@ -212,10 +212,10 @@ function onFilterChange(event: Event): void {
   justify-content: space-between;
   gap: 12px;
   padding: 7px 17px;
-  border-bottom: 1px solid #e7ebeb;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .audit-meta strong {
@@ -236,7 +236,7 @@ function onFilterChange(event: Event): void {
   gap: 12px;
   min-height: 66px;
   padding: 10px 17px;
-  border-bottom: 1px solid #e7ebeb;
+  border-bottom: 1px solid var(--line);
 }
 
 .audit-row:last-child {
@@ -249,7 +249,7 @@ function onFilterChange(event: Event): void {
   height: 30px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface-raised);
 }
@@ -267,13 +267,13 @@ function onFilterChange(event: Event): void {
 
 .audit-row__time strong {
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .audit-row__time span {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .audit-row__event > div {
@@ -285,7 +285,7 @@ function onFilterChange(event: Event): void {
 
 .audit-row__event strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -293,7 +293,7 @@ function onFilterChange(event: Event): void {
   display: block;
   margin-top: 4px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -305,11 +305,11 @@ function onFilterChange(event: Event): void {
 .event-type {
   flex: 0 0 auto;
   padding: 2px 5px;
-  border: 1px solid #c0d1e4;
-  border-radius: 3px;
-  color: var(--blue);
-  background: #f2f6fa;
-  font-size: 9px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 11px;
 }
 
 .audit-result {
@@ -318,11 +318,11 @@ function onFilterChange(event: Event): void {
   align-items: center;
   gap: 5px;
   padding: 2px 6px;
-  border: 1px solid #b8d7d3;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  font-size: 9px;
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  color: var(--success);
+  background: var(--success-soft);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -331,17 +331,17 @@ function onFilterChange(event: Event): void {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--success);
 }
 
 .audit-result--denied {
-  border-color: #e4bebe;
-  color: var(--red);
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .audit-result--denied i {
-  background: var(--red);
+  background: var(--danger);
 }
 
 @container audit-panel (max-width: 720px) {

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleGauge,
   FileScan,
+  KeyRound,
   LogOut,
   Menu,
   Plus,
@@ -207,7 +208,7 @@ onScopeDispose(() => {
 
       <div v-show="!collapsed" class="environment">
         <span class="environment-dot" aria-hidden="true" />
-        <span>OFFLINE / LOCAL</span>
+        <span>本地分析工作台</span>
       </div>
 
       <nav class="primary-nav" aria-label="主导航">
@@ -245,6 +246,18 @@ onScopeDispose(() => {
       </nav>
 
       <div class="sidebar-bottom">
+        <RouterLink
+          :to="{ name: 'change-password' }"
+          class="nav-item account-password"
+          :class="{ 'nav-item--active': route.name === 'change-password' }"
+          aria-label="修改密码"
+          :aria-current="route.name === 'change-password' ? 'page' : false"
+          :title="collapsed ? '修改密码' : ''"
+          @click="closeMobileNavigation()"
+        >
+          <KeyRound :size="18" aria-hidden="true" />
+          <span v-show="!collapsed">修改密码</span>
+        </RouterLink>
         <div class="account" :title="collapsed ? displayName : ''">
           <span class="account-avatar">{{ displayName.slice(0, 1).toUpperCase() }}</span>
           <span v-show="!collapsed" class="account-copy">
@@ -285,7 +298,7 @@ onScopeDispose(() => {
       :inert="mobileOpen && narrowLayout"
     >
       <header class="topbar">
-        <span class="topbar-caption">{{ PRODUCT_NAME }} / LOCAL NODE</span>
+        <span class="topbar-caption">{{ PRODUCT_NAME }}</span>
         <LogoutErrorAlert
           v-if="logoutError"
           :message="logoutError"
@@ -307,10 +320,10 @@ onScopeDispose(() => {
   left: 12px;
   padding: 8px 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-950);
   background: var(--surface);
-  box-shadow: 0 4px 14px rgb(23 36 39 / 14%);
+  box-shadow: var(--shadow-panel);
   font-size: 12px;
   transform: translateY(-160%);
 }
@@ -320,8 +333,10 @@ onScopeDispose(() => {
 }
 
 .app-shell {
+  --sidebar-width: 240px;
   min-height: 100vh;
   padding-left: var(--sidebar-width);
+  background: var(--surface-muted);
   transition: padding-left 180ms ease;
 }
 
@@ -336,19 +351,23 @@ onScopeDispose(() => {
   display: flex;
   width: var(--sidebar-width);
   flex-direction: column;
-  border-right: 1px solid #26363a;
-  background: #152326;
-  color: #dbe4e5;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-700);
   transition: width 180ms ease, transform 180ms ease;
 }
 
 .brand {
   display: flex;
-  min-height: 76px;
+  min-height: 82px;
+  flex-shrink: 0;
   align-items: center;
   gap: 11px;
-  padding: 0 18px;
-  border-bottom: 1px solid #2b3a3e;
+  margin: 20px 14px 0;
+  padding: 14px 12px;
+  border: 1px solid var(--primary-border);
+  border-radius: 14px;
+  background: var(--primary-soft);
 }
 
 .brand-mark {
@@ -357,10 +376,10 @@ onScopeDispose(() => {
   height: 40px;
   flex: 0 0 40px;
   place-items: center;
-  border: 1px solid #3c5558;
-  border-radius: 5px;
-  color: #4fd1c5;
-  background: #1d3033;
+  border-radius: 11px;
+  color: var(--surface);
+  background: var(--primary);
+  box-shadow: 0 4px 10px rgb(37 99 235 / 16%);
 }
 
 .brand-copy {
@@ -370,40 +389,39 @@ onScopeDispose(() => {
 .brand-copy strong,
 .brand-copy span {
   display: block;
-  white-space: nowrap;
 }
 
 .brand-copy strong {
-  color: #fff;
-  font-family: "DIN Alternate", "Noto Sans SC", sans-serif;
-  font-size: 17px;
+  color: var(--primary-hover);
+  font-size: 19px;
+  letter-spacing: 0.04em;
 }
 
 .brand-copy span {
-  margin-top: 2px;
-  color: #8fa2a6;
-  font-size: 11px;
+  margin-top: 3px;
+  color: var(--ink-600);
+  font-size: 10px;
+  line-height: 1.6;
 }
 
 .environment {
   display: flex;
-  height: 37px;
+  min-height: 46px;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
-  padding: 0 21px;
-  border-bottom: 1px solid #26363a;
-  color: #8fa2a6;
-  font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 10px;
+  padding: 8px 26px;
+  color: var(--ink-500);
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .environment-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: #45b7ac;
-  box-shadow: 0 0 0 3px rgb(69 183 172 / 12%);
+  background: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 .primary-nav {
@@ -411,22 +429,30 @@ onScopeDispose(() => {
   min-height: 0;
   flex: 1;
   align-content: start;
-  gap: 4px;
-  padding: 14px 10px;
+  gap: 7px;
+  padding: 8px 14px 20px;
   overflow-y: auto;
 }
 
 .nav-item {
   display: flex;
-  min-height: 42px;
+  min-height: 47px;
+  flex-shrink: 0;
   align-items: center;
   gap: 13px;
-  padding: 0 13px;
+  padding: 0 15px;
   border: 1px solid transparent;
-  border-radius: 4px;
-  color: #9dafb2;
+  border-radius: 10px;
+  color: var(--ink-600);
+  background: transparent;
   font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.nav-item > svg {
+  flex-shrink: 0;
 }
 
 .nav-item--command {
@@ -443,28 +469,38 @@ onScopeDispose(() => {
 }
 
 .nav-item:hover {
-  color: #f0f6f6;
-  background: #1d3033;
+  color: var(--primary);
+  background: var(--surface-muted);
 }
 
-.nav-item--active {
-  border-color: #345154;
-  color: #fff;
-  background: #22383b;
-  box-shadow: inset 3px 0 #35aaa0;
+.nav-item--active,
+.nav-item--active:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-weight: 600;
 }
 
 .sidebar-bottom {
+  flex-shrink: 0;
   margin-top: auto;
-  border-top: 1px solid #2b3a3e;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
 }
 
 .account {
   display: flex;
-  min-height: 66px;
+  min-height: 70px;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 12px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.account-password {
+  min-height: 42px;
+  margin-bottom: 10px;
 }
 
 .account-avatar {
@@ -473,9 +509,9 @@ onScopeDispose(() => {
   height: 34px;
   flex: 0 0 34px;
   place-items: center;
-  border-radius: 4px;
-  color: #eaf7f6;
-  background: #087f78;
+  border-radius: 50%;
+  color: var(--primary);
+  background: var(--primary-border);
   font-size: 13px;
   font-weight: 700;
 }
@@ -494,15 +530,15 @@ onScopeDispose(() => {
 }
 
 .account-copy strong {
-  color: #e7eeee;
+  color: var(--ink-800);
   font-size: 13px;
+  font-weight: 600;
 }
 
 .account-copy small {
   margin-top: 3px;
-  color: #809397;
+  color: var(--ink-500);
   font-size: 11px;
-  text-transform: uppercase;
 }
 
 .icon-command,
@@ -517,37 +553,71 @@ onScopeDispose(() => {
 
 .icon-command {
   display: grid;
-  width: 32px;
+  width: 28px;
   height: 32px;
+  flex-shrink: 0;
   place-items: center;
-  border-radius: 4px;
-  color: #8fa2a6;
+  border-radius: var(--radius-sm);
+  color: var(--ink-500);
 }
 
 .icon-command:hover {
-  color: #fff;
-  background: #273b3f;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .icon-command:disabled {
-  color: #64777b;
+  color: var(--ink-400);
   cursor: wait;
 }
 
 .collapse-command {
   display: flex;
   width: 100%;
-  min-height: 40px;
+  min-height: 38px;
   align-items: center;
-  gap: 12px;
-  padding: 0 19px;
-  border-top: 1px solid #26363a;
-  color: #819497;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-500);
   font-size: 12px;
 }
 
 .collapse-command:hover {
-  color: #dbe4e5;
+  color: var(--primary);
+  background: var(--surface-muted);
+}
+
+.app-shell--collapsed .brand {
+  min-height: 68px;
+  justify-content: center;
+  padding: 12px 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.app-shell--collapsed .primary-nav {
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.app-shell--collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.app-shell--collapsed .sidebar-bottom {
+  padding-right: 12px;
+  padding-left: 12px;
+}
+
+.app-shell--collapsed .account {
+  justify-content: center;
+  padding-right: 0;
+  padding-left: 0;
+  border-color: transparent;
+  background: transparent;
 }
 
 .main-area {
@@ -557,32 +627,44 @@ onScopeDispose(() => {
 
 .topbar {
   display: flex;
-  height: 48px;
+  min-height: 64px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 28px;
+  padding: 10px 32px;
   border-bottom: 1px solid var(--line);
-  background: rgb(255 255 255 / 92%);
+  background: var(--surface);
 }
 
 .topbar-caption {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink-400);
-  font-size: 11px;
+  color: var(--ink-600);
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .content {
   min-width: 0;
-  padding: 26px 28px 48px;
+  padding: 30px 32px 48px;
 }
 
 .mobile-menu,
 .mobile-close {
   display: none;
+}
+
+@media (max-width: 1100px) {
+  .content {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
+
+  .topbar {
+    padding-right: 24px;
+    padding-left: 24px;
+  }
 }
 
 @media (max-width: 840px) {
@@ -593,7 +675,7 @@ onScopeDispose(() => {
 
   .sidebar {
     width: min(284px, 86vw);
-    box-shadow: 14px 0 30px rgb(9 18 20 / 20%);
+    box-shadow: 14px 0 40px rgb(30 58 138 / 12%);
     transform: translateX(-100%);
   }
 
@@ -602,11 +684,39 @@ onScopeDispose(() => {
   }
 
   .sidebar .brand-copy,
-  .sidebar .environment,
   .sidebar .nav-item span,
-  .sidebar .account-copy,
-  .sidebar .icon-command {
+  .sidebar .account-copy {
     display: block !important;
+  }
+
+  .sidebar .environment {
+    display: flex !important;
+  }
+
+  .sidebar .icon-command {
+    display: grid !important;
+  }
+
+  .sidebar .brand {
+    min-height: 82px;
+    justify-content: flex-start;
+    gap: 11px;
+    padding: 14px 12px;
+    border-color: var(--primary-border);
+    background: var(--primary-soft);
+  }
+
+  .sidebar .nav-item {
+    justify-content: flex-start;
+    padding: 0 15px;
+  }
+
+  .sidebar .account {
+    justify-content: flex-start;
+    padding-right: 10px;
+    padding-left: 10px;
+    border-color: var(--line);
+    background: var(--surface-raised);
   }
 
   .sidebar .collapse-command {
@@ -616,56 +726,59 @@ onScopeDispose(() => {
   .mobile-menu {
     position: fixed;
     z-index: 20;
-    top: 8px;
+    top: 14px;
     left: 12px;
     display: grid;
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
     place-items: center;
     border: 1px solid var(--line);
-    border-radius: 5px;
-    color: var(--ink-800);
-    background: #fff;
-    box-shadow: 0 1px 3px rgb(23 36 39 / 10%);
+    border-radius: 10px;
+    color: var(--ink-700);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
   }
 
   .mobile-close {
     display: grid;
-    width: 34px;
+    width: 28px;
     height: 34px;
+    flex: 0 0 28px;
     margin-left: auto;
     place-items: center;
+    color: var(--ink-500);
   }
 
   .sidebar-scrim {
     position: fixed;
     z-index: 25;
     inset: 0;
-    background: rgb(9 18 20 / 42%);
+    background: rgb(30 41 59 / 34%);
   }
 
   .topbar {
-    padding-left: 58px;
+    padding-left: 62px;
   }
 
   .content {
-    padding: 20px 16px 36px;
+    padding: 24px 16px 36px;
   }
 }
 
 @media (max-width: 520px) {
   .topbar {
-    padding-right: 14px;
+    padding-right: 16px;
   }
 
   .topbar-caption {
-    font-size: 10px;
+    font-size: 11px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .app-shell,
-  .sidebar {
+  .sidebar,
+  .nav-item {
     transition: none;
   }
 }

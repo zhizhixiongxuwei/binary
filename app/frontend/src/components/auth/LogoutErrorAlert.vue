@@ -31,8 +31,8 @@ const emit = defineEmits<{
   min-width: 0;
   align-items: center;
   gap: 7px;
-  color: #9f3030;
-  font-size: 11px;
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .logout-alert > span {
@@ -48,13 +48,13 @@ const emit = defineEmits<{
   flex: 0 0 26px;
   place-items: center;
   border: 0;
-  border-radius: 4px;
-  color: #9f3030;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
   background: transparent;
   cursor: pointer;
 }
 
 .logout-alert button:hover {
-  background: #fff0f0;
+  background: var(--danger-soft);
 }
 </style>

@@ -133,11 +133,11 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 
 .task-stages__header {
   display: flex;
-  min-height: 58px;
+  min-height: 68px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 16px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -159,53 +159,53 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 
 .task-stages__title-line span {
   padding: 1px 6px;
-  border: 1px solid #bad3d0;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  font-size: 9px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .task-stages__heading h2 {
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .task-stages__heading p {
   margin-top: 3px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .task-stages__percentage {
   flex: 0 0 auto;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 13px;
+  font-size: 20px;
 }
 
 .task-stages--partial .task-stages__percentage {
-  color: var(--amber);
+  color: var(--warning);
 }
 
 .task-stages--failed .task-stages__percentage {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .task-stages__meter {
-  height: 3px;
+  height: 4px;
   overflow: hidden;
-  background: #e5e9ea;
+  background: var(--line);
 }
 
 .task-stages__meter span {
   display: block;
   width: 0;
   height: 100%;
-  background: var(--teal);
+  background: var(--primary);
   transition: width 180ms ease-out;
 }
 
@@ -213,10 +213,10 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
   width: 36%;
   background: repeating-linear-gradient(
     90deg,
-    var(--blue) 0,
-    var(--blue) 8px,
-    #86aebc 8px,
-    #86aebc 16px
+    var(--primary) 0,
+    var(--primary) 8px,
+    var(--primary-border) 8px,
+    var(--primary-border) 16px
   );
   animation: task-progress-indeterminate 1.2s ease-in-out infinite alternate;
 }
@@ -231,18 +231,18 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 }
 
 .task-stages--partial .task-stages__meter span {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .task-stages--failed .task-stages__meter span {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .task-stages__list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
   gap: 12px;
-  padding: 14px 16px 16px;
+  padding: 18px 20px 20px;
   margin: 0;
   list-style: none;
 }
@@ -250,12 +250,15 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 .task-stages__item {
   display: grid;
   min-width: 0;
-  min-height: 68px;
+  min-height: 80px;
   grid-template-columns: 22px minmax(0, 1fr);
   align-content: center;
   gap: 8px;
-  padding: 10px 4px 7px;
+  padding: 14px 10px;
+  border: 1px solid var(--line);
   border-top: 3px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
   color: var(--ink-400);
 }
 
@@ -274,7 +277,7 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
   align-items: center;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -287,22 +290,25 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
   display: block;
   margin-top: 5px;
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .task-stages__item--completed {
-  border-top-color: var(--teal);
-  color: var(--teal);
+  border-top-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .task-stages__item--current {
-  border-top-color: var(--blue);
-  color: var(--blue);
+  border-top-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
 }
 
 .task-stages__item--failed {
-  border-top-color: var(--red);
-  color: var(--red);
+  border-top-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .task-stages__item--cancelled {
@@ -312,17 +318,17 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 
 .task-stages__item--completed .task-stages__label span,
 .task-stages__item--completed .task-stages__label small {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .task-stages__item--current .task-stages__label span,
 .task-stages__item--current .task-stages__label small {
-  color: var(--blue);
+  color: var(--primary);
 }
 
 .task-stages__item--failed .task-stages__label span,
 .task-stages__item--failed .task-stages__label small {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .task-stages__item--cancelled .task-stages__label span,

@@ -90,7 +90,7 @@ watch(open, (visible) => {
 .delete-confirmation p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.65;
 }
 
@@ -98,19 +98,19 @@ watch(open, (visible) => {
   display: block;
   overflow-wrap: anywhere;
   padding: 9px 10px;
-  border-left: 3px solid var(--red);
+  border-left: 3px solid var(--danger);
   color: var(--ink-800);
-  background: #fff5f5;
-  font-size: 11px;
+  background: var(--danger-soft);
+  font-size: 12px;
 }
 
 .delete-confirmation label {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .delete-confirmation__error {
-  color: var(--red) !important;
+  color: var(--danger) !important;
 }
 </style>

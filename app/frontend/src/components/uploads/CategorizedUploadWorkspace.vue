@@ -320,8 +320,8 @@ function rememberSelection(importId: string, entryIds: string[]): void {
 }
 
 .categorized-upload__header > div:first-child span {
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -342,7 +342,7 @@ function rememberSelection(importId: string, entryIds: string[]): void {
 .categorized-upload__summary > span,
 .archive-list__commands > span {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -356,11 +356,11 @@ function rememberSelection(importId: string, entryIds: string[]): void {
   gap: 8px;
   margin-bottom: 12px;
   padding: 9px 12px;
-  border: 1px solid #dfc8a2;
-  border-left: 3px solid var(--amber);
-  border-radius: 4px;
-  color: #7f541b;
-  background: #fffaf1;
+  border: 1px solid var(--warning-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
   font-size: 12px;
 }
 
@@ -402,9 +402,9 @@ function rememberSelection(importId: string, entryIds: string[]): void {
   height: 31px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -439,11 +439,11 @@ function rememberSelection(importId: string, entryIds: string[]): void {
 
 .archive-list-row:hover,
 .archive-list-row[aria-expanded='true'] {
-  background: #f3f8f7;
+  background: var(--primary-soft);
 }
 
 .archive-list-row:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
@@ -467,27 +467,27 @@ function rememberSelection(importId: string, entryIds: string[]): void {
 .archive-list-row__identity small {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .archive-list-row__status {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .archive-list-row__status--ready {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .archive-list-row__status--failed {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .archive-list-row__metrics {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
   white-space: nowrap;
 }
@@ -508,7 +508,7 @@ function rememberSelection(importId: string, entryIds: string[]): void {
   padding: 18px;
   border: 1px solid var(--line);
   color: var(--ink-400);
-  background: #fff;
+  background: var(--surface);
   font-size: 12px;
 }
 

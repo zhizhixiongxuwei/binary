@@ -2,7 +2,7 @@
 set -eu
 
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
+fixture_root=${BINARY_FIXTURE_REPO:?set BINARY_FIXTURE_REPO to the external binary-repo fixture directory}
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/binaryscan-trivy-image.XXXXXX")
 
 cleanup() {

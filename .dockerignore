@@ -9,5 +9,13 @@
 **/__pycache__
 **/.pytest_cache
 docs
+local
+release
+.local-*
+.release-*
+.cache
+.idea
+script
+test-fixtures
 *.log
 *.tmp

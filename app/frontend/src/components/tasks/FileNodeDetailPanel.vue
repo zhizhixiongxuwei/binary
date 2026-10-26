@@ -290,18 +290,18 @@ watch(
 .file-detail-panel {
   min-width: 0;
   border-left: 1px solid var(--line);
-  background: #fafbfb;
+  background: var(--surface);
 }
 
 .file-detail-toolbar {
   display: flex;
-  min-height: 48px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 7px 12px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--line);
-  background: #f5f7f7;
+  background: var(--surface-muted);
 }
 
 .file-detail-toolbar__heading {
@@ -309,7 +309,7 @@ watch(
   min-width: 0;
   align-items: center;
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .file-detail-toolbar__heading div {
@@ -323,7 +323,7 @@ watch(
 
 .file-detail-toolbar__heading small {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .file-detail-toolbar__heading strong {
@@ -331,7 +331,7 @@ watch(
   margin-top: 2px;
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -344,15 +344,15 @@ watch(
   padding: 0;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
 }
 
 .close-command:hover {
-  color: var(--red);
-  background: #fff5f5;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .file-detail-state {
@@ -382,13 +382,13 @@ watch(
 
 .identity-section > strong {
   color: var(--ink-950);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .identity-section > span:not(.extraction-status) {
   grid-column: 1 / -1;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -399,29 +399,29 @@ watch(
   align-self: start;
   padding: 2px 7px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f7f8f8;
-  font-size: 10px;
+  background: var(--surface-raised);
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .extraction-status--success {
-  border-color: #b8d7d3;
-  color: #076860;
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .extraction-status--warning {
-  border-color: #decba7;
-  color: #83551a;
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .extraction-status--failed {
-  border-color: #e4bebe;
-  color: #a52f2f;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .detail-section {
@@ -434,7 +434,7 @@ watch(
   margin: 0;
   padding: 10px 14px 7px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
@@ -451,11 +451,11 @@ watch(
 .attribute-list > div {
   min-width: 0;
   padding: 8px 14px 10px;
-  border-top: 1px solid #edf0f0;
+  border-top: 1px solid var(--line);
 }
 
 .attribute-list > div:nth-child(odd):not(.attribute-list__wide) {
-  border-right: 1px solid #edf0f0;
+  border-right: 1px solid var(--line);
 }
 
 .attribute-list__wide {
@@ -465,7 +465,7 @@ watch(
 .attribute-list dt,
 .metadata-list dt {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .attribute-list dd,
@@ -473,7 +473,7 @@ watch(
   min-width: 0;
   margin: 4px 0 0;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -482,7 +482,7 @@ watch(
 }
 
 .hash-value {
-  font-size: 9px !important;
+  font-size: 11px !important;
   line-height: 1.45;
 }
 
@@ -494,13 +494,13 @@ watch(
 
 .source-parent strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .source-parent span {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .source-container {
@@ -513,7 +513,7 @@ watch(
 }
 
 .source-container__icon {
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .source-container__identity {
@@ -527,7 +527,7 @@ watch(
   min-width: 0;
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -537,7 +537,7 @@ watch(
 .source-container__identity small {
   overflow: hidden;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -546,8 +546,8 @@ watch(
   width: max-content;
   max-width: 100%;
   overflow: hidden;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -562,18 +562,18 @@ watch(
   gap: 5px;
   padding: 4px 8px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
-  font-size: 10px;
+  font-size: 12px;
   cursor: pointer;
 }
 
 .source-container__command:hover,
 .source-container__command:focus-visible {
-  border-color: #91bbb6;
-  color: var(--teal-strong);
-  background: #edf6f5;
+  border-color: var(--primary-border);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .source-container--root {
@@ -585,9 +585,9 @@ watch(
   align-items: flex-start;
   gap: 8px;
   padding: 12px 14px;
-  border-bottom: 1px solid #e3bcbc;
-  color: var(--red);
-  background: #fff7f7;
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .diagnostic-section div {
@@ -601,19 +601,19 @@ watch(
 }
 
 .diagnostic-section strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .diagnostic-section span {
   margin-top: 4px;
-  color: #7e4040;
-  font-size: 11px;
+  color: var(--danger);
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .metadata-list > div {
   padding: 8px 14px 10px;
-  border-top: 1px solid #edf0f0;
+  border-top: 1px solid var(--line);
 }
 
 .metadata-list pre {
@@ -622,7 +622,7 @@ watch(
   margin: 0;
   overflow: auto;
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -636,7 +636,7 @@ watch(
   margin: 0;
   padding: 2px 14px 14px;
   color: var(--ink-400);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @container (max-width: 960px) {

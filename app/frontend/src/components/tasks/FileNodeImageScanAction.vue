@@ -141,7 +141,7 @@ const commandTitle = computed(() => {
   gap: 10px 12px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--line);
-  background: #fffaf0;
+  background: var(--warning-soft);
 }
 
 .image-scan-command__copy {
@@ -159,12 +159,12 @@ const commandTitle = computed(() => {
 
 .image-scan-command__copy strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .image-scan-command__copy small {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -174,10 +174,10 @@ const commandTitle = computed(() => {
   height: 29px;
   flex: 0 0 29px;
   place-items: center;
-  border: 1px solid #e5c77c;
-  border-radius: 4px;
-  color: #8a5a00;
-  background: #fff5d9;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .image-scan-command :deep(.el-button) {
@@ -198,11 +198,11 @@ const commandTitle = computed(() => {
   display: grid;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .image-scan-command__feedback > strong {
-  color: #7b5200;
+  color: var(--warning);
 }
 
 .image-scan-command__feedback dl {
@@ -217,13 +217,13 @@ const commandTitle = computed(() => {
   min-width: 0;
   padding: 6px 7px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
 .image-scan-command__feedback dt {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .image-scan-command__feedback dd {
@@ -231,12 +231,12 @@ const commandTitle = computed(() => {
   margin: 3px 0 0;
   overflow-wrap: anywhere;
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .image-scan-command__error {
-  color: var(--red);
-  font-size: 10px;
+  color: var(--danger);
+  font-size: 12px;
   line-height: 1.45;
 }
 

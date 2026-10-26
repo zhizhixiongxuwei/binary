@@ -228,8 +228,8 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 <style scoped>
 .method-index {
   min-width: 0;
-  border-bottom: 1px solid #34464a;
-  background: #f5f8f8;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
 }
 
 .method-index__toolbar {
@@ -240,7 +240,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   align-items: center;
   gap: 12px;
   padding: 7px 12px;
-  border-bottom: 1px solid #d8e0e1;
+  border-bottom: 1px solid var(--line);
 }
 
 .method-index__title {
@@ -248,7 +248,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   min-width: 0;
   align-items: center;
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .method-index__title > span {
@@ -259,12 +259,12 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 
 .method-index__title strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .method-index__title small {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .method-index__search {
@@ -274,15 +274,15 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  border: 1px solid #c6d1d2;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
 }
 
 .method-index__search:focus-within {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 2px rgb(25 130 119 / 12%);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 12%);
 }
 
 .method-index__search input {
@@ -292,16 +292,16 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   color: var(--ink-800);
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .method-index__notice {
   margin: 0;
   padding: 5px 12px;
-  border-bottom: 1px solid #eadba9;
-  color: #725817;
-  background: #fff9e9;
-  font-size: 11px;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
 }
 
 .method-index__body {
@@ -313,7 +313,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 .method-index__list {
   min-width: 0;
   overflow: auto;
-  background: #fff;
+  background: var(--surface);
 }
 
 .method-index__list-pane {
@@ -321,8 +321,8 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   min-width: 0;
   max-height: 222px;
   grid-template-rows: minmax(0, 1fr) auto;
-  border-right: 1px solid #d8e0e1;
-  background: #fff;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .method-index__row {
@@ -339,7 +339,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   gap: 6px;
   padding: 6px 9px;
   border: 0;
-  border-bottom: 1px solid #e3e8e9;
+  border-bottom: 1px solid var(--line);
   border-left: 3px solid transparent;
   color: var(--ink-600);
   background: transparent;
@@ -349,18 +349,18 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 }
 
 .method-index__list > button:hover {
-  background: #f0f6f5;
+  background: var(--primary-soft);
 }
 
 .method-index__list > button:focus-visible {
-  outline: 2px solid #4f94b8;
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .method-index__list > .method-index__row--active {
-  border-left-color: var(--teal);
-  color: var(--teal-strong);
-  background: #eaf5f2;
+  border-left-color: var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .method-index__row-main {
@@ -379,13 +379,13 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 
 .method-index__row-main strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .method-index__row-main code,
 .method-index__list > button > small {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .method-index__list > button > small {
@@ -397,11 +397,11 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   min-height: 160px;
   padding: 13px 15px;
   color: var(--ink-600);
-  background: #f5f8f8;
+  background: var(--surface-raised);
 }
 
 .method-index__detail:focus-visible {
-  outline: 2px solid #4f94b8;
+  outline: 2px solid var(--primary);
   outline-offset: -3px;
 }
 
@@ -409,7 +409,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   display: block;
   margin-bottom: 4px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -427,8 +427,8 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 
 .method-index__detail > code {
   margin-top: 4px;
-  color: var(--teal-strong);
-  font-size: 12px;
+  color: var(--primary-hover);
+  font-size: 13px;
 }
 
 .method-index__detail dl {
@@ -444,7 +444,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
 
 .method-index__detail dt {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -454,13 +454,13 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   overflow-wrap: anywhere;
   color: var(--ink-800);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .method-index__detail p {
   margin: 12px 0 0;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -469,14 +469,14 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   margin: 0;
   padding: 14px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
 }
 
 .method-index__more {
   padding: 7px;
-  border-top: 1px solid #e3e8e9;
-  font-size: 11px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
 }
 
 .method-index__empty--standalone {
@@ -492,7 +492,7 @@ function handleMethodKeydown(event: KeyboardEvent, index: number): void {
   .method-index__list-pane {
     max-height: 196px;
     border-right: 0;
-    border-bottom: 1px solid #d8e0e1;
+    border-bottom: 1px solid var(--line);
   }
 
   .method-index__detail {

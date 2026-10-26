@@ -25,13 +25,11 @@ const DemoModeBanner = isDemoMode
 }
 
 .demo-runtime :deep(.mobile-menu),
-.demo-runtime :deep(.skip-link) {
+.demo-runtime :deep(.skip-link:focus) {
   top: 42px;
 }
 
-.demo-runtime :deep(.login-page),
-.demo-runtime :deep(.identity-panel),
-.demo-runtime :deep(.login-panel) {
+.demo-runtime :deep(.login-page) {
   min-height: calc(100vh - 34px);
 }
 </style>

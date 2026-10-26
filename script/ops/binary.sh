@@ -205,7 +205,7 @@ init_data() {
   : "${PRODUCT_GID:?PRODUCT_GID is required}"
 
   if [ "$(uname -s)" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
-    die "Linux data initialization must run as root: sudo deploy/scripts/binary.sh init"
+    die "Linux data initialization must run as root: sudo sh script/ops/binary.sh init"
   fi
 
   umask 077
@@ -239,7 +239,7 @@ init_data() {
 doctor() {
   load_env
   validate_data_root
-  [ -d "$BINARY_DATA_ROOT" ] || die "run: deploy/scripts/binary.sh init"
+  [ -d "$BINARY_DATA_ROOT" ] || die "run: sh script/ops/binary.sh init"
   validate_env_permissions
   reject_placeholder PUBLIC_BASE_URL "$PUBLIC_BASE_URL"
   reject_placeholder APP_ALLOWED_ORIGINS "$APP_ALLOWED_ORIGINS"

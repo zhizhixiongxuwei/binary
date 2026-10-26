@@ -187,14 +187,14 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
 
 .maintenance-tab:hover {
   color: var(--ink-800);
-  background: #f5f8f8;
+  background: var(--surface-muted);
 }
 
 .maintenance-tab--active {
   position: relative;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  box-shadow: inset 0 -3px var(--teal);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  box-shadow: inset 0 -3px var(--primary);
 }
 
 .maintenance-tab > svg {
@@ -214,13 +214,13 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
 }
 
 .maintenance-tab strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .maintenance-tab small {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .navigation-scope {
@@ -229,8 +229,8 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
   place-items: center;
   padding: 0 10px;
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
   white-space: nowrap;
 }
 

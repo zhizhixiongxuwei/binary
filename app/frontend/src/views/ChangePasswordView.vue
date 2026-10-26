@@ -14,13 +14,20 @@ const loading = shallowRef(false)
 const errorMessage = shallowRef('')
 
 async function handleSubmit(input: ChangePasswordInput): Promise<void> {
+  if (loading.value) return
   loading.value = true
   errorMessage.value = ''
   try {
     await session.changePassword(input)
-    await router.replace({ name: 'overview' })
+    await router.replace({ name: 'login', query: { reason: 'password-changed' } })
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '密码更新失败'
+    if (error instanceof ApiError && error.code === 'invalid_current_password') {
+      errorMessage.value = '当前密码不正确，请重新输入'
+    } else if (error instanceof ApiError && error.code === 'invalid_password_change') {
+      errorMessage.value = '新密码须为 8–72 字节，请检查后重试'
+    } else {
+      errorMessage.value = error instanceof ApiError ? error.message : '密码修改失败，请稍后重试'
+    }
   } finally {
     loading.value = false
   }
@@ -29,11 +36,19 @@ async function handleSubmit(input: ChangePasswordInput): Promise<void> {
 
 <template>
   <div class="password-view">
-    <PageHeader title="更新密码" eyebrow="ACCOUNT / PASSWORD" />
+    <PageHeader
+      title="修改密码"
+      :description="session.user?.must_change_password ? '首次登录，请先修改初始密码。' : '更新当前账户的登录密码。'"
+    >
+      <template v-if="!session.user?.must_change_password" #actions>
+        <el-button :disabled="loading" @click="router.push({ name: 'overview' })">返回概览</el-button>
+      </template>
+    </PageHeader>
     <section class="password-panel surface-panel">
       <header class="password-panel__header">
-        <span class="mono">{{ session.user?.username }}</span>
+        <span>当前账户：<strong>{{ session.user?.username }}</strong></span>
       </header>
+      <p class="password-notice">修改成功后，所有登录会话将失效，请使用新密码重新登录。</p>
       <ChangePasswordForm
         :loading="loading"
         :error-message="errorMessage"
@@ -56,6 +71,13 @@ async function handleSubmit(input: ChangePasswordInput): Promise<void> {
   padding: 0 24px;
   border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
+}
+
+.password-notice {
+  margin: 20px 24px 0;
+  color: var(--ink-600);
+  font-size: 13px;
+  line-height: 1.7;
 }
 </style>

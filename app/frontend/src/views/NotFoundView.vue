@@ -26,14 +26,14 @@ import { ArrowLeft, Binary } from 'lucide-vue-next'
 .not-found__code {
   padding: 5px 8px;
   border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--red);
-  background: #fff;
-  font-size: 10px;
+  border-radius: 6px;
+  color: var(--danger);
+  background: var(--surface);
+  font-size: 12px;
 }
 
 .not-found svg {
-  color: var(--teal);
+  color: var(--primary);
 }
 
 .not-found h1 {

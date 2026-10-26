@@ -151,6 +151,7 @@ function failureClass(basisPoints: number): string {
 
 <style scoped>
 .operational-metrics {
+  container: operational-metrics / inline-size;
   min-width: 0;
   overflow: hidden;
 }
@@ -172,8 +173,8 @@ function failureClass(basisPoints: number): string {
 .metrics-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -192,7 +193,7 @@ function failureClass(basisPoints: number): string {
   flex: 0 0 auto;
   align-items: stretch;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .metrics-summary > span {
@@ -211,17 +212,17 @@ function failureClass(basisPoints: number): string {
 .metrics-summary svg {
   grid-row: 1 / 3;
   align-self: center;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .metrics-summary strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .metrics-summary small {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .metrics-body {
@@ -243,12 +244,12 @@ function failureClass(basisPoints: number): string {
   align-items: center;
   gap: 7px;
   padding: 9px 14px;
-  border-bottom: 1px solid #e7ebeb;
-  color: var(--blue);
+  border-bottom: 1px solid var(--line);
+  color: var(--primary);
 }
 
 .metric-section__title h3 {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .metric-table__header,
@@ -263,16 +264,16 @@ function failureClass(basisPoints: number): string {
 
 .metric-table__header {
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .metric-row {
   min-height: 39px;
-  border-top: 1px solid #edf0f0;
+  border-top: 1px solid var(--surface-muted);
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .metric-table__header + .metric-row {
@@ -297,7 +298,7 @@ function failureClass(basisPoints: number): string {
 }
 
 .analyzer-name {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .failure-rate {
@@ -305,15 +306,15 @@ function failureClass(basisPoints: number): string {
 }
 
 .failure-rate--healthy {
-  color: var(--teal-strong) !important;
+  color: var(--success) !important;
 }
 
 .failure-rate--warning {
-  color: var(--amber) !important;
+  color: var(--warning) !important;
 }
 
 .failure-rate--critical {
-  color: var(--red) !important;
+  color: var(--danger) !important;
 }
 
 .metrics-empty {
@@ -321,11 +322,11 @@ function failureClass(basisPoints: number): string {
   margin: 0;
   padding: 31px 14px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
   text-align: center;
 }
 
-@media (max-width: 820px) {
+@container operational-metrics (max-width: 680px) {
   .metrics-heading {
     align-items: stretch;
     flex-direction: column;
@@ -350,7 +351,7 @@ function failureClass(basisPoints: number): string {
   }
 }
 
-@media (max-width: 480px) {
+@container operational-metrics (max-width: 420px) {
   .metric-table__header,
   .metric-row,
   .analyzer-columns {

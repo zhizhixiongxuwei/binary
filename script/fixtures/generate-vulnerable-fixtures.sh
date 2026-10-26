@@ -2,7 +2,7 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
-requested_fixture_root=${BINARY_FIXTURE_REPO:-/Users/chenzhe/Documents/binary-repo}
+requested_fixture_root=${BINARY_FIXTURE_REPO:?set BINARY_FIXTURE_REPO to the external binary-repo fixture directory}
 fixture_builder_image=${FIXTURE_BUILDER_IMAGE:-binaryscan/fixture-builder:1.0.0}
 fixture_root=
 output_dir=
@@ -127,7 +127,7 @@ find "$output_dir" -mindepth 1 -maxdepth 1 -type f -exec touch -t 200001010000 {
 
 # One-layer archive fixtures. ZIP/TAR/7Z/RAR/ISO/EXT4 contain direct ELF and
 # PE members; stream/package formats contain an ELF; JAR/APK expose CLASS/DEX.
-python3 "$repo_root/deploy/scripts/build-archive-fixtures.py" \
+python3 "$repo_root/script/fixtures/build-archive-fixtures.py" \
   --binary-dir "$output_dir" --output-dir "$archive_dir"
 docker run --rm --pull never --platform "$BINARY_PLATFORM" \
   -v "$output_dir:/binary:ro" -v "$archive_dir:/archive" \
@@ -136,7 +136,7 @@ docker run --rm --pull never --platform "$BINARY_PLATFORM" \
     7z a -bd -y -t7z -mx=9 -mtc=off -mtm=off -mta=off \
       /archive/vulnerable-binaries.7z vulnerable-elf vulnerable.exe >/dev/null
   '
-python3 "$repo_root/deploy/scripts/build-rar-fixture.py" \
+python3 "$repo_root/script/fixtures/build-rar-fixture.py" \
   "$archive_dir/vulnerable-binaries.rar" \
   vulnerable-elf "$output_dir/vulnerable-elf" \
   vulnerable.exe "$output_dir/vulnerable.exe"
@@ -235,14 +235,14 @@ path.write_bytes(image)
 PY
 (
   cd "$repo_root/app/backend"
-  go run ../../deploy/scripts/build-ext4-fixture.go \
+  go run ../../script/fixtures/build-ext4-fixture.go \
     "$archive_dir/vulnerable-binaries.ext4" \
     "$output_dir/vulnerable-elf" "$output_dir/vulnerable.exe"
 )
 
 # Real Docker-save and OCI-layout archives. The IMG is intentionally the exact
 # Docker-save byte stream with a different suffix, proving content-first routing.
-python3 "$repo_root/deploy/scripts/build-image-fixtures.py" \
+python3 "$repo_root/script/fixtures/build-image-fixtures.py" \
   --binary-dir "$output_dir" --output-dir "$container_dir"
 cp "$container_dir/docker-save.tar" "$container_dir/docker-save.img"
 

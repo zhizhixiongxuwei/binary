@@ -106,7 +106,7 @@ function locationLabel(finding: CAnalysisFinding): string {
   align-content: center;
   gap: 9px;
   color: var(--ink-400);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .finding-table-scroll {
@@ -126,7 +126,7 @@ function locationLabel(finding: CAnalysisFinding): string {
 .finding-table td {
   min-width: 0;
   padding: 9px 12px;
-  border-bottom: 1px solid #e5e9ea;
+  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
 }
@@ -136,8 +136,8 @@ function locationLabel(finding: CAnalysisFinding): string {
   z-index: 1;
   top: 0;
   color: var(--ink-600);
-  background: #f2f5f5;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -152,12 +152,12 @@ function locationLabel(finding: CAnalysisFinding): string {
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .finding-table tbody tr:hover,
-.finding-table tbody tr:focus-visible { background: #f2f8f7; }
-.finding-table code { font-size: 9px; }
+.finding-table tbody tr:focus-visible { background: var(--primary-soft); }
+.finding-table code { font-size: 11px; }
 .rule,
 .message,
 .function-name {
@@ -166,8 +166,8 @@ function locationLabel(finding: CAnalysisFinding): string {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.function-name { color: var(--ink-800); font-size: 10px; }
-.finding-table small { display: block; margin-top: 2px; color: var(--ink-400); font-size: 8px; }
+.function-name { color: var(--ink-800); font-size: 12px; }
+.finding-table small { display: block; margin-top: 2px; color: var(--ink-400); font-size: 11px; }
 
 .finding-actions { text-align: center !important; }
 .finding-actions button {
@@ -176,14 +176,14 @@ function locationLabel(finding: CAnalysisFinding): string {
   height: 28px;
   place-items: center;
   padding: 0;
-  border: 1px solid #c7d3d3;
-  border-radius: 4px;
-  color: #246c68;
-  background: #f7fbfa;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--surface-raised);
   cursor: pointer;
 }
-.finding-actions button:hover { border-color: #6fa29e; background: #eaf5f3; }
-.finding-actions button:focus-visible { outline: 2px solid #3f8580; outline-offset: 2px; }
+.finding-actions button:hover { border-color: var(--primary-border); background: var(--primary-soft); }
+.finding-actions button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .severity {
   display: inline-flex;
@@ -192,14 +192,14 @@ function locationLabel(finding: CAnalysisFinding): string {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  font-size: 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
   font-weight: 800;
 }
-.severity--critical { border-color: #ce9599; color: #8f252d; background: #fff1f2; }
-.severity--high { border-color: #d9a18c; color: #9a4428; background: #fff4ef; }
-.severity--medium { border-color: #dcc18b; color: #815c13; background: #fff9eb; }
-.severity--low { border-color: #9dc5d1; color: #28697b; background: #f0f9fb; }
+.severity--critical { border-color: var(--danger-border); color: var(--danger); background: var(--danger-soft); }
+.severity--high { border-color: var(--orange-border); color: var(--orange); background: var(--orange-soft); }
+.severity--medium { border-color: var(--warning-border); color: var(--warning); background: var(--warning-soft); }
+.severity--low { border-color: var(--primary-border); color: var(--primary); background: var(--primary-soft); }
 
 .load-more { display: grid; place-items: center; padding: 10px; border-top: 1px solid var(--line); }
 .spin { animation: finding-spin 1s linear infinite; }

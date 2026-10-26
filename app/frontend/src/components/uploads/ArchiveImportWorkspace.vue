@@ -280,8 +280,8 @@ watch(
 .archive-import {
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #fff;
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .archive-import__header {
@@ -306,10 +306,10 @@ watch(
   height: 36px;
   flex: 0 0 36px;
   place-items: center;
-  border: 1px solid #b8d2cf;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #f2f8f7;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .archive-import__identity > div {
@@ -325,7 +325,7 @@ watch(
 }
 
 .archive-import__identity .archive-import__retention {
-  color: var(--amber);
+  color: var(--warning);
   font-family: inherit;
 }
 
@@ -337,7 +337,7 @@ watch(
 .archive-import__identity small {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .archive-import__commands {
@@ -353,15 +353,15 @@ watch(
   height: 31px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .archive-import__commands button:hover:not(:disabled) {
-  color: var(--teal-strong);
-  background: #f2f8f7;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .archive-import__commands button:disabled {
@@ -372,24 +372,24 @@ watch(
 .archive-import__status {
   margin-right: 4px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .archive-import__status--ready {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .archive-import__status--failed {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .archive-import__metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-block: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .archive-import__metrics span {
@@ -397,7 +397,7 @@ watch(
   padding: 9px 12px;
   border-right: 1px solid var(--line);
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -421,7 +421,7 @@ watch(
   display: block;
   margin-top: 6px;
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .archive-import__error,
@@ -429,10 +429,10 @@ watch(
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  border-top: 1px solid #ebc6c1;
-  color: var(--red);
-  background: #fff5f3;
-  font-size: 11px;
+  border-top: 1px solid var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
 }
 
 .archive-import__error svg,
@@ -452,7 +452,7 @@ watch(
 
 .archive-import__empty {
   color: var(--ink-600);
-  background: #fafcfc;
+  background: var(--surface-raised);
 }
 
 .archive-import__empty strong {

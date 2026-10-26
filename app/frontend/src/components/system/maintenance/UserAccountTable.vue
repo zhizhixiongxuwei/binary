@@ -148,20 +148,20 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
 
 .user-table__header {
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .user-row {
   min-height: 66px;
-  border-top: 1px solid #e7ebeb;
+  border-top: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-row--self {
-  background: #f7fbfa;
+  background: var(--surface-muted);
 }
 
 .user-identity {
@@ -177,11 +177,11 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
   height: 31px;
   flex: 0 0 31px;
   place-items: center;
-  border: 1px solid #c0d1e4;
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f2f6fa;
-  font-size: 10px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -197,20 +197,20 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
 
 .user-identity strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .user-identity strong small {
   margin-left: 5px;
-  color: var(--teal-strong);
-  font-size: 8px;
+  color: var(--primary-hover);
+  font-size: 11px;
 }
 
 .user-identity code {
   margin-top: 2px;
   color: var(--ink-400);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .role-label,
@@ -220,41 +220,41 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
   align-items: center;
   padding: 2px 6px;
   border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #f7f9f9;
+  border-radius: 6px;
+  background: var(--surface-raised);
   white-space: nowrap;
 }
 
 .status-label {
   gap: 5px;
-  border-color: #b8d7d3;
-  color: var(--teal-strong);
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .status-label i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--success);
 }
 
 .status-label--disabled,
 .status-label--locked {
-  border-color: #decba7;
-  color: var(--amber);
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .status-label--disabled i,
 .status-label--locked i {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .security-meta small {
   display: block;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -277,7 +277,7 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
   height: 30px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
@@ -299,11 +299,11 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
   min-height: 32px;
   padding: 5px 10px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 @container users-live (max-width: 900px) {
@@ -320,7 +320,7 @@ const statusLabels: Readonly<Record<AdminUser['status'], string>> = {
     margin-bottom: 5px;
     color: var(--ink-400);
     content: attr(data-label);
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 

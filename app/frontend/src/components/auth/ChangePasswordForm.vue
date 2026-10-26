@@ -8,7 +8,7 @@ import {
   validatePasswordChange,
 } from '@/utils/password'
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   errorMessage?: string
 }>()
@@ -25,6 +25,7 @@ const form = reactive({
 const errors = reactive<PasswordChangeErrors>({})
 const canSubmit = computed(
   () =>
+    !props.loading &&
     Boolean(form.currentPassword) &&
     Boolean(form.newPassword) &&
     Boolean(form.confirmation),
@@ -37,6 +38,7 @@ function clearErrors(): void {
 }
 
 function submit(): void {
+  if (props.loading) return
   clearErrors()
   Object.assign(errors, validatePasswordChange(form))
   if (Object.keys(errors).length) return
@@ -58,6 +60,7 @@ function submit(): void {
       type="password"
       show-password
       autocomplete="current-password"
+      :disabled="loading"
       :prefix-icon="LockKeyhole"
       :class="{ 'field-input--error': errors.currentPassword }"
       @input="delete errors.currentPassword"
@@ -74,10 +77,13 @@ function submit(): void {
       type="password"
       show-password
       autocomplete="new-password"
+      :disabled="loading"
+      aria-describedby="new-password-hint"
       :prefix-icon="ShieldCheck"
       :class="{ 'field-input--error': errors.newPassword }"
       @input="delete errors.newPassword"
     />
+    <p id="new-password-hint" class="field-hint">新密码须为 8–72 字节，且不能与当前密码相同。</p>
     <span v-if="errors.newPassword" class="field-error" role="alert">
       {{ errors.newPassword }}
     </span>
@@ -90,6 +96,7 @@ function submit(): void {
       type="password"
       show-password
       autocomplete="new-password"
+      :disabled="loading"
       :prefix-icon="ShieldCheck"
       :class="{ 'field-input--error': errors.confirmation }"
       @input="delete errors.confirmation"
@@ -108,7 +115,7 @@ function submit(): void {
       :loading="loading"
       :disabled="!canSubmit"
     >
-      更新密码
+      确认修改
     </el-button>
   </form>
 </template>
@@ -133,20 +140,27 @@ function submit(): void {
 .field-error {
   display: block;
   margin-top: 6px;
-  color: var(--red);
-  font-size: 11px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.field-hint {
+  margin: 8px 0 0;
+  color: var(--ink-500);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .field-input--error :deep(.el-input__wrapper) {
-  box-shadow: 0 0 0 1px var(--red) inset;
+  box-shadow: 0 0 0 1px var(--danger) inset;
 }
 
 .submit-error {
   margin-top: 16px;
   padding: 10px 12px;
-  border-left: 3px solid var(--red);
-  color: #9d3030;
-  background: #fff3f3;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 12px;
 }
 

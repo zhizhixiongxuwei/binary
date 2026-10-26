@@ -239,7 +239,7 @@ function mapUser(value: LiveUser): Model.CurrentUser {
     username: value.username,
     display_name: value.username,
     role: value.role,
-    must_change_password: false,
+    must_change_password: Boolean(value.mustChangePassword),
   }
   currentUser = mapped
   return mapped
@@ -623,11 +623,13 @@ export function createLiveApiClient(): ApiClient {
       return mapUser(result.user)
     },
     async changePassword(input) {
-      const result = await request<{ user: LiveUser }>('/auth/password', {
+      await request<void>('/auth/password', {
         method: 'POST',
         body: JSON.stringify({ currentPassword: input.current_password, newPassword: input.new_password }),
       })
-      return mapUser(result.user)
+      csrfToken = ''
+      currentUser = null
+      reportRunIdsByIntent.clear()
     },
     async listTasks(query) {
       const result = await request<{ tasks: LiveTask[]; next_cursor?: string }>(

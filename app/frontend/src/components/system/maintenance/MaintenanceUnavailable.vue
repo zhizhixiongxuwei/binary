@@ -35,7 +35,7 @@ defineProps<{
   height: 46px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   color: var(--ink-400);
   background: var(--surface-raised);
 }
@@ -57,9 +57,9 @@ defineProps<{
 .maintenance-unavailable__state {
   padding: 3px 7px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink-400);
-  background: #f6f8f8;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 </style>

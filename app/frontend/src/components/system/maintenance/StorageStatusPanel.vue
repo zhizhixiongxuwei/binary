@@ -218,8 +218,8 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 .section-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -236,7 +236,7 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 .section-heading p {
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .heading-actions {
@@ -248,7 +248,7 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 
 .checked-at {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .heading-actions button {
@@ -258,11 +258,11 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   gap: 6px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .pressure-alert {
@@ -270,9 +270,9 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   align-items: center;
   gap: 10px;
   padding: 9px 17px;
-  border-bottom: 1px solid #decba7;
-  color: var(--amber);
-  background: #fff9ef;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .pressure-alert > svg {
@@ -298,15 +298,15 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   align-items: center;
   gap: 14px;
   padding: 9px 17px;
-  border-bottom: 1px solid #decba7;
+  border-bottom: 1px solid var(--warning-border);
   color: var(--ink-600);
-  background: #fffdf8;
-  font-size: 9px;
+  background: var(--warning-soft);
+  font-size: 11px;
 }
 
 .diagnostic-list li.diagnostic-item--error {
-  border-color: #e4bebe;
-  background: #fff8f8;
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
 }
 
 .diagnostic-list strong,
@@ -316,23 +316,23 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 
 .diagnostic-list strong {
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .diagnostic-list small {
   margin-top: 2px;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .pressure-alert strong {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .pressure-alert small {
   margin-top: 2px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .mount-table__header,
@@ -349,14 +349,14 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 
 .mount-table__header {
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .mount-row {
   min-height: 82px;
-  border-top: 1px solid #e7ebeb;
+  border-top: 1px solid var(--line);
 }
 
 .mount-identity {
@@ -372,10 +372,10 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   height: 32px;
   flex: 0 0 32px;
   place-items: center;
-  border: 1px solid #c0d1e4;
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f2f6fa;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .mount-identity strong,
@@ -386,13 +386,13 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 
 .mount-identity strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .mount-identity small {
   margin-top: 3px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .path-pair {
@@ -404,7 +404,7 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 .path-pair code {
   color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -417,10 +417,10 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
 .service-list span {
   padding: 2px 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .usage-meta {
@@ -429,22 +429,22 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   justify-content: space-between;
   gap: 8px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .health-label {
-  color: var(--teal-strong);
+  color: var(--success);
   font-weight: 700;
   white-space: nowrap;
 }
 
 .health-label--warning {
-  color: var(--amber);
+  color: var(--warning);
 }
 
 .health-label--critical,
 .health-label--unavailable {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .health-label--unknown {
@@ -456,22 +456,22 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   margin-top: 8px;
   overflow: hidden;
   border-radius: 2px;
-  background: #e6eaeb;
+  background: var(--line);
 }
 
 .usage-meter span {
   display: block;
   height: 100%;
-  background: var(--teal);
+  background: var(--primary);
 }
 
 .usage-meter--warning span {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .usage-meter--critical span,
 .usage-meter--unavailable span {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .usage-meter--unknown span {
@@ -482,7 +482,7 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
   display: block;
   margin-top: 5px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 @container storage-live (max-width: 900px) {
@@ -499,7 +499,7 @@ const healthLabels: Readonly<Record<StorageMountHealth, string>> = {
     margin-bottom: 5px;
     color: var(--ink-400);
     content: attr(data-label);
-    font-size: 8px;
+    font-size: 11px;
   }
 
   .mount-identity::before {

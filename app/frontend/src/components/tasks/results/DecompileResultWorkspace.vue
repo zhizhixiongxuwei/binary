@@ -610,7 +610,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   gap: 16px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: #f2f8f6;
+  background: var(--surface-raised);
 }
 
 .capability-strip__identity {
@@ -618,7 +618,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   min-width: 0;
   align-items: center;
   gap: 9px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .capability-strip__identity span {
@@ -630,24 +630,24 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .capability-strip p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .capability-strip strong {
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .capability-strip__engine {
   max-width: 260px;
   overflow: hidden;
   padding: 4px 7px;
-  border: 1px solid #bdd7d1;
-  border-radius: 4px;
-  color: #17665f;
-  background: #fff;
-  font-size: 9px;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--surface);
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -657,9 +657,9 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .capability-strip__engine--unsupported,
 .capability-strip__engine--failed,
 .capability-strip__engine--cancelled {
-  border-color: #dfc67b;
-  color: #76560d;
-  background: #fffaf0;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .capability-warning {
@@ -668,10 +668,10 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   align-items: flex-start;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid #e2d39c;
-  color: #745615;
-  background: #fffaf0;
-  font-size: 10px;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -697,7 +697,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .symbol-panel {
   min-width: 0;
   border-right: 1px solid var(--line);
-  background: #fbfcfc;
+  background: var(--surface);
 }
 
 .symbol-panel__heading {
@@ -716,12 +716,12 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 
 .symbol-panel__heading strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .symbol-panel__heading span {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .symbol-search {
@@ -731,15 +731,15 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   align-items: center;
   gap: 4px;
   padding: 0 8px;
-  border: 1px solid #cdd5d6;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
 }
 
 .symbol-search:focus-within {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 2px rgb(25 130 119 / 12%);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 12%);
 }
 
 .symbol-search input {
@@ -749,17 +749,17 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   color: var(--ink-800);
   background: transparent;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .result-filters {
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  border: 1px solid #cdd5d6;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: #fff;
+  background: var(--surface);
 }
 
 .result-filters button {
@@ -772,7 +772,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   column-gap: 3px;
   padding: 4px 3px;
   border: 0;
-  border-right: 1px solid #dce2e3;
+  border-right: 1px solid var(--line-strong);
   color: var(--ink-600);
   background: transparent;
   cursor: pointer;
@@ -785,19 +785,19 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 }
 
 .result-filters button:hover {
-  background: #f1f5f4;
+  background: var(--primary-soft);
 }
 
 .result-filters button:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid #4f94b8;
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .result-filters button > span {
   overflow: hidden;
-  font-size: 8px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -805,13 +805,13 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .result-filters button > code {
   grid-column: 2;
   color: inherit;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .result-filters .result-filter--active {
-  color: var(--teal-strong);
-  background: #eaf5f2;
-  box-shadow: inset 0 -2px 0 var(--teal);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  box-shadow: inset 0 -2px 0 var(--primary);
 }
 
 .symbol-tree {
@@ -825,7 +825,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   overflow: hidden;
   padding: 8px 12px 5px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -848,18 +848,18 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 }
 
 .symbol-row:hover {
-  background: #f1f5f4;
+  background: var(--primary-soft);
 }
 
 .symbol-row:focus-visible {
-  outline: 2px solid #4f94b8;
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .symbol-row--active {
-  border-left-color: var(--teal);
-  color: var(--teal-strong);
-  background: #eaf5f2;
+  border-left-color: var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .symbol-row__main {
@@ -877,19 +877,19 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 
 .symbol-row__main strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .symbol-row__main small,
 .symbol-row__kind {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .symbol-row__kind {
   padding: 2px 4px;
-  border: 1px solid #d4dbdc;
-  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
@@ -903,7 +903,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   gap: 8px;
   padding: 24px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -915,13 +915,13 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   justify-content: center;
   gap: 6px;
   margin: 8px 12px 0;
-  border: 1px solid #cbd5d5;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--surface);
   cursor: pointer;
   font: inherit;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .load-more:disabled {
@@ -944,12 +944,12 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 
 .source-file-group > header strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .source-file-group > header span {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .source-file-tree {
@@ -975,18 +975,18 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 }
 
 .source-file-row:hover {
-  background: #f1f5f4;
+  background: var(--primary-soft);
 }
 
 .source-file-row:focus-visible {
-  outline: 2px solid #4f94b8;
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .source-file-row--active {
-  border-left-color: var(--teal);
-  color: var(--teal-strong);
-  background: #eaf5f2;
+  border-left-color: var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .source-file-row > span {
@@ -1004,12 +1004,12 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 
 .source-file-row strong {
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .source-file-row small {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .source-file-state {
@@ -1020,29 +1020,29 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   gap: 6px;
   padding: 12px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   text-align: center;
 }
 
 .source-file-state--error,
 .code-panel__footnote-error {
-  color: #9a4d36;
+  color: var(--danger);
 }
 
 .source-file-limit {
   margin: 6px 12px 2px;
   padding: 7px 8px;
-  border: 1px solid #d7dfdf;
-  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .code-panel {
   min-width: 0;
-  background: #fff;
+  background: var(--surface);
 }
 
 .code-panel__heading {
@@ -1071,7 +1071,7 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .code-panel__title strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1079,17 +1079,17 @@ function sourceFileDepth(file: DecompileSourceFile): number {
 .code-panel__title small,
 .code-panel__badges span {
   padding: 2px 5px;
-  border: 1px solid #d1d9da;
-  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .code-panel__title code {
   overflow: hidden;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1109,29 +1109,29 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   flex-wrap: wrap;
   gap: 6px 16px;
   padding: 7px 14px;
-  border-bottom: 1px solid #33464a;
-  color: #a8b8ba;
-  background: #233337;
-  font-size: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-600);
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .code-panel__meta code {
-  color: #d7e5e6;
+  color: var(--ink-800);
 }
 
 .code-panel__state {
   min-height: 380px;
-  color: #b8c8ca;
-  background: #172427;
+  color: var(--ink-600);
+  background: var(--surface);
 }
 
 .code-panel__state strong {
-  color: #e2eeee;
-  font-size: 11px;
+  color: var(--ink-800);
+  font-size: 12px;
 }
 
 .code-panel__state--error {
-  color: #f0b8a7;
+  color: var(--danger);
 }
 
 .code-panel__footnote {
@@ -1143,8 +1143,8 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   padding: 7px 12px;
   border-top: 1px solid var(--line);
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .code-panel__footnote button {
@@ -1153,13 +1153,13 @@ function sourceFileDepth(file: DecompileSourceFile): number {
   align-items: center;
   gap: 4px;
   padding: 0 7px;
-  border: 1px solid #b8cdca;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #fff;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--surface);
   cursor: pointer;
   font: inherit;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .spin {

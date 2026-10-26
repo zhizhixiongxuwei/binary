@@ -65,7 +65,7 @@ const visibleGroups = computed(() =>
   gap: 0;
   margin-bottom: 14px;
   border-block: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .supported-types--single {
@@ -78,7 +78,7 @@ const visibleGroups = computed(() =>
   grid-template-columns: 24px minmax(0, 1fr);
   gap: 8px;
   padding: 12px 14px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .supported-types__group + .supported-types__group {
@@ -103,7 +103,7 @@ const visibleGroups = computed(() =>
 .supported-types__group p {
   margin-top: 3px;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }

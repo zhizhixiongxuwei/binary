@@ -32,10 +32,10 @@ defineProps<{
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid #decba7;
-  color: #71511f;
-  background: #fff9ef;
-  font-size: 10px;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -49,23 +49,23 @@ defineProps<{
 
 .sample-retention-notice strong {
   margin-right: 5px;
-  color: #664312;
+  color: var(--warning);
 }
 
 .sample-retention-notice--deleted {
-  border-color: #e4bebe;
-  color: #8b3434;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .sample-retention-notice--deleted strong {
-  color: #922b2b;
+  color: var(--danger);
 }
 
 .sample-retention-notice--unavailable {
-  border-color: #c9d2d4;
+  border-color: var(--line-strong);
   color: var(--ink-600);
-  background: #f5f7f7;
+  background: var(--surface-muted);
 }
 
 .sample-retention-notice--unavailable strong {

@@ -172,14 +172,14 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 8px 13px;
-  border-bottom: 1px solid #ebcccc;
-  color: #873737;
-  background: #fff3f3;
-  font-size: 10px;
+  border-bottom: 1px solid var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
 }
 
 .operation-error span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.operation-error button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 9px; }
+.operation-error button { border: 0; color: inherit; background: transparent; cursor: pointer; font-size: 11px; }
 
 .run-waiting {
   display: grid;
@@ -191,6 +191,6 @@ defineExpose({
   color: var(--ink-400);
   text-align: center;
 }
-.run-waiting strong { color: var(--ink-600); font-size: 12px; }
-.run-waiting span { max-width: 520px; font-size: 10px; line-height: 1.6; }
+.run-waiting strong { color: var(--ink-600); font-size: 13px; }
+.run-waiting span { max-width: 520px; font-size: 12px; line-height: 1.6; }
 </style>

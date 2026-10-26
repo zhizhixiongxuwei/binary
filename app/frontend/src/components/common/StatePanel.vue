@@ -62,35 +62,41 @@ const liveRole = computed(() => (props.kind === 'error' ? 'alert' : 'status'))
 <style scoped>
 .state-panel {
   display: flex;
-  min-height: 220px;
+  min-height: 260px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 10px;
-  padding: 36px 24px;
+  gap: 12px;
+  padding: 44px 24px;
   color: var(--ink-600);
   text-align: center;
 }
 
 .state-panel__icon {
-  color: var(--ink-400);
+  box-sizing: content-box;
+  padding: 16px;
+  border-radius: 16px;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .state-panel--error .state-panel__icon {
-  color: var(--red);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .state-panel__title {
   color: var(--ink-800);
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
 .state-panel__description {
   max-width: 480px;
   color: var(--ink-600);
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 

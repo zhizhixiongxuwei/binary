@@ -133,8 +133,8 @@ function usagePercent(path: MountPathPreview): number {
 .preview-kicker {
   display: block;
   margin-bottom: 6px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -147,7 +147,7 @@ function usagePercent(path: MountPathPreview): number {
 .maintenance-section-header p {
   margin: 5px 0 0;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -160,11 +160,11 @@ function usagePercent(path: MountPathPreview): number {
 .preview-badge {
   flex: 0 0 auto;
   padding: 4px 7px;
-  border: 1px solid #b8d7d3;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  font-size: 10px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -183,7 +183,7 @@ function usagePercent(path: MountPathPreview): number {
   align-items: center;
   gap: 18px;
   padding: 15px 18px;
-  border-bottom: 1px solid #e7ebeb;
+  border-bottom: 1px solid var(--line);
 }
 
 .mount-row:last-child {
@@ -204,9 +204,9 @@ function usagePercent(path: MountPathPreview): number {
   flex: 0 0 32px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f3f7fa;
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--surface-muted);
 }
 
 .mount-row__identity > div {
@@ -226,7 +226,7 @@ function usagePercent(path: MountPathPreview): number {
 .mount-row p {
   margin-top: 4px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -257,18 +257,18 @@ function usagePercent(path: MountPathPreview): number {
 }
 
 .service-mappings code {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .mount-row__paths dt {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .mount-row__paths dd {
   margin-top: 4px;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -283,13 +283,13 @@ function usagePercent(path: MountPathPreview): number {
   justify-content: space-between;
   gap: 8px;
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .usage-copy strong {
   min-width: 0;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -299,13 +299,13 @@ function usagePercent(path: MountPathPreview): number {
   margin-top: 8px;
   overflow: hidden;
   border-radius: 2px;
-  background: #e6eaeb;
+  background: var(--line);
 }
 
 .usage-meter span {
   display: block;
   height: 100%;
-  background: var(--teal);
+  background: var(--primary);
 }
 
 @container storage-panel (max-width: 980px) {

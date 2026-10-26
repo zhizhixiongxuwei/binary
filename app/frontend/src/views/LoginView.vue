@@ -6,9 +6,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { isDemoMode } from '@/api/runtime'
 import type { LoginInput } from '@/api/types'
+import loginIllustration from '@/assets/login-illustration.svg'
 import LoginForm from '@/components/auth/LoginForm.vue'
 import { useLoginRateLimit } from '@/composables/useLoginRateLimit'
-import { PRODUCT_NAME } from '@/config/branding'
+import { PRODUCT_DESCRIPTION, PRODUCT_NAME, PRODUCT_SHORT_NAME } from '@/config/branding'
 import { useSessionStore } from '@/stores/session'
 
 const route = useRoute()
@@ -65,33 +66,40 @@ async function handleLogin(input: LoginInput): Promise<void> {
 <template>
   <main class="login-page">
     <section class="identity-panel" aria-label="系统标识">
-      <div class="identity-grid" aria-hidden="true">
-        <span v-for="index in 54" :key="index" :class="{ active: index % 7 === 0 || index % 11 === 0 }" />
-      </div>
       <div class="identity-content">
-        <div class="identity-mark"><Binary :size="31" /></div>
-        <p class="identity-kicker mono">OFFLINE ANALYSIS CONSOLE</p>
-        <h1>{{ PRODUCT_NAME }}</h1>
-        <p class="identity-subtitle">离线二进制、归档与镜像检测</p>
-        <div class="identity-status">
-          <span><CheckCircle2 :size="15" />服务节点</span>
-          <strong>LOCAL</strong>
+        <div class="identity-heading">
+          <span class="identity-kicker">二进制 · 归档 · 镜像</span>
+          <h1>让代码分析更清晰</h1>
+          <p class="identity-subtitle">专注二进制代码静态分析，高效管理每一次检测</p>
         </div>
+        <img class="identity-illustration" :src="loginIllustration" alt="" aria-hidden="true" />
         <div class="identity-meta">
-          <span><HardDrive :size="15" />文件仓库</span>
-          <span><Database :size="15" />漏洞库</span>
+          <span><CheckCircle2 :size="16" aria-hidden="true" />离线部署</span>
+          <span><HardDrive :size="16" aria-hidden="true" />文件仓库</span>
+          <span><Database :size="16" aria-hidden="true" />漏洞库</span>
         </div>
       </div>
     </section>
 
-    <section class="login-panel">
+    <section class="login-panel" aria-labelledby="login-title">
       <div class="login-box">
+        <div class="login-brand" :aria-label="PRODUCT_NAME">
+          <span class="login-brand-mark" aria-hidden="true"><Binary :size="27" /></span>
+          <div class="login-brand-copy">
+            <strong>{{ PRODUCT_SHORT_NAME }}</strong>
+            <span>{{ PRODUCT_DESCRIPTION }}</span>
+          </div>
+        </div>
         <div class="login-heading">
-          <span class="mono">AUTH / 01</span>
-          <h2>登录操作台</h2>
+          <h2 id="login-title">欢迎登录</h2>
+          <p>登录账号，开始您的分析工作</p>
         </div>
         <p v-if="isDemoMode" class="demo-login-note">
           使用 demo-reader 或 demo-operator 可预览对应权限，其他非空用户名使用管理员权限。
+        </p>
+        <p v-if="route.query.reason === 'password-changed'" class="password-changed-note" role="status">
+          <CheckCircle2 :size="17" aria-hidden="true" />
+          <span>密码已修改，请使用新密码重新登录。</span>
         </p>
         <LoginForm
           :loading="loading"
@@ -100,9 +108,10 @@ async function handleLogin(input: LoginInput): Promise<void> {
           @submit="handleLogin"
         />
         <footer class="login-footer">
-          <span class="status-dot" />
-          <span>内网节点</span>
-          <strong>{{ PRODUCT_NAME }}</strong>
+          <span class="status-dot" aria-hidden="true" />
+          <span>本地分析工作台</span>
+          <span class="login-footer-divider" aria-hidden="true" />
+          <span>内网部署</span>
         </footer>
       </div>
     </section>
@@ -110,215 +119,337 @@ async function handleLogin(input: LoginInput): Promise<void> {
 </template>
 
 <style scoped>
+.password-changed-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-sm);
+  color: var(--success);
+  background: var(--success-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.password-changed-note > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .login-page {
   display: grid;
   min-height: 100vh;
-  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
-  background: #eef1f1;
+  grid-template-columns: minmax(0, 1.12fr) minmax(420px, 0.88fr);
+  padding: 48px max(5vw, 32px);
+  background: #f1f6fe;
 }
 
 .identity-panel {
-  position: relative;
   display: flex;
-  min-height: 100vh;
+  min-width: 0;
   align-items: center;
-  overflow: hidden;
-  border-right: 1px solid #314347;
-  color: #e5eeee;
-  background: #142326;
-}
-
-.identity-grid {
-  position: absolute;
-  inset: 24px;
-  display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  gap: 12px;
-  opacity: 0.28;
-}
-
-.identity-grid span {
-  border: 1px solid #32474a;
-}
-
-.identity-grid span.active {
-  border-color: #188f86;
-  background: #176e68;
+  justify-content: center;
 }
 
 .identity-content {
-  position: relative;
-  z-index: 1;
-  width: min(440px, 80%);
-  margin: 0 auto;
-  padding: 32px;
-  background: #142326;
+  width: min(640px, 100%);
+  padding-right: 26px;
 }
 
-.identity-mark {
-  display: grid;
-  width: 58px;
-  height: 58px;
-  place-items: center;
-  border: 1px solid #456266;
-  border-radius: 5px;
-  color: #53c8be;
-  background: #1c3033;
+.identity-heading {
+  padding-left: 58px;
 }
 
 .identity-kicker {
-  margin: 56px 0 14px;
-  color: #55b8b0;
-  font-size: 10px;
-  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  border: 1px solid #dbe7fb;
+  border-radius: 20px;
+  color: var(--primary);
+  background: #e8f0fd;
+  font-size: 12px;
+  letter-spacing: 0.06em;
 }
 
 .identity-content h1 {
-  margin: 0;
-  color: #fff;
-  font-family: "DIN Alternate", "Noto Sans SC", sans-serif;
-  font-size: 36px;
-  line-height: 1.18;
-  overflow-wrap: anywhere;
+  margin: 20px 0 0;
+  color: #224373;
+  font-size: clamp(30px, 2.5vw, 38px);
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
 }
 
 .identity-subtitle {
-  margin: 15px 0 50px;
-  color: #9badaf;
-  font-size: 15px;
+  margin: 14px 0 0;
+  color: #6e85a5;
+  font-size: 14px;
+  line-height: 1.7;
 }
 
-.identity-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 13px 0;
-  border-top: 1px solid #35484b;
-  border-bottom: 1px solid #35484b;
-  font-size: 12px;
-}
-
-.identity-status span,
-.identity-meta span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #9badaf;
-}
-
-.identity-status strong {
-  color: #58c8bf;
-  font-family: "IBM Plex Mono", Consolas, monospace;
-  font-size: 11px;
+.identity-illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 10px auto 0;
+  user-select: none;
 }
 
 .identity-meta {
   display: flex;
-  gap: 28px;
-  margin-top: 14px;
-  font-size: 11px;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 2px;
+  color: #6882a7;
+  font-size: 12px;
+}
+
+.identity-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.identity-meta svg {
+  color: #658cd0;
 }
 
 .login-panel {
-  display: grid;
-  min-height: 100vh;
-  place-items: center;
-  padding: 40px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
 }
 
 .login-box {
-  width: min(410px, 100%);
-  padding: 36px 38px 24px;
-  border: 1px solid var(--line);
-  border-top: 3px solid var(--teal);
-  border-radius: 5px;
-  background: #fff;
-  box-shadow: 0 12px 32px rgb(28 45 49 / 8%);
+  width: min(448px, 100%);
+  padding: 40px 40px 26px;
+  border: 1px solid #e7eef9;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 16px 56px rgb(60 93 148 / 8%);
 }
 
-.login-heading span {
-  color: var(--teal-strong);
-  font-size: 10px;
-  font-weight: 700;
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.login-brand-mark {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--surface);
+  background: var(--primary);
+  box-shadow: 0 5px 14px rgb(37 99 235 / 16%);
+}
+
+.login-brand-copy {
+  min-width: 0;
+}
+
+.login-brand-copy strong,
+.login-brand-copy span {
+  display: block;
+}
+
+.login-brand-copy strong {
+  color: var(--ink-950);
+  font-size: 22px;
+  line-height: 1.35;
+  letter-spacing: 0.05em;
+}
+
+.login-brand-copy span {
+  margin-top: 5px;
+  color: var(--ink-600);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.login-heading {
+  margin-top: 28px;
 }
 
 .login-heading h2 {
-  margin: 10px 0 0;
+  margin: 0;
   color: var(--ink-950);
-  font-family: "DIN Alternate", "Noto Sans SC", sans-serif;
-  font-size: 27px;
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.login-heading p {
+  margin: 8px 0 0;
+  color: var(--ink-500);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .demo-login-note {
-  margin: 18px 0 -12px;
-  padding: 9px 11px;
-  border: 1px solid #ddc28d;
-  border-left: 3px solid var(--amber);
-  border-radius: 4px;
-  color: #6e4d1b;
-  background: #fff8e9;
+  margin: 18px 0 -10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
   font-size: 11px;
-  line-height: 1.5;
+  line-height: 1.65;
 }
 
 .login-footer {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  margin: 30px -38px -24px;
-  padding: 14px 38px;
+  margin-top: 26px;
+  padding-top: 22px;
   border-top: 1px solid var(--line);
-  color: var(--ink-400);
-  font-size: 10px;
+  color: var(--ink-500);
+  font-size: 11px;
 }
 
-.login-footer strong {
-  margin-left: auto;
-  color: var(--ink-600);
+.login-footer-divider {
+  width: 1px;
+  height: 10px;
+  margin: 0 4px;
+  background: var(--line-strong);
 }
 
 .status-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--primary);
+}
+
+@media (max-width: 1100px) {
+  .login-page {
+    grid-template-columns: minmax(0, 1fr) minmax(380px, 0.95fr);
+    padding: 36px 32px;
+  }
+
+  .identity-content {
+    padding-right: 12px;
+  }
+
+  .identity-heading {
+    padding-left: 28px;
+  }
+
+  .identity-content h1 {
+    font-size: 29px;
+  }
+
+  .identity-subtitle {
+    max-width: 270px;
+    font-size: 13px;
+  }
+
+  .identity-meta {
+    gap: 18px;
+  }
+
+  .login-box {
+    padding-right: 32px;
+    padding-left: 32px;
+  }
 }
 
 @media (max-width: 820px) {
   .login-page {
     grid-template-columns: 1fr;
-  }
-
-  .identity-panel {
-    min-height: 210px;
+    align-content: center;
+    gap: 28px;
+    padding: 36px 24px;
   }
 
   .identity-content {
-    width: 100%;
-    padding: 28px;
+    padding: 0;
   }
 
-  .identity-mark,
-  .identity-status,
-  .identity-meta {
-    display: none;
-  }
-
-  .identity-kicker {
-    margin: 0 0 10px;
+  .identity-heading {
+    padding: 0;
+    text-align: center;
   }
 
   .identity-content h1 {
-    font-size: 38px;
+    margin-top: 12px;
+    font-size: 28px;
   }
 
   .identity-subtitle {
-    margin: 10px 0 0;
+    max-width: none;
+    margin-top: 8px;
   }
 
-  .login-panel {
-    min-height: auto;
-    padding: 26px 16px;
+  .identity-illustration,
+  .identity-meta {
+    display: none;
+  }
+}
+
+@media (max-width: 440px) {
+  .login-page {
+    gap: 24px;
+    padding: 28px 16px;
+  }
+
+  .identity-kicker {
+    min-height: 26px;
+    font-size: 10px;
+  }
+
+  .identity-content h1 {
+    font-size: 25px;
+  }
+
+  .identity-subtitle {
+    font-size: 11px;
+  }
+
+  .login-box {
+    padding: 28px 24px 22px;
+    border-radius: 20px;
+  }
+
+  .login-brand {
+    padding-bottom: 22px;
+  }
+
+  .login-brand-mark {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+    border-radius: 12px;
+  }
+
+  .login-brand-copy strong {
+    font-size: 20px;
+  }
+
+  .login-brand-copy span {
+    font-size: 10px;
+  }
+
+  .login-heading {
+    margin-top: 22px;
+  }
+
+  .login-heading h2 {
+    font-size: 23px;
   }
 }
 </style>

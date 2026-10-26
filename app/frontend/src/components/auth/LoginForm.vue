@@ -92,44 +92,76 @@ function submit(): void {
 
 <style scoped>
 .login-form {
-  margin-top: 30px;
+  margin-top: 26px;
 }
 
 .field-label {
   display: block;
-  margin-bottom: 8px;
-  color: var(--ink-800);
-  font-size: 12px;
-  font-weight: 700;
+  margin-bottom: 10px;
+  color: var(--ink-700);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .field-label--spaced {
-  margin-top: 18px;
+  margin-top: 22px;
+}
+
+.login-form :deep(.el-input__wrapper) {
+  min-height: 48px;
+  padding: 1px 15px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--line-strong) inset;
+}
+
+.login-form :deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px var(--primary-border) inset;
+}
+
+.login-form :deep(.el-input__wrapper.is-focus) {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--primary) inset, 0 0 0 3px var(--primary-soft);
+}
+
+.login-form :deep(.el-input__prefix) {
+  margin-right: 4px;
+  color: var(--ink-400);
+}
+
+.login-form :deep(.el-input__inner) {
+  font-size: 13px;
 }
 
 .login-feedback {
   margin-top: 15px;
-  min-height: 64px;
+  min-height: 44px;
 }
 
 .login-feedback__placeholder {
-  min-height: 64px;
+  min-height: 44px;
 }
 
 .login-error {
-  min-height: 64px;
+  min-height: 44px;
   padding: 10px 12px;
-  border-left: 3px solid var(--red);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
-  color: #9d3030;
-  background: #fff3f3;
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .login-command {
   width: 100%;
-  margin-top: 12px;
+  min-height: 48px;
+  margin-top: 10px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
 }
 </style>

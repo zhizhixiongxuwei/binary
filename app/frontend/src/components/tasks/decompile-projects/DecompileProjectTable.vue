@@ -282,16 +282,16 @@ function engineLabel(project: DecompileProject): string {
 
 .project-table__header {
   color: var(--ink-600);
-  background: #f3f6f6;
-  font-size: 9px;
+  background: var(--surface-muted);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .project-row {
   min-height: 68px;
-  border-top: 1px solid #e7ebeb;
+  border-top: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .project-row > * {
@@ -311,7 +311,7 @@ function engineLabel(project: DecompileProject): string {
   overflow: hidden;
   color: var(--ink-800);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -322,13 +322,13 @@ function engineLabel(project: DecompileProject): string {
 .project-scale small {
   margin-top: 3px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .project-target strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -342,7 +342,7 @@ function engineLabel(project: DecompileProject): string {
 
 .source-kind {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .engine {
@@ -358,25 +358,31 @@ function engineLabel(project: DecompileProject): string {
   min-height: 22px;
   align-items: center;
   padding: 2px 6px;
-  border: 1px solid #b8d7d3;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
   white-space: nowrap;
+}
+
+.project-status--complete {
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .project-status--partial,
 .project-status--bytecode_only {
-  border-color: #decba7;
-  color: var(--amber);
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .analysis-status {
   display: block;
   margin-top: 4px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -395,20 +401,20 @@ function engineLabel(project: DecompileProject): string {
   height: 30px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
 }
 
 .project-actions button:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--primary-hover);
 }
 
 .project-actions .project-actions__delete:hover:not(:disabled) {
-  border-color: var(--red);
-  color: var(--red);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .project-actions button:disabled {
@@ -449,7 +455,7 @@ function engineLabel(project: DecompileProject): string {
     margin-bottom: 5px;
     color: var(--ink-400);
     content: attr(data-label);
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 

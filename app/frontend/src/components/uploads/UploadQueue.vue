@@ -155,8 +155,8 @@ const labels = {
   max-width: 100%;
   margin-top: 14px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #fff;
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .upload-row {
@@ -207,7 +207,7 @@ const labels = {
 .upload-row__heading span,
 .upload-row__state {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .upload-row__state {
@@ -231,17 +231,17 @@ const labels = {
 
 .upload-row__format {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .upload-row__status--archive,
 .upload-row__status--completed {
-  color: var(--teal-strong);
+  color: var(--success);
 }
 
 .upload-row__status--failed,
 .upload-row__error {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .upload-row__commands {
@@ -258,9 +258,9 @@ const labels = {
   height: 32px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -270,25 +270,25 @@ const labels = {
   padding: 0 10px;
   grid-template-columns: auto auto;
   gap: 6px;
-  color: var(--teal-strong);
-  font-size: 11px;
+  color: var(--primary-hover);
+  font-size: 12px;
   font-weight: 700;
 }
 
 .upload-row__commands button:hover {
   border-color: var(--line-strong);
-  color: var(--teal-strong);
-  background: #f4f8f8;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .upload-row__commands button:disabled {
   color: var(--ink-400);
-  background: #f4f5f5;
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
 .upload-row__commands button:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 

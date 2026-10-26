@@ -321,15 +321,16 @@ function reset(): void {
 
 <style scoped>
 .task-filters {
-  padding: 14px;
+  padding: 22px 24px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface-raised);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
 }
 
 .task-filters__primary {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 160px auto;
-  gap: 9px;
+  grid-template-columns: minmax(220px, 1fr) 150px 170px auto;
+  gap: 12px;
   align-items: start;
 }
 
@@ -364,16 +365,16 @@ function reset(): void {
 }
 
 .task-filters__count {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 4px;
-  border: 1px solid #a9cdca;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #edf7f6;
-  font-size: 11px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--primary-border);
+  border-radius: 10px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
-  line-height: 16px;
+  line-height: 18px;
   text-align: center;
 }
 
@@ -389,16 +390,18 @@ function reset(): void {
 .task-filters__advanced {
   display: grid;
   grid-template-columns: minmax(150px, 0.7fr) minmax(150px, 0.7fr) minmax(320px, 1.4fr);
-  gap: 12px;
-  padding-top: 12px;
-  margin-top: 12px;
-  border-top: 1px solid var(--line);
+  gap: 16px;
+  padding: 18px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
 }
 
 .task-filters__field {
   display: grid;
   align-content: start;
-  gap: 5px;
+  gap: 8px;
 }
 
 .task-filters__date-field {
@@ -411,38 +414,38 @@ function reset(): void {
   display: block;
   padding: 0;
   color: var(--ink-600);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.4;
 }
 
 .task-filters__date-range {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  margin-top: 5px;
+  margin-top: 8px;
 }
 
 .task-filters__date-input {
   width: 100%;
   min-width: 0;
-  height: 32px;
-  padding: 0 10px;
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
   font-size: 13px;
 }
 
 .task-filters__date-input:hover {
-  border-color: var(--ink-400);
+  border-color: var(--primary);
 }
 
 .task-filters__date-input:focus {
-  border-color: var(--blue);
-  outline: 1px solid var(--blue);
+  border-color: var(--primary);
+  outline: 1px solid var(--primary);
   outline-offset: 0;
 }
 
@@ -454,12 +457,12 @@ function reset(): void {
 .task-filters__error {
   display: block;
   margin-top: 5px;
-  color: var(--red);
-  font-size: 11px;
+  color: var(--danger);
+  font-size: 12px;
   line-height: 1.4;
 }
 
-@media (max-width: 920px) {
+@container task-list (max-width: 920px) {
   .task-filters__primary {
     grid-template-columns: 1fr 1fr;
   }
@@ -478,14 +481,18 @@ function reset(): void {
   }
 }
 
-@media (max-width: 540px) {
+@container task-list (max-width: 540px) {
   .task-filters {
-    padding: 10px;
+    padding: 16px;
   }
 
   .task-filters__primary,
   .task-filters__advanced {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .task-filters__advanced {
+    padding: 14px;
   }
 
   .task-filters__control:first-child,
@@ -496,7 +503,7 @@ function reset(): void {
 
   .task-filters__actions {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto 34px;
+    grid-template-columns: minmax(0, 1fr) auto 40px;
     gap: 6px;
   }
 
@@ -512,7 +519,7 @@ function reset(): void {
   }
 }
 
-@media (max-width: 420px) {
+@container task-list (max-width: 420px) {
   .task-filters__date-range {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -163,12 +163,12 @@ function changePageSize(value: unknown): void {
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="执行状态" min-width="106">
+        <el-table-column label="执行状态" min-width="136">
           <template #default="{ row }: { row: ScanTask }">
             <StatusBadge :value="row.status" kind="status" />
           </template>
         </el-table-column>
-        <el-table-column label="风险等级" min-width="106">
+        <el-table-column label="风险等级" min-width="116">
           <template #default="{ row }: { row: ScanTask }">
             <StatusBadge :value="row.risk_level" kind="risk" />
           </template>
@@ -296,7 +296,7 @@ function changePageSize(value: unknown): void {
 }
 
 .task-table__scroller:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
@@ -308,22 +308,44 @@ function changePageSize(value: unknown): void {
   cursor: pointer;
 }
 
+.task-table :deep(.el-table th.el-table__cell) {
+  height: 48px;
+  padding-block: 10px;
+}
+
+.task-table :deep(.el-table td.el-table__cell) {
+  padding-block: 18px;
+}
+
+.task-table :deep(.el-table .cell) {
+  padding-inline: 16px;
+}
+
+.task-table :deep(.el-table td:first-child .cell),
+.task-table :deep(.el-table th:first-child .cell) {
+  padding-left: 24px;
+}
+
+.task-table :deep(.el-table td:last-child .cell),
+.task-table :deep(.el-table th:last-child .cell) {
+  padding-inline: 10px;
+}
+
 .task-cell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .task-cell__icon {
   display: grid;
-  width: 31px;
-  height: 31px;
-  flex: 0 0 31px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f6f8f9;
+  border-radius: 10px;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .task-cell__copy {
@@ -344,97 +366,99 @@ function changePageSize(value: unknown): void {
 .task-cell__open {
   padding: 0;
   border: 0;
-  color: var(--ink-800);
+  color: var(--primary);
   background: transparent;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 500;
   text-align: left;
 }
 
 .task-cell__open:hover {
-  color: var(--teal-strong);
+  color: var(--primary-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .task-cell__open:focus-visible {
-  border-radius: 2px;
-  outline: 2px solid var(--teal);
+  border-radius: 4px;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
 .task-cell__id {
-  margin-top: 3px;
-  color: var(--ink-400);
-  font-size: 10px;
+  margin-top: 5px;
+  color: var(--ink-500);
+  font-size: 12px;
 }
 
 .task-cell__retention {
   display: inline-flex;
   width: fit-content;
   max-width: 100%;
-  min-height: 19px;
+  min-height: 24px;
   align-items: center;
   margin-top: 5px;
-  padding: 1px 5px;
-  border: 1px solid #decba7;
-  border-radius: 3px;
-  color: #71511f;
-  background: #fff9ef;
-  font-size: 9px;
-  font-weight: 700;
+  padding: 2px 7px;
+  border: 1px solid var(--warning-border);
+  border-radius: 6px;
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .task-cell__retention--deleted {
-  border-color: #e4bebe;
-  color: #922b2b;
-  background: #fff5f5;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .task-cell__retention--unavailable {
-  border-color: #c9d2d4;
+  border-color: var(--line-strong);
   color: var(--ink-600);
-  background: #f5f7f7;
+  background: var(--surface-raised);
 }
 
 .progress-cell {
   display: grid;
-  grid-template-columns: minmax(70px, 1fr) 35px;
+  grid-template-columns: minmax(60px, 1fr) 40px;
   align-items: center;
   gap: 8px;
 }
 
 .progress-cell :deep(.el-progress-bar__inner) {
-  background: var(--teal);
+  background: var(--primary);
 }
 
 .progress-cell span {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   text-align: right;
 }
 
 .table-muted {
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .table-token {
   display: block;
   overflow: hidden;
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .row-command {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 0;
-  border-radius: 4px;
-  color: var(--ink-600);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
   background: transparent;
   cursor: pointer;
 }
@@ -442,18 +466,18 @@ function changePageSize(value: unknown): void {
 .row-commands {
   display: grid;
   width: 68px;
-  grid-template-columns: repeat(2, 30px);
+  grid-template-columns: repeat(2, 32px);
   gap: 4px;
 }
 
 .row-command:hover {
-  color: var(--teal-strong);
-  background: #edf5f4;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .row-command--danger:hover:not(:disabled) {
-  color: var(--red);
-  background: #fff0f0;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .row-command:disabled {
@@ -463,60 +487,60 @@ function changePageSize(value: unknown): void {
 }
 
 .row-command:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 
 .task-table__footer {
   display: flex;
-  min-height: 58px;
+  min-height: 76px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px 14px;
+  padding: 16px 24px;
   border-top: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .task-table__cursor-controls {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .task-table__page-size {
-  width: 104px;
+  width: 116px;
 }
 
 .task-table__cursor-button {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-700);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .task-table__cursor-button:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
-  background: #edf5f4;
+  border-color: var(--primary-border);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .task-table__cursor-button:focus-visible {
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
 
 .task-table__cursor-button:disabled {
   color: var(--ink-300);
-  background: #f5f7f7;
+  background: var(--surface-raised);
   cursor: not-allowed;
 }
 

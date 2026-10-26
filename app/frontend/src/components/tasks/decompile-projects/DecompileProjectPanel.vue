@@ -269,13 +269,13 @@ defineExpose({ refresh })
   min-width: 0;
   align-items: center;
   gap: 8px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .project-panel__title h2 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .project-panel__count {
@@ -285,10 +285,10 @@ defineExpose({ refresh })
   place-items: center;
   padding: 0 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f3f6f6;
-  font-size: 9px;
+  background: var(--surface-muted);
+  font-size: 11px;
 }
 
 .project-panel__header > button,
@@ -299,7 +299,7 @@ defineExpose({ refresh })
   flex: 0 0 30px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
@@ -307,8 +307,8 @@ defineExpose({ refresh })
 
 .project-panel__header > button:hover:not(:disabled),
 .project-panel__error button:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--primary-hover);
 }
 
 .project-panel__header > button:disabled {
@@ -329,15 +329,15 @@ defineExpose({ refresh })
   align-items: center;
   gap: 8px;
   padding: 7px 13px;
-  border-left: 3px solid var(--teal);
+  border-left: 3px solid var(--primary);
   color: var(--ink-700);
-  background: #eef8f6;
-  font-size: 11px;
+  background: var(--primary-soft);
+  font-size: 12px;
 }
 
 .project-panel__operation > svg {
   flex: 0 0 auto;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .project-panel__operation > span {
@@ -346,18 +346,18 @@ defineExpose({ refresh })
 }
 
 .project-panel__operation--complete {
-  border-left-color: #2f7d58;
-  background: #edf8f1;
+  border-left-color: var(--success);
+  background: var(--success-soft);
 }
 
 .project-panel__operation--failed {
-  border-left-color: var(--red);
-  color: #7e3030;
-  background: #fff2f2;
+  border-left-color: var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .project-panel__operation--failed > svg {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .project-panel__error {
@@ -367,10 +367,10 @@ defineExpose({ refresh })
   justify-content: space-between;
   gap: 10px;
   padding: 7px 10px 7px 13px;
-  border-left: 3px solid var(--red);
-  color: #7e3030;
-  background: #fff2f2;
-  font-size: 11px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-size: 12px;
 }
 
 .project-panel__error span {
@@ -383,7 +383,7 @@ defineExpose({ refresh })
   height: 26px;
   flex-basis: 26px;
   border-color: transparent;
-  color: #7e3030;
+  color: var(--danger);
   background: transparent;
 }
 

@@ -114,22 +114,22 @@ const coveragePercent = computed(() =>
   align-items: center;
   gap: 9px;
   padding: 10px 14px;
-  border-right: 1px solid #e6eaeb;
+  border-right: 1px solid var(--line);
 }
 
 .analysis-summary > div:last-child { border-right: 0; }
 .analysis-summary span { display: grid; min-width: 0; gap: 2px; }
 .analysis-summary small,
-.analysis-meta small { color: var(--ink-400); font-size: 8px; font-weight: 700; }
+.analysis-meta small { color: var(--ink-400); font-size: 11px; font-weight: 700; }
 .analysis-summary strong { color: var(--ink-800); font-size: 15px; font-variant-numeric: tabular-nums; }
-.analysis-summary__identity { color: var(--teal-strong); }
-.analysis-summary__metric--critical { border-top: 3px solid #9f2f36; }
-.analysis-summary__metric--high { border-top: 3px solid #c55b35; }
-.analysis-summary__metric--medium { border-top: 3px solid #d09a31; }
-.analysis-summary__metric--low { border-top: 3px solid #3e8095; }
+.analysis-summary__identity { color: var(--primary-hover); }
+.analysis-summary__metric--critical { border-top: 3px solid var(--danger); }
+.analysis-summary__metric--high { border-top: 3px solid var(--orange); }
+.analysis-summary__metric--medium { border-top: 3px solid var(--warning); }
+.analysis-summary__metric--low { border-top: 3px solid var(--primary); }
 .analysis-summary__metric--total { border-top: 3px solid var(--ink-600); }
-.analysis-summary__coverage { color: var(--blue); }
-.analysis-summary__coverage strong { font-size: 11px; }
+.analysis-summary__coverage { color: var(--primary); }
+.analysis-summary__coverage strong { font-size: 12px; }
 
 .analysis-meta {
   display: grid;
@@ -144,14 +144,14 @@ const coveragePercent = computed(() =>
   min-width: 0;
   gap: 3px;
   padding: 8px 14px;
-  background: #fafbfb;
+  background: var(--surface);
 }
 
 .analysis-meta code,
 .analysis-meta time {
   overflow: hidden;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -162,23 +162,23 @@ const coveragePercent = computed(() =>
   align-items: center;
   gap: 8px;
   padding: 9px 14px;
-  border-bottom: 1px solid #ead8b8;
-  color: #7d581d;
-  background: #fff9ee;
-  font-size: 10px;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 12px;
 }
 
 .analysis-error {
-  border-color: #ebcccc;
-  color: #873737;
-  background: #fff3f3;
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .analysis-error span { display: flex; gap: 8px; }
 
 @container (max-width: 980px) {
   .analysis-summary { grid-template-columns: repeat(4, minmax(90px, 1fr)); }
-  .analysis-summary > div { border-bottom: 1px solid #e6eaeb; }
+  .analysis-summary > div { border-bottom: 1px solid var(--line); }
   .analysis-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

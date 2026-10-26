@@ -139,19 +139,19 @@ onScopeDispose(() => {
   gap: 16px;
   padding: 22px;
   border: 1px dashed var(--line-strong);
-  border-radius: 5px;
-  background: #f8fafa;
+  border-radius: 12px;
+  background: var(--surface-raised);
   transition: border-color 140ms ease, background-color 140ms ease;
 }
 
 .dropzone--dragging {
-  border-color: var(--teal);
-  background: #eff7f6;
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .dropzone--disabled {
   color: var(--ink-400);
-  background: #f2f4f4;
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
@@ -161,10 +161,10 @@ onScopeDispose(() => {
   height: 48px;
   flex: 0 0 48px;
   place-items: center;
-  border: 1px solid #bad3d0;
-  border-radius: 5px;
-  color: var(--teal);
-  background: #fff;
+  border: 1px solid var(--primary-border);
+  border-radius: 12px;
+  color: var(--primary);
+  background: var(--surface);
 }
 
 .dropzone__copy {

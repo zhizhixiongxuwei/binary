@@ -40,7 +40,12 @@ function Import-DeliveryEnvironment {
         }
 
         $name = $line.Substring(0, $separator).Trim()
-        $value = $line.Substring($separator + 1)
+        $value = $line.Substring($separator + 1).Trim()
+        if ($value.Length -ge 2 -and
+            (($value.StartsWith("'") -and $value.EndsWith("'")) -or
+             ($value.StartsWith('"') -and $value.EndsWith('"')))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
         if ($name -notmatch "^[A-Za-z_][A-Za-z0-9_]*$") {
             Stop-WithError "invalid .env variable name: $name"
         }
@@ -216,7 +221,7 @@ function Start-Delivery {
         Initialize-Data
     }
     Test-Delivery
-    Invoke-Compose @("up", "-d", "--pull", "never", "--remove-orphans", "--wait")
+    Invoke-Compose @("up", "-d", "--no-build", "--pull", "never", "--remove-orphans", "--wait")
 }
 
 function Reset-AndStart {
@@ -231,7 +236,7 @@ function Reset-AndStart {
     Get-ChildItem -LiteralPath $DataRoot -Force | Remove-Item -Recurse -Force
     Initialize-Data
     Test-Delivery
-    Invoke-Compose @("up", "-d", "--pull", "never", "--remove-orphans", "--wait")
+    Invoke-Compose @("up", "-d", "--no-build", "--pull", "never", "--remove-orphans", "--wait")
 }
 
 Import-DeliveryEnvironment
@@ -254,11 +259,11 @@ switch ($Command) {
     }
     "restart" {
         Test-Delivery
-        Invoke-Compose @("up", "-d", "--pull", "never", "--remove-orphans", "--force-recreate", "--wait")
+        Invoke-Compose @("up", "-d", "--no-build", "--pull", "never", "--remove-orphans", "--force-recreate", "--wait")
     }
     "restart-app" {
         Test-Delivery
-        Invoke-Compose @("up", "-d", "--pull", "never", "--no-deps", "--force-recreate", "--wait", "app")
+        Invoke-Compose @("up", "-d", "--no-build", "--pull", "never", "--no-deps", "--force-recreate", "--wait", "app")
     }
     "down" {
         Invoke-Compose @("down", "--remove-orphans")

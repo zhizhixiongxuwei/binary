@@ -146,8 +146,8 @@ function cancel(): void {
 }
 
 .category-dialog__heading span {
-  color: var(--teal-strong);
-  font-size: 10px;
+  color: var(--primary-hover);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -161,7 +161,7 @@ function cancel(): void {
 .category-options {
   display: grid;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -176,7 +176,7 @@ function cancel(): void {
   border: 0;
   border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
   text-align: left;
 }
@@ -186,31 +186,31 @@ function cancel(): void {
 }
 
 .category-option:hover {
-  background: #f5f9f8;
+  background: var(--surface-raised);
 }
 
 .category-option--selected {
-  box-shadow: inset 3px 0 var(--teal);
-  color: var(--teal-strong);
-  background: #eef7f6;
+  box-shadow: inset 3px 0 var(--primary);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .category-option:focus-within {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--teal);
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .category-option--disabled {
   color: var(--ink-400);
-  background: #f3f5f5;
+  background: var(--surface-muted);
   cursor: not-allowed;
 }
 
 .category-option__number {
   color: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -220,7 +220,7 @@ function cancel(): void {
   height: 38px;
   place-items: center;
   border: 1px solid currentColor;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .category-option__body {
@@ -241,14 +241,14 @@ function cancel(): void {
 .category-option__body small {
   margin-top: 4px;
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .category-dialog__lock {
   margin: 12px 0 0;
-  color: #7f541b;
-  font-size: 12px;
+  color: var(--warning);
+  font-size: 13px;
 }
 
 .category-dialog__actions {

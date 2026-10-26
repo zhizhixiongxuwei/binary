@@ -97,7 +97,7 @@ const summary = computed(() => ({
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .batch-actions__selection {
@@ -105,7 +105,7 @@ const summary = computed(() => ({
   min-width: 0;
   align-items: center;
   gap: 7px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
   font-size: 12px;
 }
 
@@ -116,17 +116,17 @@ const summary = computed(() => ({
   height: 28px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
 .batch-error {
   padding: 9px 14px;
-  border-top: 1px solid #ebc6c1;
-  color: var(--red);
-  background: #fff5f3;
+  border-top: 1px solid var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
   font-size: 12px;
 }
 
@@ -140,8 +140,8 @@ const summary = computed(() => ({
   gap: 14px;
   padding: 9px 14px;
   color: var(--ink-600);
-  background: #f4f8f7;
-  font-size: 11px;
+  background: var(--primary-soft);
+  font-size: 12px;
 }
 
 .batch-result__summary span {
@@ -151,7 +151,7 @@ const summary = computed(() => ({
 }
 
 .batch-result__failed {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .batch-result ul {
@@ -188,7 +188,7 @@ const summary = computed(() => ({
 .batch-result strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -196,7 +196,7 @@ const summary = computed(() => ({
 .batch-result small {
   margin-top: 2px;
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 @media (max-width: 520px) {

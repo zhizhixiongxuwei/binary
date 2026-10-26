@@ -255,23 +255,23 @@ function extendRetention(): void {
   min-width: 0;
   align-items: center;
   gap: 7px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .task-actions__heading h2 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
 }
 
 .task-actions__mode {
   padding: 1px 5px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface-raised);
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -289,20 +289,20 @@ function extendRetention(): void {
 .retention-summary span,
 .retention-summary small {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .retention-summary strong {
   min-width: 0;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .retention-summary small {
   grid-column: 1 / -1;
-  color: var(--red);
+  color: var(--danger);
   font-weight: 700;
 }
 
@@ -314,7 +314,7 @@ function extendRetention(): void {
   gap: 6px;
   padding: 9px 12px;
   border-left: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .task-action {
@@ -336,7 +336,7 @@ function extendRetention(): void {
 .dialog-copy {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.7;
 }
 

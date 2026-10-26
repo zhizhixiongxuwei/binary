@@ -143,7 +143,7 @@ function runLabel(run: PythonAnalysisRun): string {
   gap: 14px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .analysis-toolbar__selectors {
@@ -162,7 +162,7 @@ function runLabel(run: PythonAnalysisRun): string {
 
 .analysis-toolbar__selectors label > span {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -179,15 +179,15 @@ function runLabel(run: PythonAnalysisRun): string {
   height: 32px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
 }
 
 .analysis-toolbar__refresh:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--primary-hover);
 }
 
 .analysis-toolbar__refresh:disabled {

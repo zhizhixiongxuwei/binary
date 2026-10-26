@@ -37,7 +37,7 @@ checksum_verify() {
 require_image() {
   docker image inspect "$1" >/dev/null 2>&1 || {
     echo "missing required image: $1" >&2
-    echo "run deploy/scripts/prepare-tools.sh all CACHE_DIR or load the prepared image" >&2
+    echo "run python script/tools/prepare-tools.py all CACHE_DIR or load the prepared image" >&2
     exit 1
   }
 }
@@ -143,7 +143,7 @@ case "${1:-}" in
   build-python-checker) build_python_checker ;;
   package)
     # 产品包只导出九个运行镜像；自主验收所需的构建镜像由 create-deliveries.sh 单独封装。
-    output=${2:?usage: release.sh package OUTPUT.tar}
+    output=${2:?usage: build-images.sh package OUTPUT.tar}
     [ -d "$(dirname -- "$output")" ] || {
       echo "output directory does not exist: $(dirname -- "$output")" >&2
       exit 1
@@ -164,7 +164,7 @@ case "${1:-}" in
     echo "created $output"
     ;;
   load)
-    archive=${2:?usage: release.sh load ARCHIVE.tar}
+    archive=${2:?usage: build-images.sh load ARCHIVE.tar}
     checksum_verify "$archive"
     docker load -i "$archive"
     ;;

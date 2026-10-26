@@ -133,7 +133,7 @@ start() {
     init_data
   fi
   doctor
-  compose up -d --pull never --remove-orphans --wait
+  compose up -d --no-build --pull never --remove-orphans --wait
 }
 
 reset_and_start() {
@@ -147,7 +147,7 @@ reset_and_start() {
   find "$data_root" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
   init_data
   doctor
-  compose up -d --pull never --remove-orphans --wait
+  compose up -d --no-build --pull never --remove-orphans --wait
 }
 
 case "${1:-}" in
@@ -171,12 +171,12 @@ case "${1:-}" in
   restart)
     [ "$#" -eq 1 ] || die "usage: ./manage.sh restart"
     doctor
-    compose up -d --pull never --remove-orphans --force-recreate --wait
+    compose up -d --no-build --pull never --remove-orphans --force-recreate --wait
     ;;
   restart-app)
     [ "$#" -eq 1 ] || die "usage: ./manage.sh restart-app"
     doctor
-    compose up -d --pull never --no-deps --force-recreate --wait app
+    compose up -d --no-build --pull never --no-deps --force-recreate --wait app
     ;;
   down)
     [ "$#" -eq 1 ] || die "usage: ./manage.sh down"

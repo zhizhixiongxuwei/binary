@@ -265,6 +265,18 @@ function forgetArchive(): void {
   margin: 0;
 }
 
+.unified-upload__header h2,
+.archive-list__header h2 {
+  color: var(--ink-950);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.unified-upload__header > div > .mono,
+.archive-list__header > div > .mono {
+  display: none;
+}
+
 .unified-upload__header p {
   margin-top: 5px;
   color: var(--ink-600);
@@ -284,8 +296,8 @@ function forgetArchive(): void {
 .asset-card {
   padding: 16px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #fff;
+  border-radius: 12px;
+  background: var(--surface);
 }
 
 .asset-card__header > div {
@@ -297,7 +309,7 @@ function forgetArchive(): void {
 .asset-card__header span,
 .asset-card__state {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .asset-card__state {
@@ -306,7 +318,7 @@ function forgetArchive(): void {
 
 .asset-card__error,
 .mode-card__unsupported {
-  color: var(--red);
+  color: var(--danger);
 }
 
 .mode-grid {
@@ -325,15 +337,15 @@ function forgetArchive(): void {
   gap: 12px;
   padding: 13px;
   border: 1px solid var(--line);
-  border-radius: 5px;
-  background: #f8fafa;
+  border-radius: 12px;
+  background: var(--surface-raised);
 }
 
 .mode-card p,
 .mode-card small {
   display: block;
   margin: 5px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
 }
 

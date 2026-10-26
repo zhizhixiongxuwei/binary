@@ -22,11 +22,11 @@ import { MonitorDot } from 'lucide-vue-next'
   justify-content: center;
   gap: 8px;
   padding: 6px 14px;
-  border-bottom: 1px solid #9a6419;
-  color: #573b14;
-  background: #fff1cf;
-  box-shadow: 0 1px 4px rgb(57 43 15 / 18%);
-  font-size: 11px;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
 }
 
 .demo-mode-banner strong {
@@ -35,13 +35,13 @@ import { MonitorDot } from 'lucide-vue-next'
 
 .demo-mode-banner span {
   padding-left: 8px;
-  border-left: 1px solid #cda866;
-  font-weight: 700;
+  border-left: 1px solid var(--warning-border);
+  font-weight: 600;
 }
 
 .demo-mode-banner small {
-  color: #755320;
-  font-size: 10px;
+  color: var(--warning);
+  font-size: 12px;
 }
 
 @media (max-width: 520px) {

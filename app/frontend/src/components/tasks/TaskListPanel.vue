@@ -228,7 +228,7 @@ watch(
 </script>
 
 <template>
-  <section class="surface-panel" aria-label="检测任务列表">
+  <section class="task-list surface-panel" aria-label="检测任务列表">
     <TaskFilterBar
       :initial-value="appliedFilters"
       @apply="applyFilters"
@@ -314,33 +314,39 @@ watch(
 </template>
 
 <style scoped>
+.task-list {
+  min-width: 0;
+  container: task-list / inline-size;
+}
+
 .task-list__results {
   min-width: 0;
 }
 
 .task-list__notice {
   display: flex;
-  min-height: 38px;
+  min-height: 46px;
   align-items: center;
   gap: 8px;
-  padding: 7px 14px;
+  padding: 10px 24px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .task-list__notice--loading {
-  color: var(--ink-600);
-  background: #f4f8fa;
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .task-list__notice--error {
-  color: #8d2929;
-  background: #fff5f5;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .task-list__notice--success {
-  color: #165f54;
-  background: #eef8f6;
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .task-list__notice--error span {
@@ -363,6 +369,7 @@ watch(
   .task-list__notice {
     align-items: flex-start;
     flex-wrap: wrap;
+    padding-inline: 16px;
   }
 }
 

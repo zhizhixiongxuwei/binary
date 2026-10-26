@@ -145,8 +145,8 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 .preview-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -165,18 +165,18 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 .panel-heading p {
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
 .preview-badge {
   flex: 0 0 auto;
   padding: 4px 7px;
-  border: 1px solid #b8d7d3;
-  border-radius: 3px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
-  font-size: 10px;
+  border: 1px solid var(--primary-border);
+  border-radius: 6px;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -190,7 +190,7 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   min-width: 0;
   min-height: 164px;
   padding: 15px 16px;
-  border-right: 1px solid #e7ebeb;
+  border-right: 1px solid var(--line);
 }
 
 .role-card:last-child {
@@ -209,10 +209,10 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   height: 30px;
   flex: 0 0 30px;
   place-items: center;
-  border: 1px solid #c0d1e4;
-  border-radius: 4px;
-  color: var(--blue);
-  background: #f2f6fa;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .role-card__title strong,
@@ -222,14 +222,14 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 
 .role-card__title strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .role-card__title code {
   margin-top: 2px;
   color: var(--ink-400);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -237,7 +237,7 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   min-height: 32px;
   margin: 11px 0 9px;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.6;
 }
 
@@ -253,10 +253,10 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 .role-card li {
   padding: 3px 6px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .user-panel__toolbar {
@@ -277,16 +277,16 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   gap: 6px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-400);
-  background: #eef1f1;
-  font-size: 10px;
+  background: var(--surface-muted);
+  font-size: 12px;
   cursor: not-allowed;
 }
 
 .user-command span {
   color: var(--ink-400);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-table {
@@ -305,16 +305,16 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 
 .user-table__header {
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .user-row {
   min-height: 58px;
-  border-top: 1px solid #e7ebeb;
+  border-top: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .user-identity {
@@ -331,7 +331,7 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   flex: 0 0 30px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface-raised);
 }
@@ -348,14 +348,14 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 
 .user-identity strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .user-identity code {
   margin-top: 2px;
   color: var(--ink-400);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .role-label,
@@ -365,35 +365,35 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   align-items: center;
   padding: 2px 6px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 9px;
+  background: var(--surface-raised);
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .user-state {
   gap: 5px;
-  border-color: #b8d7d3;
-  color: var(--teal-strong);
-  background: #f1f8f7;
+  border-color: var(--success-border);
+  color: var(--success);
+  background: var(--success-soft);
 }
 
 .user-state i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--success);
 }
 
 .user-state--locked {
-  border-color: #decba7;
-  color: var(--amber);
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .user-state--locked i {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .last-active {
@@ -409,7 +409,7 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
   .role-card {
     min-height: 0;
     border-right: 0;
-    border-bottom: 1px solid #e7ebeb;
+    border-bottom: 1px solid var(--line);
   }
 
   .role-card:last-child {
@@ -439,7 +439,7 @@ const userStateLabels: Readonly<Record<UserPreview['state'], string>> = {
 
   .user-row > [role="cell"]:not(.user-identity)::before {
     color: var(--ink-400);
-    font-size: 9px;
+    font-size: 11px;
     content: attr(data-label);
   }
 }

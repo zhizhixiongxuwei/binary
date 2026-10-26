@@ -288,7 +288,7 @@ function selectBytecodeMethod(methodKey: string): void {
   gap: 16px;
   padding: 9px 14px;
   border-bottom: 1px solid var(--line);
-  background: #f4f8f7;
+  background: var(--surface-raised);
 }
 
 .capability-strip__identity {
@@ -296,7 +296,7 @@ function selectBytecodeMethod(methodKey: string): void {
   min-width: 0;
   align-items: center;
   gap: 9px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .capability-strip__identity span {
@@ -307,13 +307,13 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .capability-strip small {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .capability-strip strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -321,17 +321,17 @@ function selectBytecodeMethod(methodKey: string): void {
 .capability-strip p {
   margin: 0;
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .capability-strip__engine {
   padding: 4px 7px;
-  border: 1px solid #cfb96f;
-  border-radius: 3px;
-  color: #725817;
-  background: #fff9e8;
-  font-size: 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -340,7 +340,7 @@ function selectBytecodeMethod(methodKey: string): void {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
-  background: #f8fafa;
+  background: var(--surface-raised);
 }
 
 .decompile-preview__context > span {
@@ -351,7 +351,7 @@ function selectBytecodeMethod(methodKey: string): void {
   flex-direction: column;
   gap: 4px;
   padding: 9px 13px;
-  border-right: 1px solid #e1e6e7;
+  border-right: 1px solid var(--line);
 }
 
 .decompile-preview__context > span:last-child {
@@ -360,13 +360,13 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .decompile-preview__context small {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .decompile-preview__context strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -378,18 +378,18 @@ function selectBytecodeMethod(methodKey: string): void {
   align-items: center;
   gap: 8px;
   padding: 9px 14px;
-  border-bottom: 1px solid #e1c787;
-  color: #765816;
-  background: #fff9e9;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .capability-warning strong {
-  font-size: 9px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
 .capability-warning span {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -402,7 +402,7 @@ function selectBytecodeMethod(methodKey: string): void {
 .symbol-panel {
   min-width: 0;
   border-right: 1px solid var(--line);
-  background: #f8fafa;
+  background: var(--surface-raised);
 }
 
 .symbol-panel__heading {
@@ -421,12 +421,12 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .symbol-panel__heading strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .symbol-panel__heading span {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .symbol-search {
@@ -436,14 +436,14 @@ function selectBytecodeMethod(methodKey: string): void {
   gap: 7px;
   padding: 0 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-400);
   background: var(--surface);
 }
 
 .symbol-search:focus-within {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 1px var(--blue);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
 }
 
 .symbol-search input {
@@ -453,7 +453,7 @@ function selectBytecodeMethod(methodKey: string): void {
   outline: 0;
   color: var(--ink-800);
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .symbol-tree {
@@ -468,11 +468,11 @@ function selectBytecodeMethod(methodKey: string): void {
   margin: 0;
   overflow: hidden;
   padding: 7px 11px;
-  border-bottom: 1px solid #e4e8e9;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-600);
-  background: #eef2f2;
+  background: var(--surface-muted);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -488,7 +488,7 @@ function selectBytecodeMethod(methodKey: string): void {
   gap: 6px;
   padding: 8px 11px;
   border: 0;
-  border-bottom: 1px solid #e4e8e9;
+  border-bottom: 1px solid var(--line);
   color: var(--ink-600);
   background: transparent;
   cursor: pointer;
@@ -497,19 +497,19 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .symbol-row:hover,
 .symbol-row:focus-visible {
-  color: var(--teal-strong);
-  background: #f0f6f5;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .symbol-row:focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
 
 .symbol-row--active {
-  color: var(--teal-strong);
-  background: #e8f2f1;
-  box-shadow: 3px 0 0 var(--teal) inset;
+  color: var(--primary-hover);
+  background: var(--primary-soft);
+  box-shadow: 3px 0 0 var(--primary) inset;
 }
 
 .symbol-row__main {
@@ -527,26 +527,26 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .symbol-row__main strong {
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .symbol-row__main small,
 .symbol-row__kind {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .symbol-row__kind {
   padding: 2px 4px;
   border: 1px solid var(--line);
-  border-radius: 3px;
-  background: #ffffff;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
 }
 
 .symbol-panel__empty {
   padding: 34px 15px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   text-align: center;
 }
 
@@ -554,7 +554,7 @@ function selectBytecodeMethod(methodKey: string): void {
   display: grid;
   min-width: 0;
   grid-template-rows: auto auto minmax(320px, 1fr) auto;
-  background: #172427;
+  background: var(--surface);
 }
 
 .code-panel--method-index {
@@ -577,8 +577,8 @@ function selectBytecodeMethod(methodKey: string): void {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 14px;
-  border-bottom: 1px solid #344549;
-  background: #213136;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
 }
 
 .code-panel__title {
@@ -596,25 +596,25 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .code-panel__title strong {
   overflow: hidden;
-  color: #edf4f4;
-  font-size: 11px;
+  color: var(--ink-800);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .code-panel__title small {
   padding: 2px 4px;
-  border: 1px solid #51666a;
-  border-radius: 3px;
-  color: #b9ccce;
-  font-size: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-600);
+  font-size: 11px;
 }
 
 .code-panel__title code {
   overflow: hidden;
-  color: #a8bcbe;
+  color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -627,10 +627,10 @@ function selectBytecodeMethod(methodKey: string): void {
 
 .code-panel__badges span {
   padding: 2px 5px;
-  border: 1px solid #60787b;
-  border-radius: 3px;
-  color: #d5e5e6;
-  font-size: 8px;
+  border: 1px solid var(--ink-400);
+  border-radius: var(--radius-sm);
+  color: var(--ink-800);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -641,15 +641,15 @@ function selectBytecodeMethod(methodKey: string): void {
   align-items: center;
   gap: 16px;
   padding: 5px 14px;
-  border-bottom: 1px solid #344549;
-  color: #9eb0b3;
-  background: #1c2b2f;
-  font-size: 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-600);
+  background: var(--surface-raised);
+  font-size: 11px;
   flex-wrap: wrap;
 }
 
 .code-panel__meta code {
-  color: #cae2df;
+  color: var(--ink-700);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
 }
 
@@ -667,25 +667,25 @@ function selectBytecodeMethod(methodKey: string): void {
   margin: 0;
   overflow: auto;
   padding: 18px 20px 24px;
-  color: #d8e7e7;
-  background: #172427;
+  color: var(--ink-800);
+  background: var(--surface);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.7;
   tab-size: 4;
 }
 
 .code-panel__source:focus-visible {
-  outline: 2px solid #58a9cf;
+  outline: 2px solid var(--primary);
   outline-offset: -3px;
 }
 
 .code-panel__footnote {
   padding: 8px 14px;
-  border-top: 1px solid #344549;
-  color: #9eb0b3;
-  background: #1c2b2f;
-  font-size: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-600);
+  background: var(--surface-raised);
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -708,7 +708,7 @@ function selectBytecodeMethod(methodKey: string): void {
   }
 
   .decompile-preview__context > span:nth-child(-n + 2) {
-    border-bottom: 1px solid #e1e6e7;
+    border-bottom: 1px solid var(--line);
   }
 
   .decompile-preview__workspace {
@@ -762,7 +762,7 @@ function selectBytecodeMethod(methodKey: string): void {
 
   .code-panel__source {
     padding: 14px 12px 20px;
-    font-size: 10px;
+    font-size: 12px;
   }
 }
 </style>

@@ -177,7 +177,7 @@ function openTask(taskId: string): void {
 .archive-catalog__header > div {
   min-width: 0;
   gap: 9px;
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .archive-catalog__header span:not(.mono),
@@ -197,7 +197,7 @@ function openTask(taskId: string): void {
 .archive-catalog__header small,
 .archive-catalog__header > .mono {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .archive-catalog__error,
@@ -205,15 +205,15 @@ function openTask(taskId: string): void {
   gap: 8px;
   margin: 14px;
   padding: 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 11px;
+  background: var(--surface-raised);
+  font-size: 12px;
 }
 
 .archive-catalog__error {
-  color: var(--red);
-  background: #fff3f1;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .archive-catalog__list {
@@ -228,14 +228,14 @@ function openTask(taskId: string): void {
   border: 0;
   border-bottom: 1px solid var(--line);
   color: inherit;
-  background: #fff;
+  background: var(--surface);
   text-align: left;
   cursor: pointer;
 }
 
 .archive-catalog-row:hover,
 .archive-catalog-row[aria-expanded="true"] {
-  background: #f4f8f7;
+  background: var(--primary-soft);
 }
 
 .archive-catalog-row__icon {
@@ -244,10 +244,10 @@ function openTask(taskId: string): void {
   height: 32px;
   flex: 0 0 32px;
   place-items: center;
-  border: 1px solid #c4d9d6;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #fff;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--surface);
 }
 
 .archive-catalog-row__identity {
@@ -259,7 +259,7 @@ function openTask(taskId: string): void {
 .archive-catalog-row__metrics strong {
   overflow: hidden;
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -267,7 +267,7 @@ function openTask(taskId: string): void {
 .archive-catalog-row small,
 .archive-catalog-row time {
   color: var(--ink-500);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .archive-catalog-row__status {

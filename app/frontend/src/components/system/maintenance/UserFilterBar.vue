@@ -87,7 +87,7 @@ function clear(): void {
   gap: 9px;
   padding: 10px 17px;
   border-bottom: 1px solid var(--line);
-  background: #fbfcfc;
+  background: var(--surface-raised);
 }
 
 .user-filters label {
@@ -98,7 +98,7 @@ function clear(): void {
 
 .user-filters label > span {
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -109,10 +109,10 @@ function clear(): void {
   min-height: 32px;
   padding: 5px 7px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-800);
   background: var(--surface);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-filters > div {
@@ -128,17 +128,17 @@ function clear(): void {
   gap: 5px;
   padding: 5px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .user-filters .filter-submit {
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal);
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
 }
 
 .user-filters button:disabled {

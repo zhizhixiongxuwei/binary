@@ -27,15 +27,15 @@ withDefaults(
   align-items: flex-start;
   gap: 9px;
   padding: 10px 14px;
-  border-bottom: 1px solid #dfd7bc;
-  color: #624d20;
-  background: #fffaf0;
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .preview-notice__icon {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: #8a671b;
+  color: var(--warning);
 }
 
 .preview-notice__copy {
@@ -47,13 +47,13 @@ withDefaults(
 }
 
 .preview-notice__copy strong {
-  color: #574316;
-  font-size: 11px;
+  color: var(--warning);
+  font-size: 12px;
 }
 
 .preview-notice__copy span {
-  color: #735f30;
-  font-size: 10px;
+  color: var(--warning);
+  font-size: 12px;
   line-height: 1.55;
 }
 </style>

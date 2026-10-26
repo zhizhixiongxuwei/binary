@@ -103,7 +103,7 @@ function reset(): void {
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .finding-filters__title {
@@ -111,8 +111,8 @@ function reset(): void {
   align-items: center;
   gap: 7px;
   padding-right: 6px;
-  color: var(--teal-strong);
-  font-size: 10px;
+  color: var(--primary-hover);
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -122,15 +122,15 @@ function reset(): void {
   height: 32px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
 }
 
 .finding-filters__reset:hover:not(:disabled) {
-  border-color: var(--teal);
-  color: var(--teal-strong);
+  border-color: var(--primary);
+  color: var(--primary-hover);
 }
 
 .finding-filters__reset:disabled { cursor: not-allowed; opacity: 0.55; }

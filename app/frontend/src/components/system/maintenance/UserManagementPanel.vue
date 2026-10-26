@@ -172,8 +172,8 @@ function closeDialog(): void {
 .section-kicker {
   display: block;
   margin-bottom: 5px;
-  color: var(--teal-strong);
-  font-size: 9px;
+  color: var(--primary-hover);
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -190,7 +190,7 @@ function closeDialog(): void {
 .section-heading p {
   margin-top: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .heading-actions {
@@ -205,7 +205,7 @@ function closeDialog(): void {
   height: 32px;
   place-items: center;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--ink-600);
   background: var(--surface);
   cursor: pointer;
@@ -217,10 +217,10 @@ function closeDialog(): void {
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-color: var(--teal);
-  color: #fff;
-  background: var(--teal);
-  font-size: 10px;
+  border-color: var(--primary);
+  color: var(--surface);
+  background: var(--primary);
+  font-size: 12px;
 }
 
 .heading-actions button:disabled {
@@ -232,7 +232,7 @@ function closeDialog(): void {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-bottom: 1px solid var(--line);
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .role-strip > span {
@@ -244,7 +244,7 @@ function closeDialog(): void {
   padding: 8px 17px;
   border-right: 1px solid var(--line);
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -254,7 +254,7 @@ function closeDialog(): void {
 
 .role-strip svg {
   flex: 0 0 auto;
-  color: var(--blue);
+  color: var(--primary);
 }
 
 .role-strip strong {

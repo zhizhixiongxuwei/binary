@@ -5,7 +5,7 @@ repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd -P)
 env_file="$repo_dir/.env"
 image_lock="$repo_dir/deploy/docker/images.lock.env"
 template_root="$repo_dir/deploy/delivery"
-output_parent=${1:-/Users/chenzhe/Documents}
+output_parent=${1:?usage: create-deliveries.sh OUTPUT_PARENT (legacy demo workflow)}
 deploy_target="$output_parent/binary-deploy"
 demo_target="$output_parent/binary-demo"
 

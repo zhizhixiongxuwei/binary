@@ -224,7 +224,7 @@ watch(
   gap: 10px 12px;
   padding: 11px 14px;
   border-bottom: 1px solid var(--line);
-  background: #f8fafa;
+  background: var(--surface-raised);
 }
 
 .decompile-command__copy {
@@ -242,12 +242,12 @@ watch(
 
 .decompile-command__copy strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .decompile-command__copy small {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.4;
 }
 
@@ -257,10 +257,10 @@ watch(
   height: 29px;
   flex: 0 0 29px;
   place-items: center;
-  border: 1px solid #b8d7d3;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: #f1f8f7;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .decompile-command :deep(.el-button) {
@@ -281,11 +281,11 @@ watch(
   display: grid;
   gap: 5px;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .decompile-command__feedback > strong {
-  color: var(--teal-strong);
+  color: var(--primary-hover);
 }
 
 .decompile-command__feedback dl {
@@ -300,13 +300,13 @@ watch(
   min-width: 0;
   padding: 6px 7px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
 .decompile-command__feedback dt {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .decompile-command__feedback dd {
@@ -314,18 +314,18 @@ watch(
   margin: 3px 0 0;
   overflow-wrap: anywhere;
   color: var(--ink-800);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .decompile-command__refresh-error {
   margin: 2px 0 0;
-  color: var(--red);
+  color: var(--danger);
   overflow-wrap: anywhere;
 }
 
 .decompile-command__error {
-  color: var(--red);
-  font-size: 10px;
+  color: var(--danger);
+  font-size: 12px;
   line-height: 1.45;
 }
 

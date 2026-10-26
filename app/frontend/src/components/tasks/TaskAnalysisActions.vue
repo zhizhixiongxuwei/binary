@@ -133,28 +133,28 @@ const selectedNodeLabel = computed(
 .analysis-actions {
   min-width: 0;
   overflow: hidden;
-  border-left: 3px solid var(--teal);
+  border-left: 1px solid var(--line);
 }
 
 .analysis-actions__header {
   display: flex;
-  min-height: 62px;
+  min-height: 76px;
   align-items: center;
   gap: 10px;
-  padding: 9px 12px;
-  background: #f7fbfa;
+  padding: 14px 20px;
+  background: var(--surface);
 }
 
 .analysis-actions__icon {
   display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   place-items: center;
-  border: 1px solid #afd2cd;
-  border-radius: 4px;
-  color: var(--teal-strong);
-  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--primary-hover);
+  background: var(--primary-soft);
 }
 
 .analysis-actions__heading {
@@ -166,14 +166,14 @@ const selectedNodeLabel = computed(
 .analysis-actions__heading h2 {
   margin: 0;
   color: var(--ink-800);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .analysis-actions__heading span {
   max-width: min(36vw, 420px);
   overflow: hidden;
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -202,7 +202,7 @@ const selectedNodeLabel = computed(
   .analysis-actions__commands {
     width: 100%;
     justify-content: stretch;
-    margin-left: 42px;
+    margin-left: 50px;
   }
 
   .analysis-actions__commands :deep(.el-button) {

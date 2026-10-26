@@ -119,7 +119,7 @@ require_runtime() {
   done
   docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required"
   if [ "$(uname -s)" = Linux ] && [ "$(id -u)" -ne 0 ]; then
-    die "Linux data operations must run as root: sudo deploy/scripts/data.sh ..."
+    die "Linux data operations must run as root: sudo sh script/ops/data.sh ..."
   fi
 }
 

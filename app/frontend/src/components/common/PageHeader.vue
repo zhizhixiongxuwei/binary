@@ -9,7 +9,6 @@ defineProps<{
 <template>
   <header class="page-header">
     <div class="page-header__copy">
-      <span v-if="eyebrow" class="page-header__eyebrow mono">{{ eyebrow }}</span>
       <h1 class="page-header__title">{{ title }}</h1>
       <p v-if="description" class="page-header__description">{{ description }}</p>
     </div>
@@ -22,39 +21,30 @@ defineProps<{
 <style scoped>
 .page-header {
   display: flex;
-  min-height: 70px;
-  align-items: flex-end;
+  min-height: 64px;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-header__copy {
   min-width: 0;
 }
 
-.page-header__eyebrow {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--teal-strong);
-  font-size: 10px;
-  font-weight: 700;
-}
-
 .page-header__title {
   margin: 0;
   color: var(--ink-950);
-  font-family: "DIN Alternate", "Noto Sans SC", sans-serif;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .page-header__description {
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   color: var(--ink-600);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -64,7 +54,7 @@ defineProps<{
   flex: 0 0 auto;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
 @media (max-width: 620px) {
@@ -77,7 +67,7 @@ defineProps<{
   }
 
   .page-header__title {
-    font-size: 24px;
+    font-size: 23px;
   }
 
   .page-header__actions {

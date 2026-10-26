@@ -109,8 +109,8 @@ defineExpose({
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
-  color: var(--teal-strong);
-  background: #f7f9f9;
+  color: var(--primary-hover);
+  background: var(--surface-raised);
 }
 
 .report-source-view__heading button {
@@ -120,10 +120,10 @@ defineExpose({
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid #c8d3d2;
-  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   color: var(--ink-700);
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -134,11 +134,11 @@ defineExpose({
 
 .report-source-view__heading strong {
   color: var(--ink-800);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .report-source-view__heading small {
   color: var(--ink-600);
-  font-size: 9px;
+  font-size: 11px;
 }
 </style>

@@ -13,5 +13,14 @@ checkers/**/target/
 checkers/python/__pycache__/
 checkers/python/.pytest_cache/
 
-# .env 是本项目唯一的实际部署配置，必须提交。
+# Generated bundles, build cache, and script bytecode are not source files.
+/local/
+/release/
+/.local-*/
+/.release-*/
+/.cache/
+/script/**/__pycache__/
+/test-fixtures/
+
+# 根 .env 保留现有仓库配置策略；生成包内 .env 随 local/release 一起忽略。
 !.env

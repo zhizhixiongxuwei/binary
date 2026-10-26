@@ -360,27 +360,27 @@ onMounted(() => {
   flex: 0 0 36px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 12px;
   color: var(--ink-600);
   background: var(--surface-raised);
 }
 
 .summary-icon--teal {
-  border-color: #bdd5d2;
-  color: var(--teal);
-  background: #f1f8f7;
+  border-color: var(--primary-border);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .summary-icon--blue {
-  border-color: #c0d1e4;
-  color: var(--blue);
-  background: #f2f6fa;
+  border-color: var(--primary-border);
+  color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .summary-icon--amber {
-  border-color: #decba7;
-  color: var(--amber);
-  background: #fff9ef;
+  border-color: var(--warning-border);
+  color: var(--warning);
+  background: var(--warning-soft);
 }
 
 .summary-item > div {
@@ -397,13 +397,13 @@ onMounted(() => {
   display: block;
   margin-top: 4px;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
 .summary-item dt {
   color: var(--ink-600);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .summary-item dd {
@@ -429,27 +429,27 @@ onMounted(() => {
 }
 
 .service-value--healthy {
-  color: var(--teal-strong) !important;
+  color: var(--success) !important;
 }
 
 .service-value--healthy i {
-  background: var(--teal);
+  background: var(--success);
 }
 
 .service-value--degraded {
-  color: var(--amber) !important;
+  color: var(--warning) !important;
 }
 
 .service-value--degraded i {
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .service-value--unavailable {
-  color: var(--red) !important;
+  color: var(--danger) !important;
 }
 
 .service-value--unavailable i {
-  background: var(--red);
+  background: var(--danger);
 }
 
 .repository-meter {
@@ -457,13 +457,13 @@ onMounted(() => {
   margin-top: 8px;
   overflow: hidden;
   border-radius: 2px;
-  background: #e6eaeb;
+  background: var(--line);
 }
 
 .repository-meter span {
   display: block;
   height: 100%;
-  background: var(--amber);
+  background: var(--warning);
 }
 
 .runtime-observations {
@@ -505,14 +505,14 @@ onMounted(() => {
 .runtime-block p {
   margin-top: 3px;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .runtime-block header > span {
   flex: 0 0 auto;
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .task-counts {
@@ -530,8 +530,8 @@ onMounted(() => {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border-right: 1px solid #e7ebeb;
-  border-bottom: 1px solid #e7ebeb;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .task-counts dt,
@@ -542,7 +542,7 @@ onMounted(() => {
 .task-counts dt {
   min-width: 0;
   color: var(--ink-600);
-  font-size: 8px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -569,8 +569,8 @@ onMounted(() => {
   min-width: 0;
   min-height: 54px;
   padding: 9px 12px;
-  border-right: 1px solid #e7ebeb;
-  border-bottom: 1px solid #e7ebeb;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .lease-summary dt,
@@ -580,13 +580,13 @@ onMounted(() => {
 
 .lease-summary dt {
   color: var(--ink-400);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .lease-summary dd {
   margin-top: 5px;
   color: var(--ink-800);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -595,7 +595,7 @@ onMounted(() => {
   align-content: start;
   gap: 6px;
   padding: 10px;
-  background: #f7f9f9;
+  background: var(--surface-raised);
 }
 
 .lease-kinds span {
@@ -606,7 +606,7 @@ onMounted(() => {
   gap: 8px;
   padding: 5px 7px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   background: var(--surface);
 }
 
@@ -614,7 +614,7 @@ onMounted(() => {
 .lease-kinds strong {
   color: var(--ink-600);
   font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
@@ -632,8 +632,8 @@ onMounted(() => {
   padding: 6px 16px;
   border-top: 1px solid var(--line);
   color: var(--ink-400);
-  background: #f7f9f9;
-  font-size: 8px;
+  background: var(--surface-raised);
+  font-size: 11px;
 }
 
 .build-footnote code {
@@ -658,7 +658,7 @@ onMounted(() => {
 
 .analyzers header span {
   color: var(--ink-400);
-  font-size: 10px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -676,7 +676,7 @@ onMounted(() => {
 .analyzer-table th,
 .analyzer-table td {
   padding: 10px 17px;
-  border-bottom: 1px solid #e8ebec;
+  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
   overflow-wrap: anywhere;
@@ -684,8 +684,8 @@ onMounted(() => {
 
 .analyzer-table th {
   color: var(--ink-600);
-  background: #f7f9f9;
-  font-size: 10px;
+  background: var(--surface-raised);
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -712,7 +712,7 @@ onMounted(() => {
 
 .analyzer-table td {
   color: var(--ink-600);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .analyzer-state {
@@ -725,11 +725,11 @@ onMounted(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--danger);
 }
 
 .analyzer-state--available i {
-  background: var(--teal);
+  background: var(--success);
 }
 
 @container system-status (max-width: 900px) {
