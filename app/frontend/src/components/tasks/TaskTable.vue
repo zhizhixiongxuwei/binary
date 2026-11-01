@@ -150,14 +150,14 @@ function changePageSize(value: unknown): void {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" min-width="8">
+        <el-table-column label="类型" width="104" align="center">
           <template #default="{ row }: { row: ScanTask }">
-            <span class="table-token mono" :title="row.input_type">
+            <span class="table-token table-token--type mono" :title="row.input_type">
               {{ row.input_type }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="分析模式" min-width="12">
+        <el-table-column label="分析模式" min-width="12" align="center">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token">
               {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '压缩包' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
@@ -188,7 +188,7 @@ function changePageSize(value: unknown): void {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="创建者" min-width="10">
+        <el-table-column label="创建者" min-width="10" align="center">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token" :title="row.creator_name">
               {{ row.creator_name }}
@@ -442,6 +442,11 @@ function changePageSize(value: unknown): void {
   color: var(--ink-600);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.table-token--type {
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .row-command {
