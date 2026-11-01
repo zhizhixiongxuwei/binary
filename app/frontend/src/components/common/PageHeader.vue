@@ -7,76 +7,40 @@ defineProps<{
 </script>
 
 <template>
-  <header class="page-header">
-    <div class="page-header__copy">
-      <h1 class="page-header__title">{{ title }}</h1>
-      <p v-if="description" class="page-header__description">{{ description }}</p>
-    </div>
-    <div v-if="$slots.actions" class="page-header__actions">
+  <Teleport v-if="$slots.actions" defer to="#page-header-actions">
+    <div class="page-header__actions" role="group" :aria-label="`${title}操作`">
       <slot name="actions" />
     </div>
-  </header>
+  </Teleport>
+  <p v-if="description" class="page-header__description">{{ description }}</p>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.page-header__copy {
-  min-width: 0;
-}
-
-.page-header__title {
-  margin: 0;
-  color: var(--ink-950);
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
 .page-header__description {
-  margin: 7px 0 0;
+  margin: 0 0 20px;
   color: var(--ink-600);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
 }
 
 .page-header__actions {
   display: flex;
   min-width: 0;
-  flex: 0 0 auto;
+  align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+}
+
+.page-header__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 @media (max-width: 620px) {
-  .page-header {
-    min-height: 0;
-    align-items: stretch;
-    flex-direction: column;
-    gap: 14px;
-    margin-bottom: 18px;
-  }
-
-  .page-header__title {
-    font-size: 23px;
-  }
-
-  .page-header__actions {
-    width: 100%;
-  }
-
   .page-header__actions :deep(.el-button) {
-    flex: 1;
-    margin-left: 0;
+    min-height: 32px;
+    padding: 6px 10px;
+    font-size: 12px;
   }
 }
 </style>

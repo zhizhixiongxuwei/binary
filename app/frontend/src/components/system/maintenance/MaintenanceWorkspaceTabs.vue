@@ -126,7 +126,6 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
           </button>
         </div>
       </div>
-      <span class="navigation-scope mono">LOCAL / ADMIN</span>
     </div>
 
     <div
@@ -156,13 +155,13 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
 .maintenance-navigation {
   display: flex;
   min-width: 0;
-  align-items: stretch;
+  flex-direction: column;
   overflow: hidden;
 }
 
 .maintenance-navigation__scroll {
   min-width: 0;
-  flex: 1;
+  width: 100%;
   overflow-x: auto;
   scrollbar-width: thin;
 }
@@ -170,8 +169,8 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
 .maintenance-tabs {
   display: grid;
   width: 100%;
-  min-width: 710px;
-  grid-template-columns: repeat(5, minmax(132px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(132px, 1fr);
 }
 
 .maintenance-tab {
@@ -227,26 +226,11 @@ function handleTabKeydown(event: KeyboardEvent, tab: MaintenanceTab): void {
   font-size: 11px;
 }
 
-.navigation-scope {
-  display: grid;
-  min-width: 92px;
-  place-items: center;
-  padding: 0 10px;
-  color: var(--ink-400);
-  background: var(--surface-raised);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
 .maintenance-workspace__panel {
   min-width: 0;
 }
 
 @media (max-width: 560px) {
-  .navigation-scope {
-    display: none;
-  }
-
   .maintenance-tab {
     min-height: 54px;
     padding: 8px 10px;

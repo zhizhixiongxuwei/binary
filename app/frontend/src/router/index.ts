@@ -10,6 +10,7 @@ declare module 'vue-router' {
     // 路由元数据只负责前端导航体验；真正的访问控制仍由后端接口鉴权兜底。
     public?: boolean
     roles?: UserRole[]
+    title?: string
   }
 }
 
@@ -28,38 +29,43 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'overview',
         component: () => import('@/views/OverviewView.vue'),
+        meta: { title: '系统概览' },
       },
       {
         path: 'tasks',
         name: 'tasks',
         component: () => import('@/views/TasksView.vue'),
+        meta: { title: '检测任务' },
       },
       {
         path: 'archives',
         name: 'archive-imports',
         component: () => import('@/views/ArchiveImportsView.vue'),
+        meta: { title: '归档批次' },
       },
       {
         path: 'change-password',
         name: 'change-password',
         component: () => import('@/views/ChangePasswordView.vue'),
+        meta: { title: '修改密码' },
       },
       {
         path: 'tasks/new',
         name: 'task-create',
         component: () => import('@/views/CreateTaskView.vue'),
-        meta: { roles: ['administrator', 'operator'] },
+        meta: { title: '新建任务', roles: ['administrator', 'operator'] },
       },
       {
         path: 'tasks/:id',
         name: 'task-detail',
         component: () => import('@/views/TaskDetailView.vue'),
+        meta: { title: '任务详情' },
       },
       {
         path: 'system',
         name: 'system',
         component: () => import('@/views/SystemView.vue'),
-        meta: { roles: ['administrator'] },
+        meta: { title: '系统维护', roles: ['administrator'] },
       },
     ],
   },
