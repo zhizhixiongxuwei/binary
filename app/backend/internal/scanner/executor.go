@@ -229,17 +229,17 @@ func (e *Executor) trivy(ctx context.Context, claim job.Claim) error {
 	if err := json.Unmarshal(body, &report); err != nil {
 		return fmt.Errorf("parse trivy report: %w", err)
 	}
-	artifactKey, artifactSize, err := publishArtifact(
-		e.cfg.Worker.ArtifactRoot, subject.taskID, claim.RunID, claim.FencingToken, "trivy.json", reportPath,
-	)
-	if err != nil {
-		return err
-	}
 	artifactID, err := identity.UUID()
 	if err != nil {
 		return err
 	}
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
+		artifactKey, artifactSize, err := publishArtifact(
+			e.cfg.Worker.ArtifactRoot, subject.taskID, claim.RunID, claim.FencingToken, "trivy.json", reportPath,
+		)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM findings WHERE run_id = ?", claim.RunID); err != nil {
 			return fmt.Errorf("replace trivy findings: %w", err)
 		}

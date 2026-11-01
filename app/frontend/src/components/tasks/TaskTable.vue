@@ -102,14 +102,15 @@ function changePageSize(value: unknown): void {
 <template>
   <div class="task-table">
     <span class="sr-only">
-      任务列表支持横向滚动；任务名称和每行末尾的详情按钮均可打开任务。
+      点击任务名称或任务所在行可打开详情，操作列可删除任务。
     </span>
     <div
       class="task-table__scroller"
       role="region"
-      aria-label="任务列表，可横向滚动查看全部字段"
-      tabindex="0"
+      aria-label="任务列表"
     >
+      <!-- Use small proportional column bases so fit can share the available
+           width instead of imposing a desktop-sized horizontal scroll area. -->
       <el-table
         class="task-table__data"
         :data="items"
@@ -117,7 +118,7 @@ function changePageSize(value: unknown): void {
         row-key="id"
         @row-click="(row: ScanTask) => emit('open', row.id)"
       >
-        <el-table-column label="任务" min-width="260">
+        <el-table-column label="任务" min-width="22">
           <template #default="{ row }: { row: ScanTask }">
             <div class="task-cell">
               <span class="task-cell__icon" aria-hidden="true">
@@ -149,31 +150,26 @@ function changePageSize(value: unknown): void {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" min-width="105">
+        <el-table-column label="类型" min-width="8">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token mono" :title="row.input_type">
               {{ row.input_type }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="分析模式" min-width="115">
+        <el-table-column label="分析模式" min-width="12">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token">
               {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '压缩包' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="执行状态" min-width="136">
+        <el-table-column label="执行状态" min-width="12">
           <template #default="{ row }: { row: ScanTask }">
             <StatusBadge :value="row.status" kind="status" />
           </template>
         </el-table-column>
-        <el-table-column label="风险等级" min-width="116">
-          <template #default="{ row }: { row: ScanTask }">
-            <StatusBadge :value="row.risk_level" kind="risk" />
-          </template>
-        </el-table-column>
-        <el-table-column label="进度" min-width="150">
+        <el-table-column label="进度" min-width="14">
           <template #default="{ row }: { row: ScanTask }">
             <div class="progress-cell">
               <el-progress
@@ -192,23 +188,23 @@ function changePageSize(value: unknown): void {
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="创建者" min-width="105">
+        <el-table-column label="创建者" min-width="10">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token" :title="row.creator_name">
               {{ row.creator_name }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="创建时间" min-width="156">
+        <el-table-column label="创建时间" min-width="15">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-muted">{{ formatDateTime(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="92" align="center">
+        <el-table-column label="操作" width="64" align="center">
           <template #default="{ row }: { row: ScanTask }">
             <div class="row-commands" role="group" :aria-label="`${row.name} 任务操作`">
               <button
-                class="row-command row-command--danger"
+                class="row-command"
                 type="button"
                 :disabled="!deleteAction(row).enabled || pendingTaskId === row.id"
                 :aria-label="`删除任务：${row.name}`"
@@ -216,15 +212,6 @@ function changePageSize(value: unknown): void {
                 @click.stop="emit('delete', row)"
               >
                 <Trash2 :size="16" aria-hidden="true" />
-              </button>
-              <button
-                class="row-command"
-                type="button"
-                :aria-label="`查看任务详情：${row.name}`"
-                title="查看任务详情"
-                @click.stop="emit('open', row.id)"
-              >
-                <ChevronRight :size="18" aria-hidden="true" />
               </button>
             </div>
           </template>
@@ -286,22 +273,16 @@ function changePageSize(value: unknown): void {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+  container-type: inline-size;
 }
 
 .task-table__scroller {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-}
-
-.task-table__scroller:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: -2px;
 }
 
 .task-table__data {
-  min-width: 1080px;
+  width: 100%;
 }
 
 .task-table :deep(.el-table__row) {
@@ -318,17 +299,28 @@ function changePageSize(value: unknown): void {
 }
 
 .task-table :deep(.el-table .cell) {
-  padding-inline: 16px;
+  padding-inline: 8px;
+  overflow-wrap: anywhere;
 }
 
 .task-table :deep(.el-table td:first-child .cell),
 .task-table :deep(.el-table th:first-child .cell) {
-  padding-left: 24px;
+  padding-left: 16px;
 }
 
 .task-table :deep(.el-table td:last-child .cell),
 .task-table :deep(.el-table th:last-child .cell) {
-  padding-inline: 10px;
+  padding-inline: 8px;
+}
+
+.task-table :deep(.status-badge) {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.task-table :deep(.status-badge__dot) {
+  flex-shrink: 0;
 }
 
 .task-cell {
@@ -422,7 +414,7 @@ function changePageSize(value: unknown): void {
 
 .progress-cell {
   display: grid;
-  grid-template-columns: minmax(60px, 1fr) 40px;
+  grid-template-columns: minmax(0, 1fr) 40px;
   align-items: center;
   gap: 8px;
 }
@@ -438,8 +430,10 @@ function changePageSize(value: unknown): void {
 }
 
 .table-muted {
+  display: block;
   color: var(--ink-600);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .table-token {
@@ -447,37 +441,31 @@ function changePageSize(value: unknown): void {
   overflow: hidden;
   color: var(--ink-600);
   font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .row-command {
-  display: grid;
+  display: inline-flex;
   width: 32px;
   height: 32px;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
-  color: var(--primary);
+  color: var(--ink-500);
   background: transparent;
   cursor: pointer;
 }
 
 .row-commands {
-  display: grid;
-  width: 68px;
-  grid-template-columns: repeat(2, 32px);
-  gap: 4px;
+  display: flex;
+  justify-content: center;
 }
 
 .row-command:hover {
-  color: var(--primary-hover);
-  background: var(--primary-soft);
-}
-
-.row-command--danger:hover:not(:disabled) {
-  color: var(--danger);
-  background: var(--danger-soft);
+  color: var(--ink-800);
+  background: var(--surface-muted);
 }
 
 .row-command:disabled {
@@ -489,6 +477,30 @@ function changePageSize(value: unknown): void {
 .row-command:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
+}
+
+@container (max-width: 850px) {
+  .task-cell {
+    gap: 0;
+  }
+
+  .task-cell__icon {
+    display: none;
+  }
+
+  .progress-cell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .progress-cell span {
+    text-align: left;
+  }
+
+  .task-table :deep(.status-badge) {
+    gap: 4px;
+    padding-inline: 5px;
+  }
 }
 
 .task-table__footer {

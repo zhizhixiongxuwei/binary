@@ -17,7 +17,8 @@ import (
 
 // Server 封装 HTTP 生命周期；路由、鉴权和业务服务在 NewServer 中一次性完成组装。
 type Server struct {
-	http *http.Server
+	http  *http.Server
+	tasks *taskService
 }
 
 // NewServer 是后端的 HTTP 组合根。它在同一个路由树上明确区分公开探针、登录入口、
@@ -129,6 +130,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	})
 
 	return &Server{
+		tasks: tasks,
 		http: &http.Server{
 			Addr:              cfg.App.ListenAddr,
 			Handler:           router,

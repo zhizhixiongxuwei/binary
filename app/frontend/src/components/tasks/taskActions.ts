@@ -108,7 +108,7 @@ export function getTaskActionModel(context: TaskActionContext): TaskActionModel 
     ? disabled('只有管理员，或作为创建者的检测人员可以删除任务。')
     : TERMINAL_DELETE_STATUSES.has(status)
       ? disabled('任务已进入删除流程。')
-      : enabled('提交删除请求；任务先进入待删除状态，后台清理完成后保留审计记录。')
+      : enabled('删除任务及关联数据；其他任务共用的样本和审计记录会保留。')
 
   const expiry = parseSampleExpiry(task.sample_expires_at)
   const extend = userRole !== 'administrator'

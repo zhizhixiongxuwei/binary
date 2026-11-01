@@ -50,7 +50,7 @@ watch(open, (visible) => {
   >
     <div class="delete-confirmation">
       <p>
-        提交后任务进入删除流程。后台将清理挂载目录中的样本引用、提取文件、反编译结果、Trivy 检测结果和生成报告；任务审计记录继续保留。
+        删除后将清理该任务的检测结果、提取文件、反编译源码和报告，以及不再被其他任务或上传记录引用的原始样本。此操作无法撤销，审计记录会保留。
       </p>
       <code>{{ taskName }}</code>
       <label for="delete-task-name">输入任务名确认</label>
@@ -75,7 +75,7 @@ watch(open, (visible) => {
         :disabled="!confirmed || pending"
         @click="confirm"
       >
-        提交删除
+        删除任务及数据
       </el-button>
     </template>
   </el-dialog>

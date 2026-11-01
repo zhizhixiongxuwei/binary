@@ -128,6 +128,17 @@ func (s *taskService) createReport(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
 	}
+	tx, err := s.db.BeginTx(c, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
+		return
+	}
+	defer tx.Rollback()
+	var liveTask string
+	if err := tx.QueryRowContext(c, `SELECT id FROM tasks WHERE id = ? AND deleted_at IS NULL FOR SHARE`, taskID).Scan(&liveTask); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "report_subject_not_found"})
+		return
+	}
 	relative, sizeBytes, err := publishReportFile(s.reportRoot, taskID, reportID, request.Format, reportBody)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
@@ -141,12 +152,6 @@ func (s *taskService) createReport(c *gin.Context) {
 	}()
 	selected, _ := json.Marshal(request.RunIDs)
 	digest := sha256.Sum256(reportBody)
-	tx, err := s.db.BeginTx(c, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
-		return
-	}
-	defer tx.Rollback()
 	storageKey := filepath.ToSlash(filepath.Join("reports", relative))
 	if _, err := tx.ExecContext(c, `INSERT INTO reports
 		(id, task_id, created_by, idempotency_key, format, schema_version, status, storage_key, sha256,

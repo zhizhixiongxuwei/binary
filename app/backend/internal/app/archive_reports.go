@@ -200,6 +200,25 @@ func (s *taskService) createArchiveReportBundle(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_report_bundle_creation_failed"})
 		return
 	}
+	tx, err := s.db.BeginTx(c, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_report_bundle_creation_failed"})
+		return
+	}
+	defer tx.Rollback()
+	var liveTask string
+	if err := tx.QueryRowContext(c, `SELECT t.id FROM tasks t JOIN runs r ON r.task_id = t.id
+		WHERE r.id = ? AND t.deleted_at IS NULL FOR SHARE`, importID).Scan(&liveTask); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "archive_import_not_found"})
+		return
+	}
+	for _, child := range prepared.Manifest.Children {
+		if err := tx.QueryRowContext(c, `SELECT id FROM tasks WHERE id = ? AND deleted_at IS NULL FOR SHARE`,
+			child.TaskID).Scan(&liveTask); err != nil {
+			c.JSON(http.StatusConflict, gin.H{"error": "archive_reports_not_ready"})
+			return
+		}
+	}
 	relative, digest, sizeBytes, err := s.publishArchiveBundle(importID, bundleID, prepared)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_report_bundle_creation_failed"})
@@ -217,12 +236,6 @@ func (s *taskService) createArchiveReportBundle(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_report_bundle_creation_failed"})
 		return
 	}
-	tx, err := s.db.BeginTx(c, nil)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_report_bundle_creation_failed"})
-		return
-	}
-	defer tx.Rollback()
 	storageKey := filepath.ToSlash(filepath.Join("reports", relative))
 	if _, err := tx.ExecContext(c, `INSERT INTO archive_report_bundles
 		(id, import_run_id, created_by, idempotency_key, status, schema_version, storage_key,

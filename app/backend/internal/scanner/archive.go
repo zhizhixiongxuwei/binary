@@ -32,6 +32,11 @@ type archiveItem struct {
 // archive 物化且仅物化输入归档的一层内容。条目 Blob 先写入内容寻址存储，随后所有索引、
 // 文件节点、任务状态和事件在同一个 fenced 事务中发布；重入时已有 archive_entries 会使事务短路。
 func (e *Executor) archive(ctx context.Context, claim job.Claim) error {
+	unlock, err := e.blobs.LockPublication(ctx, false)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	subject, format, err := e.loadArchiveSubject(ctx, claim.RunID)
 	if err != nil {
 		return err

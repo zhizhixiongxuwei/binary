@@ -361,6 +361,18 @@ func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql
 		}
 		return fmt.Errorf("validate publication fence: %w", err)
 	}
+	// Lock the parent before apply can publish files. Cleanup either waits for
+	// this entire publication or invalidates the fence before any files appear.
+	// This also prevents an FK/deletion deadlock from leaving an untracked
+	// source directory after apply has already written it to disk.
+	var taskID string
+	if err := tx.QueryRowContext(ctx, `SELECT t.id FROM tasks t JOIN runs r ON r.task_id = t.id
+		WHERE r.id = ? FOR SHARE`, claim.RunID).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrFenceLost
+		}
+		return fmt.Errorf("lock publication task: %w", err)
+	}
 	if err := apply(tx); err != nil {
 		return err
 	}

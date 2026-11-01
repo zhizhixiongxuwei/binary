@@ -390,6 +390,16 @@ paths:
         "413": { description: Upload exceeds configured size }
         "422": { description: Unsupported content or declared category does not match server detection; no task or run is created }
   /api/v1/tasks/{taskID}:
+    delete:
+      description: Administrators may delete any task; operators may delete their own tasks. The task disappears immediately. Durable cleanup cancels its jobs and removes related records and files, including unreferenced upload/blob data. Shared samples and independent child tasks are retained. Audit logs remain.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/CSRFToken"
+      responses:
+        "204": { description: Deletion and durable cleanup request committed }
+        "403": { description: Task deletion is not permitted for this user }
+        "404": { description: Task not found }
     get:
       security: [{ sessionCookie: [] }]
       parameters:

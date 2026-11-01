@@ -55,6 +55,7 @@ func main() {
 		log.Fatal(err)
 	}
 	errCh := make(chan error, 1)
+	go server.CleanupDeletedTasks(ctx)
 	go func() { errCh <- server.Run() }()
 	select {
 	case <-ctx.Done():

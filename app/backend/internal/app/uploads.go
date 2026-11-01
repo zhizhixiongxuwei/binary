@@ -572,6 +572,12 @@ func (s *taskService) completeUpload(c *gin.Context) {
 	}
 	reader := &uploadPartsReader{directory: uploadDirectory, parts: parts}
 	defer reader.Close()
+	unlock, err := s.blobs.LockPublication(c.Request.Context(), false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload_storage_failed"})
+		return
+	}
+	defer unlock()
 	blob, err := s.blobs.Ingest(reader, s.uploadMaxBytes)
 	if err != nil {
 		if errors.Is(err, storage.ErrBlobTooLarge) {

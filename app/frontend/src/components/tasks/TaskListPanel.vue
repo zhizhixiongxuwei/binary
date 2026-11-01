@@ -185,8 +185,12 @@ async function confirmDelete(): Promise<void> {
   try {
     await api.deleteTask(target.id)
     deleteDialogOpen.value = false
-    deleteFeedback.value = `“${target.name}”已进入删除流程。`
+    deleteFeedback.value = `“${target.name}”已从列表移除，后台正在清理任务及关联数据。`
     await taskList.reload()
+    if (taskList.items.value.length === 0 && query.cursor) {
+      if (cursorHistory.value.length) showPreviousPage()
+      else showFirstPage()
+    }
   } catch (error) {
     deleteError.value =
       error instanceof ApiError

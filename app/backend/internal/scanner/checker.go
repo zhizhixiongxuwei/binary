@@ -250,13 +250,6 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	if err := artifactFile.Close(); err != nil {
 		return fmt.Errorf("close checker evidence: %w", err)
 	}
-	artifactKey, artifactSize, err := publishArtifact(
-		e.cfg.Worker.ArtifactRoot, project.taskID, claim.RunID, claim.FencingToken,
-		"checker-response.json", artifactPath,
-	)
-	if err != nil {
-		return err
-	}
 	artifactID, err := identity.UUID()
 	if err != nil {
 		return err
@@ -268,6 +261,13 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	})
 
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
+		artifactKey, artifactSize, err := publishArtifact(
+			e.cfg.Worker.ArtifactRoot, project.taskID, claim.RunID, claim.FencingToken,
+			"checker-response.json", artifactPath,
+		)
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM findings WHERE run_id = ?", claim.RunID); err != nil {
 			return fmt.Errorf("replace checker findings: %w", err)
 		}

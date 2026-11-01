@@ -135,15 +135,17 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	if err != nil {
 		return err
 	}
-	publication, err := workspace.PublishProject(e.cfg.Worker.ProjectRoot, projectID, storage.Manifest{
-		RunID: claim.RunID, InputBlobID: subject.blobID, InputSHA256: subject.blobSHA256,
-		InputPath: subject.logicalPath, Kind: string(e.mode), Language: e.language(), Quality: result.quality,
-		ToolName: result.toolName, ToolVersion: e.cfg.Worker.ToolVersion,
-	})
-	if err != nil {
-		return err
-	}
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
+		// Publish files only while the job fence is locked, so task deletion
+		// cannot miss a project published by a worker that has been cancelled.
+		publication, err := workspace.PublishProject(e.cfg.Worker.ProjectRoot, projectID, storage.Manifest{
+			RunID: claim.RunID, InputBlobID: subject.blobID, InputSHA256: subject.blobSHA256,
+			InputPath: subject.logicalPath, Kind: string(e.mode), Language: e.language(), Quality: result.quality,
+			ToolName: result.toolName, ToolVersion: e.cfg.Worker.ToolVersion,
+		})
+		if err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO source_projects
 			(id, task_id, file_node_id, input_blob_id, run_id, source_kind, language, result_quality,
 			 root_storage_key, manifest_sha256, file_count, size_bytes, state)
