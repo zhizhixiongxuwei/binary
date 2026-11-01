@@ -8,6 +8,7 @@ import {
   DEMO_TASK_IDS,
   DEMO_TASKS,
 } from '@/api/demo/fixtures'
+import { DEMO_DECOMPILE_PROJECT, DEMO_PROJECT_ID, DEMO_SOURCE_FILES } from '@/api/demo/insightFixtures'
 import type {
   AdminUser,
   ArchiveImport,
@@ -931,20 +932,22 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       await delay()
       requireUser()
       findTask(taskId)
-      return { items: [] }
+      return { items: taskId === DEMO_TASK_IDS.apk ? [DEMO_DECOMPILE_PROJECT] : [] }
     },
 
-    async listDecompileSourceFiles(taskId) {
+    async listDecompileSourceFiles(taskId, projectId) {
       await delay()
       requireUser()
       findTask(taskId)
-      return { files: [] }
+      return { files: taskId === DEMO_TASK_IDS.apk && projectId === DEMO_PROJECT_ID ? DEMO_SOURCE_FILES.map(({ content: _content, ...file }) => file) : [] }
     },
 
-    async getDecompileSourceFileContent(taskId) {
+    async getDecompileSourceFileContent(taskId, projectId, fileId) {
       await delay()
       requireUser()
       findTask(taskId)
+      const file = taskId === DEMO_TASK_IDS.apk && projectId === DEMO_PROJECT_ID ? DEMO_SOURCE_FILES.find(item => item.id === fileId) : undefined
+      if (file) return file
       throw new ApiError('界面预览不读取真实反编译源码文件', 404, {
         code: 'DECOMPILE_SOURCE_FILE_NOT_FOUND',
       })

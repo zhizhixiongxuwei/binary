@@ -79,6 +79,7 @@ describe('offline preview model settings', () => {
     const demo = await import('@/api/llm')
     const fetchMock = vi.fn().mockRejectedValue(new Error('Preview must stay offline'))
     vi.stubGlobal('fetch', fetchMock)
+    expect(await demo.getLLMStatus()).toMatchObject({ enabled: true, configured: true })
     const settings = { enabled: true, provider: 'fixture', baseUrl: 'http://localhost:9999', model: 'fixture', maxInputChars: 2000, timeoutSeconds: 10, maxConcurrent: 1 }
     const configured = await demo.saveLLMSettings({ ...settings, apiKey: 'test-only-secret' })
     expect(configured.configured).toBe(true)

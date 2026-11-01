@@ -150,7 +150,7 @@ export const DEMO_TASKS: TaskDetail[] = [
     original_filename: 'field-console.apk',
     size_bytes: 31_457_280,
     sha256: '9c2c46a7db702118fb5039ce44521daca93f504eb333528d979526c8876e325d',
-    sample_expires_at: '2026-08-27T17:12:00+08:00',
+    sample_expires_at: '2027-08-27T17:12:00+08:00',
     sample_deleted_at: null,
   },
 ]

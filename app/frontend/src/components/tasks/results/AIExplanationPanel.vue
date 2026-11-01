@@ -11,12 +11,13 @@ import { useSessionStore } from '@/stores/session'
 
 const props = withDefaults(defineProps<{
   open: boolean; taskId: string; projectId: string; fileId: string; sourceSha256?: string | undefined
-  source: string; filename: string; lineCount: number; loading: boolean; selection: SourceSelection | null
+  source: string; filename: string; lineCount: number; loading: boolean; selection: SourceSelection | null; functionSelection?: SourceSelection | null
   embedded?: boolean; paneVisible?: boolean; availableWidth?: number; resizable?: boolean
 }>(), { embedded: false, paneVisible: true, resizable: true })
 const emit = defineEmits<{ 'update:open': [value: boolean]; navigate: [value: { startLine: number; endLine: number }]; resize: [width: number] }>()
 const session = useSessionStore()
-const model = useAIExplanation({ source: () => props, open: () => props.open, role: () => session.user?.role ?? null })
+const model = useAIExplanation({ source: () => ({ ...props, selection: props.functionSelection ?? props.selection }), open: () => props.open, role: () => session.user?.role ?? null })
+watch(() => props.functionSelection, value => { if (value) model.scope.value = 'selection' })
 const folded = shallowRef(false)
 const copyFeedback = shallowRef('')
 const panel = useTemplateRef<HTMLElement>('panel')
@@ -121,8 +122,8 @@ onScopeDispose(() => { window.removeEventListener('resize', windowResized) })
         <template v-if="model.canGenerate.value">
           <section class="ai-request" aria-label="代码发送范围确认">
             <div class="ai-section-heading"><h3>确认发送范围</h3><button type="button" class="ai-text-button" :disabled="model.generating.value || model.statusLoading.value" @click="model.refreshStatus"><RefreshCw :size="13" />刷新服务</button></div>
-            <dl class="ai-destination"><div><dt>接收服务</dt><dd>{{ provider }} · {{ model.status.value?.model || '未配置' }}</dd></div><div><dt>接口地址</dt><dd>{{ model.status.value?.baseUrl || '尚未读取' }}</dd></div></dl>
-            <fieldset class="ai-scope" :disabled="model.generating.value || loading"><legend class="sr-only">解释范围</legend><label><input v-model="model.scope.value" type="radio" value="file">当前文件</label><label><input v-model="model.scope.value" type="radio" value="selection" :disabled="!selection">所选行</label></fieldset>
+            <dl class="ai-destination"><div><dt>接收服务</dt><dd>{{ isDemoMode ? '本地示例 · 演示解释' : provider + ' · ' + (model.status.value?.model || '未配置') }}</dd></div><div><dt>接口地址</dt><dd>{{ isDemoMode ? '浏览器内存 · 无外发' : model.status.value?.baseUrl || '尚未读取' }}</dd></div></dl>
+            <fieldset class="ai-scope" :disabled="model.generating.value || loading"><legend class="sr-only">解释范围</legend><label><input v-model="model.scope.value" type="radio" value="file">当前文件</label><label><input v-model="model.scope.value" type="radio" value="selection" :disabled="!(functionSelection ?? selection)">{{ functionSelection ? '当前函数' : '所选行' }}</label></fieldset>
             <p class="ai-range">L{{ model.range.value.startLine }}–L{{ model.range.value.endLine }} · {{ model.range.value.chars.toLocaleString() }} 字符<span v-if="model.status.value"> / 上限 {{ model.status.value.maxInputChars.toLocaleString() }}</span></p>
             <p v-if="model.scope.value === 'selection'" class="ai-help">按所选起止行发送完整代码行；选区变化后请重新核对。</p>
             <details class="ai-preview"><summary>查看将发送的源码{{ model.range.value.text.length > 6000 ? '（预览前 6,000 字符）' : '' }}</summary><pre>{{ preview || '暂无可发送内容' }}</pre></details>

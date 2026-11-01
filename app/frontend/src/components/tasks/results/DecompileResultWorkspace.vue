@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ChevronRight, Copy, FileCode2, FolderTree, Info, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Sparkles, TriangleAlert, X } from 'lucide-vue-next'
+import { ChevronRight, Copy, FileCode2, FolderTree, Info, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Search, Sparkles, TriangleAlert, Workflow, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import type { DecompileResult, DecompileSourceFile, DecompileSourceFileContent, JsonValue, SourceNavigationTarget } from '@/api/types'
 import ReadOnlyCodeEditor from '@/components/code-editor/ReadOnlyCodeEditor.vue'
 import type { CodeSelection } from '@/components/code-editor/readingState'
 import type { ReadOnlyCodeLanguage } from '@/components/code-editor/monacoLoader'
 import AIExplanationPanel from './AIExplanationPanel.vue'
+import ProjectInsights from './ProjectInsights.vue'
+import type { FunctionMatch } from '@/api/insights'
+import { findSourceFunctions, type SourceFunction } from './sourceFunctions'
 import SourceProjectExplorer from './SourceProjectExplorer.vue'
 import BytecodeAnalyzerSummary from './BytecodeAnalyzerSummary.vue'
 import BytecodeMethodIndexPanel from './BytecodeMethodIndexPanel.vue'
@@ -54,6 +57,14 @@ const workspaceWidth = shallowRef(1000)
 const copyFeedback = shallowRef('')
 const tabs = shallowRef<SourceTab[]>([])
 const selectedBytecodeMethodKey = shallowRef('')
+const workspaceMode = shallowRef<'code' | 'architecture' | 'search'>('code')
+const sourceFunctions = computed(() => findSourceFunctions(props.source))
+const selectedFunction = shallowRef<SourceFunction | null>(null)
+const functionSelection = computed(() => selectedFunction.value ? {
+  startLine: selectedFunction.value.startLine,
+  endLine: selectedFunction.value.endLine,
+  text: props.source.replace(/\r\n/g, '\n').split('\n').slice(selectedFunction.value.startLine - 1, selectedFunction.value.endLine).join('\n'),
+} : null)
 const selectedResult = computed(() => props.items.find(item => item.id === props.selectedId))
 const selectedSourceFile = computed(() => props.sourceFiles.find(file => file.id === props.selectedSourceFileId))
 const currentTabKey = computed(() => sourceTabKey({ projectId: props.selectedId, fileId: props.selectedSourceFileId }))
@@ -140,10 +151,28 @@ function resizeWithKeyboard(event: KeyboardEvent): void {
   setDirectoryWidth(event.key === 'Home' ? 180 : event.key === 'End' ? directoryMaximum.value : directoryWidth.value + (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 40 : 16))
 }
 async function focusFileSearch(): Promise<void> {
+  workspaceMode.value = 'code'
   directoryOpen.value = true; activePane.value = 'code'
   await nextTick(); explorer.value?.focusSearch()
 }
-function openAI(): void { aiOpen.value = !aiOpen.value; if (aiOpen.value) activePane.value = 'ai' }
+function openAI(): void { workspaceMode.value = 'code'; aiOpen.value = !aiOpen.value; if (aiOpen.value) activePane.value = 'ai' }
+function explainFunction(): void {
+  if (!selectedFunction.value) return
+  aiOpen.value = true
+  activePane.value = 'ai'
+}
+function openInsightFile(fileId: string): void {
+  if (!props.sourceFiles.some(file => file.id === fileId)) return
+  workspaceMode.value = 'code'
+  activePane.value = 'code'
+  emit('selectSourceFile', fileId)
+}
+function openInsightMatch(match: FunctionMatch): void {
+  if (!props.sourceFiles.some(file => file.id === match.fileId)) return
+  workspaceMode.value = 'code'
+  activePane.value = 'code'
+  emit('openSource', { projectId: props.selectedId, sourceFileId: match.fileId, path: match.path, startLine: match.startLine, endLine: match.endLine, startColumn: 1, endColumn: 1 })
+}
 function switchPane(value: 'code' | 'ai', focus = false): void {
   activePane.value = value
   if (focus) void nextTick(() => workspaceRoot.value?.querySelector<HTMLButtonElement>(value === 'code' ? '#source-code-tab' : '#source-ai-tab')?.focus({ preventScroll: true }))
@@ -241,8 +270,8 @@ watch(readingFocus, async active => {
     await nextTick(); if (!disposed) leaveFocus()
   }
 })
-watch(() => [props.taskId, props.selectedId, props.selectedSourceFileId], () => { selection.value = null; copyFeedback.value = '' })
-watch(() => props.taskId, () => { tabs.value = []; readingFocus.value = false; activePane.value = 'code' })
+watch(() => [props.taskId, props.selectedId, props.selectedSourceFileId, props.source], () => { selection.value = null; selectedFunction.value = null; copyFeedback.value = '' })
+watch(() => props.taskId, () => { tabs.value = []; readingFocus.value = false; activePane.value = 'code'; workspaceMode.value = 'code' })
 watch(() => props.selectedId, () => { selectedBytecodeMethodKey.value = '' })
 watch(() => [props.selectedId, props.selectedSourceFileId, selectedSourceFile.value] as const, () => {
   const file = selectedSourceFile.value
@@ -263,7 +292,7 @@ onMounted(() => {
   try { const stored = Number(localStorage.getItem(DIRECTORY_WIDTH_KEY)); if (stored >= 180) directoryWidth.value = stored } catch { /* Keep default width. */ }
   if (splitBody.value) {
     workspaceWidth.value = splitBody.value.clientWidth
-    resizeObserver = new ResizeObserver(() => { if (splitBody.value) workspaceWidth.value = splitBody.value.clientWidth })
+    resizeObserver = new ResizeObserver(() => { if (splitBody.value && splitBody.value.clientWidth > 0) workspaceWidth.value = splitBody.value.clientWidth })
     resizeObserver.observe(splitBody.value)
   }
   window.addEventListener('keydown', workspaceKeys)
@@ -285,6 +314,18 @@ onScopeDispose(() => {
         <button type="button" class="ai-command" :aria-expanded="aiOpen" @click="openAI"><Sparkles :size="16" /><span>AI 解释</span></button>
       </div>
     </header>
+    <nav class="insight-nav" aria-label="源码分析视图">
+      <div class="insight-nav__tabs">
+        <button type="button" :class="{ active: workspaceMode === 'code' }" :aria-current="workspaceMode === 'code' ? 'page' : false" @click="workspaceMode = 'code'"><FileCode2 :size="15" />代码阅读</button>
+        <button type="button" :class="{ active: workspaceMode === 'architecture' }" :aria-current="workspaceMode === 'architecture' ? 'page' : false" @click="workspaceMode = 'architecture'"><Workflow :size="15" />架构总览</button>
+        <button type="button" :class="{ active: workspaceMode === 'search' }" :aria-current="workspaceMode === 'search' ? 'page' : false" @click="workspaceMode = 'search'"><Search :size="15" />智能检索</button>
+      </div>
+      <span>AI 辅助 · 基于反编译源码推断</span>
+    </nav>
+    <div v-show="workspaceMode !== 'code'" class="insight-surface">
+      <ProjectInsights :task-id="taskId" :project-id="selectedId" :mode="workspaceMode === 'search' ? 'search' : 'architecture'" :files="sourceFiles" :loading="sourceFilesLoading" @open-file="openInsightFile" @open-match="openInsightMatch" />
+    </div>
+    <div v-show="workspaceMode === 'code'" class="code-workspace">
     <details class="workbench-details">
       <summary><Info :size="14" /><span>{{ isJvmBytecodeResult && bytecodeMethodIndex.present ? '详情与方法索引' : '反编译详情' }}</span><span class="details-hint">{{ selectedResult?.engine_name || '引擎信息' }}</span></summary>
       <div class="workbench-details__content">
@@ -319,19 +360,24 @@ onScopeDispose(() => {
         </div>
         <div class="source-breadcrumbs" :title="selectedSourceFile?.logicalPath || ''">
           <nav aria-label="当前源码路径"><template v-for="(part, index) in pathParts" :key="index"><ChevronRight v-if="index" :size="11" /><button v-if="index < pathParts.length - 1" type="button" :title="'定位目录 ' + pathParts.slice(0, index + 1).join('/')" @click="locateDirectory(index)">{{ part }}</button><span v-else>{{ part }}</span></template><span v-if="!pathParts.length">尚未选择文件</span></nav>
+          <select v-if="sourceFunctions.length" v-model="selectedFunction" class="function-picker" aria-label="选择要解读的函数"><option :value="null">选择函数…</option><option v-for="(item, index) in sourceFunctions" :key="index" :value="item">{{ item.name }} · L{{ item.startLine }}</option></select>
+          <button type="button" class="explain-function" :disabled="!selectedFunction" @click="explainFunction"><Sparkles :size="13" />解读函数</button>
           <button type="button" :disabled="!selectedSourceFile" aria-label="复制源码完整路径" title="复制完整路径" @click="copyPath"><Copy :size="13" /></button>
           <span v-if="copyFeedback" class="path-feedback" role="status">{{ copyFeedback }}</span>
         </div>
         <div id="source-reader-surface" class="code-reader-frame" role="tabpanel" :aria-label="selectedSourceFile?.logicalPath || '源码内容'"><ReadOnlyCodeEditor ref="codeEditor" :source="source" :language="editorLanguage" :label="'只读' + languageLabel + '反编译代码'" :filename="selectedSourceFile?.logicalPath" :model-uri="editorModelUri" :target-range="targetRange" :loading="sourceLoading || sourceFilesLoading" :error="sourceError" :available="Boolean(sourceFile)" @selection-change="selection = $event" /></div>
       </div>
       <div v-if="selectedResult && aiOpen" id="source-ai-pane" v-show="aiVisible" class="workbench-ai" :role="!layout.docked ? 'tabpanel' : 'region'" :aria-labelledby="!layout.docked ? 'source-ai-tab' : ''" aria-label="源码解释面板">
-        <AIExplanationPanel v-model:open="aiOpen" embedded :pane-visible="aiVisible" :resizable="layout.docked" :available-width="layout.aiMaximum" :task-id="taskId" :project-id="selectedResult.id" :file-id="selectedSourceFileId" :source-sha256="sourceFile?.sha256" :source="source" :filename="selectedSourceFile?.logicalPath || ''" :line-count="selectedSourceFile?.lineCount || 0" :loading="sourceLoading || sourceFilesLoading || !sourceFile" :selection="selection" @navigate="navigateExplanation" @resize="aiWidth = $event" />
+        <AIExplanationPanel v-model:open="aiOpen" embedded :pane-visible="aiVisible" :resizable="layout.docked" :available-width="layout.aiMaximum" :task-id="taskId" :project-id="selectedResult.id" :file-id="selectedSourceFileId" :source-sha256="sourceFile?.sha256" :source="source" :filename="selectedSourceFile?.logicalPath || ''" :line-count="selectedSourceFile?.lineCount || 0" :loading="sourceLoading || sourceFilesLoading || !sourceFile" :selection="selection" :function-selection="functionSelection" @navigate="navigateExplanation" @resize="aiWidth = $event" />
       </div>
+    </div>
     </div>
   </section>
 </template>
 
 <style scoped>
+.code-workspace { display:flex; flex:1; min-height:0; flex-direction:column; }.insight-nav { display:flex; flex:0 0 auto; justify-content:space-between; align-items:center; padding:0 15px; border-bottom:1px solid var(--line); background:#fbfcff; }.insight-nav__tabs { display:flex; gap:22px; }.insight-nav__tabs button { display:flex; align-items:center; gap:7px; padding:12px 2px; border:0; border-bottom:2px solid transparent; background:none; color:var(--ink-500); cursor:pointer; font-size:12px; }.insight-nav__tabs button.active { color:var(--primary); border-color:var(--primary); font-weight:600; }.insight-nav > span { color:var(--ink-400); font-size:10px; }.insight-surface { flex:1; min-height:0; overflow:auto; background:var(--surface); }.function-picker { max-width:190px; min-width:110px; border:1px solid var(--line); border-radius:5px; padding:4px 5px; background:var(--surface); color:var(--ink-700); font-size:11px; }.source-breadcrumbs .explain-function { gap:4px; color:var(--primary); white-space:nowrap; }.source-breadcrumbs .explain-function:disabled { color:var(--ink-400); cursor:default; }
+@media(max-width:700px) { .insight-nav > span { display:none; }.insight-nav__tabs { width:100%; justify-content:space-around; gap:4px; }.function-picker { max-width:110px; } }
 .source-workbench { display: flex; min-width: 0; height: clamp(540px, calc(100dvh - 250px), 850px); flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); outline: none; box-shadow: 0 3px 14px rgb(30 58 138 / 3%); }
 .source-workbench--focused { position: fixed; z-index: 20; inset: 12px 12px 12px calc(var(--sidebar-width, 68px) + 12px); height: auto; box-shadow: 0 12px 50px rgb(15 23 42 / 15%); }
 .workbench-toolbar { position: sticky; top: 0; z-index: 4; display: flex; flex: 0 0 auto; min-height: 52px; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }

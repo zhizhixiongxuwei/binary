@@ -18,6 +18,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, ApiError } from '@/api/client'
+import { DEMO_TASK_IDS } from '@/api/demo/fixtures'
 import { isDemoMode } from '@/api/runtime'
 import type {
   FileDecompileRequest,
@@ -81,11 +82,9 @@ const DemoReportResult =
       )
     : null
 const LiveDecompileResult =
-  import.meta.env.VITE_APP_MODE === 'demo'
-    ? null
-    : defineAsyncComponent(
-        () => import('@/components/tasks/results/LiveDecompileResult.vue'),
-      )
+  defineAsyncComponent(
+    () => import('@/components/tasks/results/LiveDecompileResult.vue'),
+  )
 const LiveCAnalysisResult =
   import.meta.env.VITE_APP_MODE === 'demo'
     ? null
@@ -1079,7 +1078,7 @@ function handleReportState(state: TaskResultState): void {
                 history-label="反编译历史结果"
               />
               <DemoDecompileResult
-                v-if="isDemoMode"
+                v-if="isDemoMode && task.id !== DEMO_TASK_IDS.apk"
                 :task-id="task.id"
                 :task-name="task.original_filename || task.name"
                 :input-type="task.input_type"

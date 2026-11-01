@@ -29,12 +29,13 @@ type explanationRequest struct {
 }
 
 type llmService struct {
-	manager    *llm.Manager
-	repository explanationRepository
-	loadSource func(context.Context, explanationTarget) (explanationSource, error)
-	stream     func(context.Context, llm.Snapshot, string, func(string) error) error
-	mu         sync.Mutex
-	active     int
+	manager     *llm.Manager
+	repository  explanationRepository
+	loadSource  func(context.Context, explanationTarget) (explanationSource, error)
+	loadProject func(context.Context, explanationTarget, int) (insightContext, error)
+	stream      func(context.Context, llm.Snapshot, string, func(string) error) error
+	mu          sync.Mutex
+	active      int
 }
 
 func newLLMService(tasks *taskService) (*llmService, error) {
@@ -51,7 +52,7 @@ func newLLMService(tasks *taskService) (*llmService, error) {
 	if err := repository.RecoverInterrupted(ctx); err != nil {
 		return nil, fmt.Errorf("recover interrupted model explanations: %w", err)
 	}
-	return &llmService{manager: manager, repository: repository, loadSource: tasks.loadExplanationSource, stream: llm.Stream}, nil
+	return &llmService{manager: manager, repository: repository, loadSource: tasks.loadExplanationSource, loadProject: tasks.loadInsightContext, stream: llm.Stream}, nil
 }
 
 func registerLLMRoutes(protected *gin.RouterGroup, auth *authService, models *llmService) {
@@ -61,6 +62,7 @@ func registerLLMRoutes(protected *gin.RouterGroup, auth *authService, models *ll
 	protected.POST("/admin/llm/test", auth.requireCSRF(), requireAdministrator(), models.test)
 	protected.GET("/tasks/:taskID/projects/:projectID/files/:fileID/explanations", models.list)
 	protected.POST("/tasks/:taskID/projects/:projectID/files/:fileID/explanations", auth.requireCSRF(), requireOperator(), models.explain)
+	protected.POST("/tasks/:taskID/projects/:projectID/insights", auth.requireCSRF(), requireOperator(), models.insight)
 }
 
 func llmFailure(code, message string, status int) error {

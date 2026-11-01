@@ -11,7 +11,7 @@ const defaults: LLMSettings = {
   baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash',
   apiKeyMasked: '', maxInputChars: 60000, timeoutSeconds: 120, maxConcurrent: 2, maxOutputTokens: 4096,
 }
-let demoSettings = { ...defaults }
+let demoSettings = { ...defaults, enabled: true, configured: true, apiKeyMasked: '••••••••（预览）' }
 const demoHistory = new Map<string, ExplanationRecord[]>()
 
 function path(identity: SourceIdentity): string {
@@ -149,9 +149,17 @@ export async function streamExplanation(
     const key = path(identity)
     const previous = (demoHistory.get(key) ?? []).find((item) => item.sourceSha256 === input.sourceSha256 && item.scope === input.scope && item.startLine === (input.startLine ?? 1) && item.endLine === (input.endLine ?? preview?.source.split('\n').length ?? 1) && item.status === 'completed')
     if (previous && !input.regenerate) { onEvent({ type: 'done', data: { ...previous, cacheHit: true } }); return }
-    const record: ExplanationRecord = { ...identity, id: input.requestId, sourceSha256: input.sourceSha256 ?? '', scope: input.scope, startLine: input.startLine ?? 1, endLine: input.endLine ?? preview?.source.split('\n').length ?? 1, provider: 'demo', model: demoSettings.model, text: '', status: 'generating', createdAt: new Date().toISOString() }
+    const record: ExplanationRecord = { ...identity, id: input.requestId, sourceSha256: input.sourceSha256 ?? '', scope: input.scope, startLine: input.startLine ?? 1, endLine: input.endLine ?? preview?.source.split('\n').length ?? 1, provider: 'demo', model: '本地示例', text: '', status: 'generating', createdAt: new Date().toISOString() }
     onEvent({ type: 'meta', data: { ...record } })
-    const text = `功能概述\n这是界面预览的示例解释，未向任何外部服务发送代码。\n\n关键函数与参数\n阅读 ${preview?.filename ?? '当前文件'} 的 L${record.startLine}–L${record.endLine}，可结合函数签名确认输入与返回值。\n\n执行流程\n正式模式会由所配置的模型解释选中源码。\n\n推断说明\n反编译输出可能丢失原始命名、类型或注释，推断需要结合实际行为验证。`
+    const selectedCode = preview?.source.split('\n').slice(record.startLine - 1, record.endLine).join('\n') ?? ''
+    const behavior = /rawQuery/.test(selectedCode)
+      ? '代码调用 SQLite rawQuery 执行 SELECT 查询，并把结果交给上层逻辑；SQL 条件决定读取最近记录或待同步记录。'
+      : /HttpClient\.post/.test(selectedCode)
+        ? '代码先从本地存储读取待同步数据，再通过 HTTP POST 提交到远端同步接口。'
+        : /syncService\./.test(selectedCode)
+          ? '界面入口调用同步服务，依次触发本地记录读取与待同步更新发送。'
+          : '当前范围展示了一个反编译后的代码单元，可从调用、返回值和数据访问路径理解其职责。'
+    const text = `功能概述\n${behavior}\n\n代码范围\n${preview?.filename ?? '当前文件'}，L${record.startLine}–L${record.endLine}。此处为界面预览的示例解释，未向任何外部服务发送代码。\n\n阅读建议\n先确认调用入口，再沿数据流查看关联函数；正式模式由所配置的模型基于实际选中源码生成解释。\n\n推断说明\n反编译输出可能丢失原始命名、类型或注释，结论仍需结合代码行为验证。`
     try {
       for (const part of text.match(/.{1,18}/gs) ?? []) {
         if (signal?.aborted) throw new DOMException('已停止生成', 'AbortError')

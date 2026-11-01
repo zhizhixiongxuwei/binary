@@ -9,6 +9,7 @@ app/backend/bin/
 app/backend/coverage.out
 app/frontend/node_modules/
 app/frontend/dist/
+app/frontend/dist-demo/
 checkers/**/target/
 checkers/python/__pycache__/
 checkers/python/.pytest_cache/
