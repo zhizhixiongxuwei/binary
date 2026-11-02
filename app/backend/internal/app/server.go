@@ -81,6 +81,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.GET("/tasks/:taskID/projects/:projectID/source", tasks.sourcePreview)
 	protected.GET("/tasks/:taskID/projects/:projectID/files", tasks.listProjectSourceFiles)
 	protected.GET("/tasks/:taskID/projects/:projectID/files/:fileID/content", tasks.sourceFileContent)
+	protected.GET("/tasks/:taskID/projects/:projectID/files/:fileID/functions", tasks.listSourceFunctions)
 	protected.GET("/tasks/:taskID/sources", tasks.downloadSources)
 	protected.GET("/archive-imports", tasks.listArchiveImports)
 	protected.GET("/archive-imports/:importID", tasks.getArchiveImport)

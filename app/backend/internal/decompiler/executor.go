@@ -17,6 +17,7 @@ import (
 	"binaryscan.local/backend/internal/config"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
+	"binaryscan.local/backend/internal/sourceindex"
 	"binaryscan.local/backend/internal/storage"
 	"binaryscan.local/backend/internal/worker"
 )
@@ -172,6 +173,22 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 				source.ID, projectID, source.Path, source.Language, digest, source.SizeBytes, source.LineCount); err != nil {
 				return fmt.Errorf("publish source file %s: %w", source.Path, err)
 			}
+			// The published manifest is immutable. Index the exact bytes that were
+			// published while the project and file rows share this transaction.
+			path, err := storage.CleanRelativePath(source.Path)
+			if err != nil {
+				return err
+			}
+			body, err := os.ReadFile(filepath.Join(publication.Root, filepath.FromSlash(path)))
+			if err != nil {
+				return fmt.Errorf("read published source %s: %w", source.Path, err)
+			}
+			if err := sourceindex.Store(ctx, tx, projectID, source.ID, sourceindex.Functions(source.Language, string(body))); err != nil {
+				return fmt.Errorf("index source %s: %w", source.Path, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE source_projects SET symbols_indexed_at = CURRENT_TIMESTAMP(6) WHERE id = ?`, projectID); err != nil {
+			return fmt.Errorf("mark source index ready: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE runs
             SET result_quality = ?, tool_name = ?, tool_version = ? WHERE id = ?`,

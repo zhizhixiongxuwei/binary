@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, shallowRef, watch } from 'vue'
 import { ChevronRight, Search, Square, Workflow } from 'lucide-vue-next'
-import { generateProjectInsight, type FunctionMatch, type InsightKind, type ProjectInsight } from '@/api/insights'
+import { generateProjectInsight, getSavedProjectArchitecture, type FunctionMatch, type InsightKind, type ProjectInsight } from '@/api/insights'
 import { getLLMStatus, llmErrorMessage } from '@/api/llm'
 import { isDemoMode } from '@/api/runtime'
 import type { DecompileSourceFile } from '@/api/types'
@@ -23,6 +23,7 @@ const busy = computed(() => busyKind.value === props.mode)
 const visibleError = computed(() => errorKind.value === props.mode ? error.value : '')
 const suggestions = ['找到执行数据库查询的函数', '查找网络请求与通信代码', '定位文件读取和写入逻辑', '寻找鉴权与密码校验函数']
 let controller: AbortController | null = null
+let cacheController: AbortController | null = null
 let generation = 0
 
 function stop(): void {
@@ -45,7 +46,7 @@ async function generate(kind: InsightKind, text = ''): Promise<void> {
       if (!status.enabled || !status.configured) throw new Error('请先在系统维护 → 大模型设置中启用并配置模型服务。')
     }
     if (active.signal.aborted) return
-    const result = await generateProjectInsight(props.taskId, props.projectId, kind, text.trim(), active.signal)
+    const result = await generateProjectInsight(props.taskId, props.projectId, kind, text.trim(), active.signal, kind === 'architecture' && Boolean(architecture.value))
     if (currentGeneration !== generation) return
     if (kind === 'architecture') architecture.value = result
     else searchResult.value = result
@@ -56,8 +57,20 @@ async function generate(kind: InsightKind, text = ''): Promise<void> {
   }
 }
 function suggest(text: string): void { query.value = text; void generate('search', text) }
-watch(() => [props.taskId, props.projectId], () => { stop(); architecture.value = null; searchResult.value = null; query.value = ''; error.value = '' })
-onScopeDispose(stop)
+watch(() => [props.taskId, props.projectId], async () => {
+  stop(); cacheController?.abort(); architecture.value = null; searchResult.value = null; query.value = ''; error.value = ''
+  if (!props.taskId || !props.projectId || isDemoMode) return
+  const currentGeneration = generation
+  const active = new AbortController()
+  cacheController = active
+  try {
+    const saved = await getSavedProjectArchitecture(props.taskId, props.projectId, active.signal)
+    if (!active.signal.aborted && currentGeneration === generation && saved) architecture.value = saved
+  } catch (caught) {
+    if (!active.signal.aborted && currentGeneration === generation) error.value = llmErrorMessage(caught)
+  }
+}, { immediate: true })
+onScopeDispose(() => { stop(); cacheController?.abort() })
 </script>
 
 <template>
@@ -78,15 +91,15 @@ onScopeDispose(stop)
     <div v-if="busy" class="insight-loading" role="status"><span class="loading-orbit" /><div><strong>{{ mode === 'architecture' ? '正在构建代码架构' : '正在检索相关函数' }}</strong><p>抽取源码片段 → 理解代码职责 → {{ mode === 'architecture' ? '组织模块与关系' : '匹配意图与源码位置' }}</p></div><button type="button" @click="stop"><Square :size="13" />停止</button></div>
     <p v-else-if="busyKind" class="insight-note">另一个分析正在生成中，可切换视图查看进度。</p>
     <template v-if="mode === 'architecture' && architecture">
-      <p class="insight-coverage"><span v-if="isDemoMode" class="demo-badge">界面预览</span>{{ architecture.model }} · {{ new Date(architecture.createdAt).toLocaleString('zh-CN') }} · 已分析 {{ architecture.coverage.sampledFiles }} / {{ architecture.coverage.totalFiles }} 个文件<span v-if="architecture.coverage.truncated"> · 抽样结果，可能遗漏其他代码</span></p>
+      <p class="insight-coverage"><span v-if="isDemoMode" class="demo-badge">界面预览</span>{{ architecture.model }} · {{ new Date(architecture.createdAt).toLocaleString('zh-CN') }} · 已索引 {{ architecture.coverage.indexedFiles ?? architecture.coverage.totalFiles }} 个文件 · 源码抽样 {{ architecture.coverage.sampledFiles }} 个<span v-if="architecture.coverage.truncated"> · 架构为宏观推断</span></p>
       <ArchitectureDiagram :insight="architecture" :files="files" @open-file="emit('openFile', $event)" />
     </template>
     <template v-if="mode === 'search' && searchResult">
-      <div class="search-result-heading"><div><span class="insight-eyebrow">SEARCH RESULTS</span><h3>检索结果 <span>{{ searchResult.result.matches.length }}</span></h3><p>“{{ searchResult.query }}”</p><p>{{ searchResult.result.summary }}</p></div><small><span v-if="isDemoMode" class="demo-badge">界面预览</span>{{ searchResult.model }} · 已分析 {{ searchResult.coverage.sampledFiles }} / {{ searchResult.coverage.totalFiles }} 个文件<span v-if="searchResult.coverage.truncated"> · 抽样结果</span></small></div>
+      <div class="search-result-heading"><div><span class="insight-eyebrow">SEARCH RESULTS</span><h3>检索结果 <span>{{ searchResult.result.matches.length }}</span></h3><p>“{{ searchResult.query }}”</p><p>{{ searchResult.result.summary }}</p></div><small><span v-if="isDemoMode" class="demo-badge">界面预览</span>{{ searchResult.model }} · 已索引 {{ searchResult.coverage.indexedFiles ?? searchResult.coverage.totalFiles }} 个文件 · 模型复核 {{ searchResult.coverage.sampledFiles }} 个候选文件<span v-if="searchResult.coverage.truncated"> · 仅复核高相关候选</span></small></div>
       <div v-if="searchResult.result.matches.length" class="match-list"><button v-for="(match, index) in searchResult.result.matches" :key="match.fileId + ':' + match.startLine" type="button" class="match-card" @click="emit('openMatch', match)"><span class="match-index">{{ String(index + 1).padStart(2, '0') }}</span><span class="match-content"><strong>{{ match.name }}</strong><span>{{ match.reason }}</span><code v-if="match.evidence">{{ match.evidence }}</code><small>{{ match.path }} · L{{ match.startLine }}–L{{ match.endLine }}</small></span><ChevronRight :size="18" /></button></div>
       <p v-else class="insight-empty-result">已分析片段中没有匹配函数。可以换一种描述，或先查看源码确认范围。</p>
     </template>
-    <footer class="insight-footer">{{ isDemoMode ? '界面预览使用固定示例结果，不会调用模型服务。正式环境使用“大模型设置”中配置的服务。' : '使用“大模型设置”中配置的服务。点击生成或搜索后发送当前项目的有限源码片段；大项目按输入上限抽样，结果用于辅助理解。' }}</footer>
+    <footer class="insight-footer">{{ isDemoMode ? '界面预览使用固定示例结果，不会调用模型服务。正式环境使用“大模型设置”中配置的服务。' : '架构图依据全项目索引聚合概览及部分源码样本；函数检索覆盖全量索引，再由“大模型设置”中的模型复核高相关候选。' }}</footer>
   </div>
 </template>
 

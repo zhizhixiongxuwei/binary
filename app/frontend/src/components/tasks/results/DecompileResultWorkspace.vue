@@ -8,7 +8,8 @@ import type { ReadOnlyCodeLanguage } from '@/components/code-editor/monacoLoader
 import AIExplanationPanel from './AIExplanationPanel.vue'
 import ProjectInsights from './ProjectInsights.vue'
 import type { FunctionMatch } from '@/api/insights'
-import { findSourceFunctions, type SourceFunction } from './sourceFunctions'
+import { listProjectSourceFunctions } from '@/api/insights'
+import type { SourceFunction } from './sourceFunctions'
 import SourceProjectExplorer from './SourceProjectExplorer.vue'
 import BytecodeAnalyzerSummary from './BytecodeAnalyzerSummary.vue'
 import BytecodeMethodIndexPanel from './BytecodeMethodIndexPanel.vue'
@@ -58,7 +59,9 @@ const copyFeedback = shallowRef('')
 const tabs = shallowRef<SourceTab[]>([])
 const selectedBytecodeMethodKey = shallowRef('')
 const workspaceMode = shallowRef<'code' | 'architecture' | 'search'>('code')
-const sourceFunctions = computed(() => findSourceFunctions(props.source))
+const sourceFunctions = shallowRef<SourceFunction[]>([])
+const sourceFunctionsError = shallowRef('')
+let functionsController: AbortController | null = null
 const selectedFunction = shallowRef<SourceFunction | null>(null)
 const functionSelection = computed(() => selectedFunction.value ? {
   startLine: selectedFunction.value.startLine,
@@ -271,6 +274,21 @@ watch(readingFocus, async active => {
   }
 })
 watch(() => [props.taskId, props.selectedId, props.selectedSourceFileId, props.source], () => { selection.value = null; selectedFunction.value = null; copyFeedback.value = '' })
+watch(() => [props.taskId, props.selectedId, props.selectedSourceFileId, props.sourceFile?.sha256] as const, async ([taskId, projectId, fileId, sha]) => {
+  functionsController?.abort()
+  sourceFunctions.value = []
+  sourceFunctionsError.value = ''
+  if (!taskId || !projectId || !fileId || !sha || props.sourceFile?.id !== fileId) return
+  const controller = new AbortController()
+  functionsController = controller
+  try {
+    const functions = await listProjectSourceFunctions(taskId, projectId, fileId, controller.signal)
+    if (!controller.signal.aborted) sourceFunctions.value = functions.filter(item => item.endLine <= (props.sourceFile?.lineCount ?? 0))
+  } catch {
+    if (!controller.signal.aborted) sourceFunctionsError.value = '函数索引暂时不可用'
+  }
+}, { immediate: true })
+onScopeDispose(() => functionsController?.abort())
 watch(() => props.taskId, () => { tabs.value = []; readingFocus.value = false; activePane.value = 'code'; workspaceMode.value = 'code' })
 watch(() => props.selectedId, () => { selectedBytecodeMethodKey.value = '' })
 watch(() => [props.selectedId, props.selectedSourceFileId, selectedSourceFile.value] as const, () => {
@@ -361,6 +379,7 @@ onScopeDispose(() => {
         <div class="source-breadcrumbs" :title="selectedSourceFile?.logicalPath || ''">
           <nav aria-label="当前源码路径"><template v-for="(part, index) in pathParts" :key="index"><ChevronRight v-if="index" :size="11" /><button v-if="index < pathParts.length - 1" type="button" :title="'定位目录 ' + pathParts.slice(0, index + 1).join('/')" @click="locateDirectory(index)">{{ part }}</button><span v-else>{{ part }}</span></template><span v-if="!pathParts.length">尚未选择文件</span></nav>
           <select v-if="sourceFunctions.length" v-model="selectedFunction" class="function-picker" aria-label="选择要解读的函数"><option :value="null">选择函数…</option><option v-for="(item, index) in sourceFunctions" :key="index" :value="item">{{ item.name }} · L{{ item.startLine }}</option></select>
+          <small v-else-if="sourceFunctionsError" class="function-error">{{ sourceFunctionsError }}</small>
           <button type="button" class="explain-function" :disabled="!selectedFunction" @click="explainFunction"><Sparkles :size="13" />解读函数</button>
           <button type="button" :disabled="!selectedSourceFile" aria-label="复制源码完整路径" title="复制完整路径" @click="copyPath"><Copy :size="13" /></button>
           <span v-if="copyFeedback" class="path-feedback" role="status">{{ copyFeedback }}</span>

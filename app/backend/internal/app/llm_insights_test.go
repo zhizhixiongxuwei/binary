@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,80 @@ import (
 
 	"binaryscan.local/backend/internal/llm"
 )
+
+type memoryProjectInsightCache struct{ record *projectInsightRecord }
+
+func (m *memoryProjectInsightCache) Get(context.Context, explanationTarget, llm.Snapshot) (projectInsightRecord, error) {
+	if m.record == nil {
+		return projectInsightRecord{}, sql.ErrNoRows
+	}
+	return *m.record, nil
+}
+func (m *memoryProjectInsightCache) Put(_ context.Context, _ explanationTarget, _ llm.Snapshot, value projectInsightRecord) error {
+	m.record = &value
+	return nil
+}
+
+func TestArchitecturePersistsAndRegeneratesOnlyOnRequest(t *testing.T) {
+	service, _, _ := newTestLLMService(t)
+	cache := &memoryProjectInsightCache{}
+	service.insightCache = cache
+	loads, calls := 0, 0
+	service.loadProject = func(context.Context, explanationTarget, int) (insightContext, error) {
+		loads++
+		return insightFixtureContext(), nil
+	}
+	service.stream = func(_ context.Context, _ llm.Snapshot, prompt string, delta func(string) error) error {
+		calls++
+		if !strings.Contains(prompt, "actual.c") {
+			t.Fatal("architecture prompt missing verified source")
+		}
+		return delta(`{"summary":"推断的数据处理结构","nodes":[{"id":"n1","label":"数据模块","role":"data","fileIds":["file"]}],"edges":[],"flow":[]}`)
+	}
+	router := llmTestRouter(service, "operator")
+	post := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/task/projects/project/insights", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-CSRF-Token", "csrf-test-token")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		return response
+	}
+	if response := post(`{"kind":"architecture"}`); response.Code != 200 {
+		t.Fatalf("first generation: %d %s", response.Code, response.Body)
+	}
+	if response := post(`{"kind":"architecture"}`); response.Code != 200 {
+		t.Fatalf("cached generation: %d %s", response.Code, response.Body)
+	}
+	get := httptest.NewRecorder()
+	router.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/v1/tasks/task/projects/project/insights?kind=architecture", nil))
+	if get.Code != 200 || !strings.Contains(get.Body.String(), "数据模块") {
+		t.Fatalf("saved architecture: %d %s", get.Code, get.Body)
+	}
+	if calls != 1 || loads != 1 {
+		t.Fatalf("cache missed: model=%d source=%d", calls, loads)
+	}
+	if response := post(`{"kind":"architecture","regenerate":true}`); response.Code != 200 || calls != 2 {
+		t.Fatalf("regenerate failed: %d %s model=%d", response.Code, response.Body, calls)
+	}
+}
+
+func TestSemanticSearchRejectsForgedEvidenceAndNavigation(t *testing.T) {
+	terms, err := parseSearchTerms(`{"terms":["SELECT","select","x' OR 1=1","rawQuery"]}`)
+	if err != nil || len(terms) != 2 || terms[0] != "select" {
+		t.Fatalf("unsafe terms: %+v %v", terms, err)
+	}
+	candidate := searchCandidate{FileID: "real", Path: "db.c", Name: "query", StartLine: 4, EndLine: 12, Code: "int query() { return sqlite3_exec(db, \"SELECT * FROM users\", 0, 0, 0); }"}
+	raw := `{"summary":"数据库查询","matches":[{"fileId":"real","startLine":4,"reason":"查询操作","evidence":"sqlite3_exec","path":"forged.c","name":"forged"},{"fileId":"real","startLine":5,"reason":"误导","evidence":"SELECT"},{"fileId":"real","startLine":4,"reason":"虚假证据","evidence":"DROP TABLE"}]}`
+	result, err := parseSearchMatches(raw, []searchCandidate{candidate})
+	if err != nil || len(result.Matches) != 1 || result.Matches[0].Path != "db.c" || result.Matches[0].Name != "query" || result.Matches[0].EndLine != 12 {
+		t.Fatalf("unsafe model result: %+v %v", result, err)
+	}
+	snippet := searchSnippet(strings.Repeat("padding ", 400)+"sqlite3_exec(db)", []string{"sqlite3"}, 200)
+	if !strings.Contains(snippet, "sqlite3_exec") {
+		t.Fatal("candidate excerpt missed matching code")
+	}
+}
 
 func TestInsightSamplesPreserveRangesAndBudget(t *testing.T) {
 	source := testExplanationSource(strings.Repeat("中文代码();\r\n", 100))
@@ -71,18 +146,24 @@ func TestInsightRejectsInventedNavigationAndGraphEdges(t *testing.T) {
 func TestProjectInsightUsesConfiguredModelAndOnlyServerSource(t *testing.T) {
 	service, _, _ := newTestLLMService(t)
 	loaded := false
-	service.loadProject = func(ctx context.Context, target explanationTarget, limit int) (insightContext, error) {
-		if target.TaskID != "task" || target.ProjectID != "project" || limit != 512 {
-			t.Fatalf("wrong source identity or settings: %+v %d", target, limit)
+	service.searchProject = func(ctx context.Context, target explanationTarget, terms []string) (searchContext, error) {
+		if target.TaskID != "task" || target.ProjectID != "project" || !containsString(terms, "query") {
+			t.Fatalf("wrong source identity or model terms: %+v %+v", target, terms)
 		}
 		loaded = true
-		return insightFixtureContext(), nil
+		return searchContext{TotalFiles: 2, Candidates: []searchCandidate{{FileID: "file", Path: "actual.c", Name: "query", StartLine: 10, EndLine: 12, Code: "int query() {}"}}}, nil
 	}
 	service.stream = func(ctx context.Context, settings llm.Snapshot, prompt string, delta func(string) error) error {
-		if !strings.Contains(prompt, "actual.c") || !strings.Contains(prompt, "数据库查询") || settings.APIKey != "test-fixture-key" {
+		if !strings.Contains(prompt, "数据库查询") || settings.APIKey != "test-fixture-key" {
 			t.Fatal("request did not reuse saved settings and source")
 		}
-		return delta(`{"summary":"查询匹配","matches":[{"fileId":"file","name":"query","startLine":10,"endLine":12,"reason":"SQL调用","evidence":"query()"}]}`)
+		if strings.Contains(prompt, "terms") {
+			return delta(`{"terms":["query","sqlite"]}`)
+		}
+		if !strings.Contains(prompt, "actual.c") {
+			t.Fatal("candidate was not sent to the model")
+		}
+		return delta(`{"summary":"查询匹配","matches":[{"fileId":"file","startLine":10,"reason":"SQL调用","evidence":"query()"}]}`)
 	}
 	request := func(role, body, csrf string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/task/projects/project/insights", strings.NewReader(body))
@@ -100,7 +181,7 @@ func TestProjectInsightUsesConfiguredModelAndOnlyServerSource(t *testing.T) {
 		Result   insightResult  `json:"result"`
 		Coverage insightContext `json:"coverage"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || len(payload.Result.Matches) != 1 || !payload.Coverage.Truncated {
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || len(payload.Result.Matches) != 1 || payload.Coverage.IndexedFiles != 2 || payload.Coverage.SampledFiles != 1 {
 		t.Fatalf("invalid insight response: %s", response.Body)
 	}
 	if strings.Contains(response.Body.String(), "test-fixture-key") || strings.Contains(response.Body.String(), `"code":`) {
