@@ -396,7 +396,7 @@ func (s *llmService) insight(c *gin.Context) {
 		return
 	}
 	// Persist only the validated diagram and coverage, never source excerpts.
-	record := projectInsightRecord{Kind: "architecture", Result: result, Coverage: coverageForArchitecture(source), Model: settings.Model, CreatedAt: time.Now().UTC()}
+	record := projectInsightRecord{Kind: "architecture", Result: result, Coverage: coverageForArchitecture(source), Model: settings.Model, CreatedAt: time.Now().UTC().Truncate(time.Microsecond)}
 	if s.insightCache != nil {
 		if err := s.insightCache.Put(ctx, target, settings, record); err != nil {
 			writeLLMError(c, err)

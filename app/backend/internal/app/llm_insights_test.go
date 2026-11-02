@@ -65,6 +65,9 @@ func TestArchitecturePersistsAndRegeneratesOnlyOnRequest(t *testing.T) {
 	if calls != 1 || loads != 1 {
 		t.Fatalf("cache missed: model=%d source=%d", calls, loads)
 	}
+	if cache.record.CreatedAt.Nanosecond()%1000 != 0 {
+		t.Fatal("cache timestamp exceeds database microsecond precision")
+	}
 	if response := post(`{"kind":"architecture","regenerate":true}`); response.Code != 200 || calls != 2 {
 		t.Fatalf("regenerate failed: %d %s model=%d", response.Code, response.Body, calls)
 	}
