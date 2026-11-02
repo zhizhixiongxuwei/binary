@@ -70,7 +70,7 @@ async function handleLogin(input: LoginInput): Promise<void> {
         <div class="identity-heading">
           <span class="identity-kicker">二进制 · 归档 · 镜像</span>
           <h1>让代码分析更清晰</h1>
-          <p class="identity-subtitle">专注二进制代码静态分析，高效管理每一次检测</p>
+          <p class="identity-subtitle">专注二进制代码智能分析，高效管理每一次检测</p>
         </div>
         <img class="identity-illustration" :src="loginIllustration" alt="" aria-hidden="true" />
         <div class="identity-meta">
