@@ -60,6 +60,7 @@ import type {
   ReportDownload,
   ReportDownloadEncoding,
   SystemStatus,
+  OverviewSummary,
   TaskDetail,
   TaskListQuery,
   TaskPage,
@@ -91,6 +92,7 @@ export interface ApiClient {
   logout(): Promise<void>
   getMe(): Promise<CurrentUser>
   changePassword(input: ChangePasswordInput): Promise<void>
+  getOverview(days: 7 | 30): Promise<OverviewSummary>
   listTasks(query: TaskListQuery): Promise<TaskPage>
   getTask(id: string): Promise<TaskDetail>
   cancelTask(id: string, idempotencyKey: string): Promise<TaskDetail>

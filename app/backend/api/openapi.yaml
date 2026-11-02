@@ -16,6 +16,29 @@ paths:
     get:
       responses:
         "200": { description: Product name and version }
+  /api/v1/overview:
+    get:
+      summary: Detection overview aggregated across all visible tasks
+      description: >-
+        Uses the same visibility as the task list, excluding deleted tasks and archive batches.
+        Period counts, distributions, and daily buckets describe tasks created in the inclusive
+        UTC calendar date range, through collected_at. Failed counts describe their current state,
+        not failure events. Active and queued counts are current snapshots across all dates.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: days
+          schema: { type: integer, enum: [7, 30], default: 7 }
+      responses:
+        "200":
+          description: A consistent database snapshot; empty periods include zero-filled daily buckets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OverviewSummary'
+        "400": { description: Invalid window }
+        "401": { description: Authentication required }
+        "500": { description: Overview query failed }
   /api/v1/auth/login:
     post:
       requestBody:
@@ -817,6 +840,48 @@ components:
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    OverviewBucket:
+      type: object
+      required: [value, count]
+      properties:
+        value: { type: string }
+        count: { type: integer, minimum: 0 }
+    OverviewSummary:
+      type: object
+      required: [created_from, created_to, collected_at, total, active, queued, failed, trend, statuses, formats, failures]
+      properties:
+        created_from: { type: string, format: date }
+        created_to: { type: string, format: date }
+        collected_at: { type: string, format: date-time }
+        total: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0, description: All current scanning tasks }
+        queued: { type: integer, minimum: 0 }
+        failed: { type: integer, minimum: 0 }
+        statuses:
+          type: array
+          items: { $ref: '#/components/schemas/OverviewBucket' }
+        formats:
+          type: array
+          items: { $ref: '#/components/schemas/OverviewBucket' }
+        trend:
+          type: array
+          items:
+            type: object
+            required: [date, created, failed]
+            properties:
+              date: { type: string, format: date }
+              created: { type: integer, minimum: 0 }
+              failed: { type: integer, minimum: 0 }
+        failures:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            required: [id, name, created_at]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              created_at: { type: string, format: date-time }
     APIError:
       type: object
       required: [error]

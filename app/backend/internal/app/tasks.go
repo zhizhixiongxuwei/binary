@@ -306,7 +306,7 @@ func (s *taskService) list(c *gin.Context) {
 		args = append(args, options.Status)
 	}
 	if options.InputType != "" {
-		conditions = append(conditions, "LOWER(COALESCE(t.detected_format, '')) = ?")
+		conditions = append(conditions, "LOWER(COALESCE(NULLIF(t.detected_format, ''), 'unknown')) = ?")
 		args = append(args, options.InputType)
 	}
 	if options.Creator != "" {

@@ -63,6 +63,7 @@ import type {
   ReportDownloadEncoding,
   ResetAdminUserPasswordInput,
   SystemStatus,
+  OverviewSummary,
   TaskDetail,
   TaskListQuery,
   TaskReport,
@@ -1084,6 +1085,7 @@ export const httpApi: ApiClient = {
   logout: () => request<void>('/auth/logout', { method: 'POST' }),
   getMe: () => request<CurrentUser>('/me'),
   changePassword,
+  getOverview: (days) => request<OverviewSummary>(`/overview?days=${days}`),
   listTasks: async (query: TaskListQuery) =>
     parseTaskPage(await request<unknown>(`/tasks?${buildQuery(query)}`)),
   getTask: (id: string) => taskRequest(`/tasks/${encodeURIComponent(id)}`),
@@ -1450,6 +1452,7 @@ export const api: ApiClient = {
   logout: () => activeApi.logout(),
   getMe: () => activeApi.getMe(),
   changePassword: (input) => activeApi.changePassword(input),
+  getOverview: (days) => activeApi.getOverview(days),
   listTasks: (query) => activeApi.listTasks(query),
   getTask: (id) => activeApi.getTask(id),
   cancelTask: (id, idempotencyKey) => activeApi.cancelTask(id, idempotencyKey),

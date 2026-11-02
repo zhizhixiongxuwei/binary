@@ -1298,3 +1298,18 @@ export interface PythonAnalysisFindingListQuery {
 }
 
 export type PythonAnalysisFindingPage = CursorPage<PythonAnalysisFinding>
+
+/** Window metrics describe tasks created in the UTC date range; active/queued are current snapshots. */
+export interface OverviewSummary {
+  created_from: string
+  created_to: string
+  collected_at: string
+  total: number
+  active: number
+  queued: number
+  failed: number
+  trend: { date: string; created: number; failed: number }[]
+  statuses: { value: string; count: number }[]
+  formats: { value: string; count: number }[]
+  failures: { id: string; name: string; created_at: string }[]
+}

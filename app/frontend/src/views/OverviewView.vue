@@ -12,7 +12,7 @@ const { launchTaskCreation } = useTaskCreationLauncher()
 
 <template>
   <div class="page-view">
-    <PageHeader title="系统概览" eyebrow="OVERVIEW / LIVE">
+    <PageHeader title="系统概览" eyebrow="OVERVIEW / LIVE" description="了解近期检测规模、任务进展与需要关注的执行异常。">
       <template #actions>
         <el-button
           v-if="session.user?.role !== 'reader'"

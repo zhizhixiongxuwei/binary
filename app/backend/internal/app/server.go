@@ -70,6 +70,7 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.PATCH("/admin/users/:userID", admin.auditRejectedMutation("admin.user.update"), auth.requireCSRF(), requireAdministrator(), admin.patchUser)
 	protected.GET("/admin/audit", requireAdministrator(), admin.listAudit)
 	registerLLMRoutes(protected, auth, models)
+	protected.GET("/overview", tasks.overview)
 	protected.GET("/tasks", tasks.list)
 	protected.GET("/tasks/:taskID", tasks.get)
 	protected.GET("/tasks/:taskID/events", tasks.events)

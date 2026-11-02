@@ -637,6 +637,7 @@ export function createLiveApiClient(): ApiClient {
       currentUser = null
       reportRunIdsByIntent.clear()
     },
+    getOverview: (days) => request<Model.OverviewSummary>(`/overview?days=${days}`),
     async listTasks(query) {
       const result = await request<{ tasks: LiveTask[]; next_cursor?: string }>(
         `/tasks?${buildLiveTaskListQuery(query)}`,

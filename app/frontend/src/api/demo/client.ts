@@ -1,3 +1,4 @@
+import { summarizeOverview } from '@/api/overview'
 import type { ApiClient } from '@/api/contract'
 import { ApiError } from '@/api/client'
 import {
@@ -536,6 +537,12 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       await delay()
       requireUser()
       currentUser = null
+    },
+
+    async getOverview(days) {
+      await delay()
+      requireUser()
+      return summarizeOverview(tasks, days)
     },
 
     async listTasks(query) {
