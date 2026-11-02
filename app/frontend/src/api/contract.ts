@@ -50,7 +50,6 @@ import type {
   DecompileSourceFileList,
   DecompileSourceChunk,
   DecompileSourceQuery,
-  ExtendTaskRetentionInput,
   FileNodeDetail,
   FileDecompileRequest,
   FileNodeListQuery,
@@ -98,10 +97,6 @@ export interface ApiClient {
   cancelTask(id: string, idempotencyKey: string): Promise<TaskDetail>
   retryTask(id: string, idempotencyKey: string): Promise<TaskDetail>
   deleteTask(id: string): Promise<TaskDetail>
-  extendTaskRetention(
-    id: string,
-    input: ExtendTaskRetentionInput,
-  ): Promise<TaskDetail>
   listTaskFiles(taskId: string, query?: FileNodeListQuery): Promise<FileNodePage>
   getTaskFile(taskId: string, fileId: string): Promise<FileNodeDetail>
   createFileDecompileRequest(

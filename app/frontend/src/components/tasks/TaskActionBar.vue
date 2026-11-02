@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import {
-  CalendarPlus2,
   Command,
   RotateCcw,
   Square,
@@ -11,7 +10,6 @@ import { computed, shallowRef } from 'vue'
 import type { TaskDetail, UserRole } from '@/api/types'
 import TaskDeleteDialog from '@/components/tasks/TaskDeleteDialog.vue'
 import {
-  extendSampleExpiry,
   getTaskActionModel,
   type TaskActionMode,
 } from '@/components/tasks/taskActions'
@@ -23,14 +21,13 @@ const props = defineProps<{
   userRole: UserRole | null
   isCreator: boolean
   now?: Date
-  pendingAction?: 'cancel' | 'retry' | 'delete' | 'extend' | null
+  pendingAction?: 'cancel' | 'retry' | 'delete' | null
 }>()
 
 const emit = defineEmits<{
   cancel: []
   retry: []
   delete: []
-  extend: [sampleExpiresAt: string]
 }>()
 
 const cancelDialogOpen = shallowRef(false)
@@ -77,12 +74,6 @@ function confirmDelete(): void {
   if (operationPending.value) return
   deleteDialogOpen.value = false
   emit('delete')
-}
-
-function extendRetention(): void {
-  if (!model.value.extend.enabled || operationPending.value) return
-  const nextExpiry = extendSampleExpiry(props.task.sample_expires_at)
-  if (nextExpiry) emit('extend', nextExpiry)
 }
 </script>
 
@@ -150,29 +141,6 @@ function extendRetention(): void {
         </el-button>
         <span id="retry-action-reason" class="sr-only">
           {{ model.retry.reason }}
-        </span>
-      </div>
-
-      <div
-        class="task-action"
-        :title="model.extend.reason"
-        :tabindex="!model.extend.enabled || operationPending ? 0 : -1"
-        aria-describedby="extend-action-reason"
-      >
-        <el-button
-          data-action="extend"
-          size="small"
-          :icon="CalendarPlus2"
-          :loading="pendingAction === 'extend'"
-          :disabled="!model.extend.enabled || operationPending"
-          :title="model.extend.reason"
-          aria-describedby="extend-action-reason"
-          @click="extendRetention"
-        >
-          延期 15 天
-        </el-button>
-        <span id="extend-action-reason" class="sr-only">
-          {{ model.extend.reason }}
         </span>
       </div>
 
@@ -308,8 +276,8 @@ function extendRetention(): void {
 
 .task-actions__commands {
   display: grid;
-  min-width: 446px;
-  grid-template-columns: repeat(4, minmax(98px, 1fr));
+  min-width: 336px;
+  grid-template-columns: repeat(3, minmax(98px, 1fr));
   align-items: center;
   gap: 6px;
   padding: 9px 12px;

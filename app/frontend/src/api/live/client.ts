@@ -655,9 +655,6 @@ export function createLiveApiClient(): ApiClient {
       await request<void>(`/tasks/${encode(id)}`, { method: 'DELETE' })
       return { ...mapTaskDetail(detail), status: 'DELETING' }
     },
-    async extendTaskRetention(id, input) {
-      return { ...mapTaskDetail(await loadTask(id)), sample_expires_at: input.sample_expires_at }
-    },
     async listTaskFiles(taskId, query = {}) {
       const detail = await loadTask(taskId)
       let files = detail.files

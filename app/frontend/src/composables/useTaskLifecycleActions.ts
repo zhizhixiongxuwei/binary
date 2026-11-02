@@ -6,7 +6,7 @@ import type { TaskActionMode } from '@/components/tasks/taskActions'
 import { createIdempotencyKey } from '@/utils/idempotency'
 import { resolveSampleRetention } from '@/utils/sampleRetention'
 
-export type TaskLifecycleAction = 'cancel' | 'retry' | 'delete' | 'extend'
+export type TaskLifecycleAction = 'cancel' | 'retry' | 'delete'
 
 interface UseTaskLifecycleActionsOptions {
   mode: MaybeRefOrGetter<TaskActionMode>
@@ -26,16 +26,11 @@ const SUCCESS_MESSAGES: Record<TaskLifecycleAction, Record<TaskActionMode, strin
     live: '删除请求已提交，任务已进入删除流程。',
     preview: '界面预览：任务已模拟进入删除流程，未删除任何本地数据。',
   },
-  extend: {
-    live: '样本保留期已延长 15 天。',
-    preview: '界面预览：样本到期时间已在本页模拟延长 15 天。',
-  },
 }
 
 function previewResult(
   action: TaskLifecycleAction,
   task: TaskDetail,
-  sampleExpiresAt?: string,
 ): TaskDetail {
   if (action === 'cancel') {
     return {
@@ -53,12 +48,6 @@ function previewResult(
     }
   }
 
-  if (action === 'extend') {
-    return sampleExpiresAt
-      ? { ...task, sample_expires_at: sampleExpiresAt }
-      : { ...task }
-  }
-
   const result = {
     ...task,
     status: 'QUEUED' as const,
@@ -74,8 +63,7 @@ function previewResult(
 function actionLabel(action: TaskLifecycleAction): string {
   if (action === 'cancel') return '取消任务'
   if (action === 'retry') return '重新检测'
-  if (action === 'delete') return '删除任务'
-  return '延长样本保留期'
+  return '删除任务'
 }
 
 export function useTaskLifecycleActions(options: UseTaskLifecycleActionsOptions) {
@@ -105,11 +93,10 @@ export function useTaskLifecycleActions(options: UseTaskLifecycleActionsOptions)
   async function execute(
     action: TaskLifecycleAction,
     task: TaskDetail,
-    sampleExpiresAt?: string,
   ): Promise<void> {
     if (pendingAction.value) return
 
-    if (action === 'retry' || action === 'extend') {
+    if (action === 'retry') {
       const retention = resolveSampleRetention({
         sampleExpiresAt: task.sample_expires_at,
         sampleDeletedAt: task.sample_deleted_at,
@@ -131,7 +118,7 @@ export function useTaskLifecycleActions(options: UseTaskLifecycleActionsOptions)
     try {
       let updatedTask: TaskDetail
       if (mode === 'preview') {
-        updatedTask = previewResult(action, task, sampleExpiresAt)
+        updatedTask = previewResult(action, task)
       } else if (action === 'cancel') {
         updatedTask = await api.cancelTask(
           task.id,
@@ -142,16 +129,8 @@ export function useTaskLifecycleActions(options: UseTaskLifecycleActionsOptions)
           task.id,
           getIdempotencyKey(action, task.id),
         )
-      } else if (action === 'delete') {
-        updatedTask = await api.deleteTask(task.id)
       } else {
-        if (!task.sample_expires_at || !sampleExpiresAt) {
-          throw new Error('任务没有可用的样本到期时间')
-        }
-        updatedTask = await api.extendTaskRetention(task.id, {
-          expected_sample_expires_at: task.sample_expires_at,
-          sample_expires_at: sampleExpiresAt,
-        })
+        updatedTask = await api.deleteTask(task.id)
       }
 
       if (generation !== operationGeneration) return

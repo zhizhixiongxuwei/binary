@@ -1,18 +1,14 @@
 import type { TaskDetail, TaskStatus, UserRole } from '@/api/types'
-import {
-  parseSampleExpiry,
-  resolveSampleRetention,
-} from '@/utils/sampleRetention'
+import { resolveSampleRetention } from '@/utils/sampleRetention'
 
 export {
-  extendSampleExpiry,
   isSampleDeleted,
   isSampleExpired,
   parseSampleExpiry,
 } from '@/utils/sampleRetention'
 
 export type TaskActionMode = 'live' | 'preview'
-export type TaskActionId = 'cancel' | 'retry' | 'delete' | 'extend'
+export type TaskActionId = 'cancel' | 'retry' | 'delete'
 
 export interface TaskActionState {
   enabled: boolean
@@ -23,7 +19,6 @@ export interface TaskActionModel {
   cancel: TaskActionState
   retry: TaskActionState
   delete: TaskActionState
-  extend: TaskActionState
   sampleExpired: boolean
   sampleDeleted: boolean
 }
@@ -110,26 +105,10 @@ export function getTaskActionModel(context: TaskActionContext): TaskActionModel 
       ? disabled('任务已进入删除流程。')
       : enabled('删除任务及关联数据；其他任务共用的样本和审计记录会保留。')
 
-  const expiry = parseSampleExpiry(task.sample_expires_at)
-  const extend = userRole !== 'administrator'
-      ? disabled('只有管理员可以延长样本保留期。')
-      : TERMINAL_DELETE_STATUSES.has(status)
-        ? disabled('任务已进入删除流程，不能再延长保留期。')
-      : !expiry
-        ? disabled('任务没有可用的样本到期时间。')
-        : sampleDeleted
-          ? disabled('任务原始样本已清理，不能再延长保留期。')
-          : sampleExpired
-            ? disabled('样本保留期已到，不能再延长保留期。')
-          : !retention.canReuseSample
-            ? disabled(retention.actionReason)
-          : enabled('将当前样本到期时间延长 15 天。')
-
   return {
     cancel,
     retry,
     delete: deleteAction,
-    extend,
     sampleExpired,
     sampleDeleted,
   }

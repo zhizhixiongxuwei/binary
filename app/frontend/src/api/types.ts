@@ -133,11 +133,6 @@ export interface TaskEventMessage {
   data: TaskEvent
 }
 
-export interface ExtendTaskRetentionInput {
-  expected_sample_expires_at: string
-  sample_expires_at: string
-}
-
 export type FileNodeType = 'file' | 'directory' | 'symlink' | 'hardlink' | 'special'
 
 export interface FileNode {

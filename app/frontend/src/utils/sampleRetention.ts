@@ -81,13 +81,3 @@ export function isSampleExpired(
   const expiry = parseSampleExpiry(value)
   return expiry !== null && expiry.getTime() <= now.getTime()
 }
-
-export function extendSampleExpiry(
-  value: string | undefined,
-  days = 30,
-): string | null {
-  const expiry = parseSampleExpiry(value)
-  if (!expiry) return null
-  expiry.setUTCDate(expiry.getUTCDate() + days)
-  return expiry.toISOString()
-}

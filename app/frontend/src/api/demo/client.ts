@@ -632,55 +632,6 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       return cloneTask(task)
     },
 
-    async extendTaskRetention(id, input) {
-      await delay()
-      const user = requireUser()
-      if (user.role !== 'administrator') {
-        throw new ApiError('只有管理员可以延长样本保留期', 403, {
-          code: 'FORBIDDEN',
-        })
-      }
-
-      const task = findTask(id)
-      const status = task.status.toUpperCase()
-      if (status === 'DELETING' || status === 'DELETED') {
-        throw new ApiError('任务已进入删除流程', 409, {
-          code: 'TASK_INVALID_STATE',
-        })
-      }
-      if (task.sample_deleted_at !== null) {
-        throw new ApiError('任务原始样本已清理，无法延长保留期', 409, {
-          code: 'task_sample_unavailable',
-        })
-      }
-      if (
-        !task.sample_expires_at ||
-        task.sample_expires_at !== input.expected_sample_expires_at
-      ) {
-        throw new ApiError('样本保留期已发生变化，请刷新后重试', 409, {
-          code: 'RETENTION_CONFLICT',
-        })
-      }
-
-      const expectedTimestamp = Date.parse(input.expected_sample_expires_at)
-      const requestedTimestamp = Date.parse(input.sample_expires_at)
-      const retentionExtension = 15 * 24 * 60 * 60 * 1000
-      if (
-        !Number.isFinite(expectedTimestamp) ||
-        !Number.isFinite(requestedTimestamp) ||
-        expectedTimestamp <= Date.now() ||
-        requestedTimestamp !== expectedTimestamp + retentionExtension
-      ) {
-        throw new ApiError('样本保留期延期参数无效', 409, {
-          code: 'INVALID_RETENTION',
-        })
-      }
-
-      task.sample_expires_at = input.sample_expires_at
-      task.updated_at = '2026-07-30T11:03:00+08:00'
-      return cloneTask(task)
-    },
-
     async listTaskFiles(taskId, query: FileNodeListQuery = {}) {
       await delay()
       requireUser()

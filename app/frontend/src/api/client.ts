@@ -52,7 +52,6 @@ import type {
   DecompileSourceFileList,
   DecompileSourceChunk,
   DecompileSourceQuery,
-  ExtendTaskRetentionInput,
   FileNodeDetail,
   FileDecompileRequest,
   FileNodeListQuery,
@@ -1107,11 +1106,6 @@ export const httpApi: ApiClient = {
     taskRequest(`/tasks/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
-  extendTaskRetention: (id: string, input: ExtendTaskRetentionInput) =>
-    taskRequest(`/tasks/${encodeURIComponent(id)}/retention`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
   listTaskFiles,
   getTaskFile,
   createFileDecompileRequest: (
@@ -1458,8 +1452,6 @@ export const api: ApiClient = {
   cancelTask: (id, idempotencyKey) => activeApi.cancelTask(id, idempotencyKey),
   retryTask: (id, idempotencyKey) => activeApi.retryTask(id, idempotencyKey),
   deleteTask: (id) => activeApi.deleteTask(id),
-  extendTaskRetention: (id, input) =>
-    activeApi.extendTaskRetention(id, input),
   listTaskFiles: (taskId, query) => activeApi.listTaskFiles(taskId, query),
   getTaskFile: (taskId, fileId) => activeApi.getTaskFile(taskId, fileId),
   createFileDecompileRequest: (taskId, fileId, input, idempotencyKey) =>

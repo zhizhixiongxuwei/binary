@@ -777,12 +777,6 @@ function handleDelete(): void {
   if (task.value) void lifecycleActions.execute('delete', task.value)
 }
 
-function handleExtend(sampleExpiresAt: string): void {
-  if (task.value) {
-    void lifecycleActions.execute('extend', task.value, sampleExpiresAt)
-  }
-}
-
 function handleResultCommand(command: TaskResultCommand): void {
   if (command === 'refresh-decompile') {
     liveDecompileResult.value?.refresh()
@@ -1169,7 +1163,6 @@ function handleReportState(state: TaskResultState): void {
           @cancel="handleCancel"
           @retry="handleRetry"
           @delete="handleDelete"
-          @extend="handleExtend"
         />
 
         <div class="detail-grid">
