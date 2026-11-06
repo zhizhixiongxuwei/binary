@@ -43,6 +43,15 @@ export type TaskStatus =
   | 'failed'
   | 'cancelled'
 
+/** User-facing milestones derived from analysis runs, independently of file readiness. */
+export const TASK_EXECUTION_STATUSES = [
+  'UPLOADED', 'PREPARING', 'DECOMPILE_QUEUED', 'DECOMPILING', 'DECOMPILED',
+  'DECOMPILE_PARTIAL', 'DECOMPILE_FAILED', 'SCAN_QUEUED', 'SCANNING',
+  'SCAN_COMPLETED', 'SCAN_PARTIAL', 'SCAN_FAILED', 'FAILED', 'CANCELLED',
+  'DELETING', 'DELETED', 'UNSUPPORTED',
+] as const
+export type TaskExecutionStatus = (typeof TASK_EXECUTION_STATUSES)[number]
+
 export type RiskLevel =
   | 'NONE'
   | 'LOW'
@@ -62,7 +71,10 @@ export interface ScanTask {
   name: string
   input_type: string
   analysis_mode?: AnalysisMode
+  archive?: ArchiveTaskGroup
+  archive_path?: string
   status: TaskStatus
+  execution_status?: TaskExecutionStatus
   risk_level: RiskLevel
   progress: number
   progress_indeterminate: boolean
@@ -80,7 +92,9 @@ export interface TaskListQuery {
   cursor?: string
   keyword?: string
   status?: TaskStatus
+  execution_status?: TaskExecutionStatus
   input_type?: string
+  analysis_mode?: AnalysisMode
   creator?: string
   tag?: string
   created_from?: string
@@ -423,6 +437,44 @@ export interface DecompileProjectDeletionOperation {
   error_message: string | null
 }
 
+export interface AnalysisRuleDefinition {
+  id: string
+  name: string
+  description: string
+  cwes: readonly string[]
+  severity: string
+  language: 'c' | 'java' | 'python'
+  default_enabled: boolean
+  limitations: readonly string[]
+}
+
+export interface AnalysisRuleCatalog {
+  language: 'c' | 'java' | 'python'
+  engine: { name: string; version: string }
+  catalogVersion: string
+  rules: readonly AnalysisRuleDefinition[]
+  freshness: 'fresh' | 'stale' | 'missing' | 'conflict'
+  available: boolean
+  last_checked_at: string | null
+  detail: string
+}
+
+export interface AnalysisRuleSelectionInput {
+  rule_ids: string[]
+  catalog_version: string
+}
+
+/** Frozen configuration for a run. Missing/null means historical coverage was not recorded. */
+export interface AnalysisRuleSelection {
+  catalog_version: string
+  enabled_rule_ids: readonly string[]
+  total_rules: number
+  enabled_count: number
+  mode: 'all' | 'custom'
+  engine: string
+  language: 'c' | 'java' | 'python'
+}
+
 export type CAnalysisRunStatus =
   | 'queued'
   | 'running'
@@ -453,6 +505,7 @@ export interface CAnalysisCoverage {
 }
 
 export interface CAnalysisRun {
+  selection?: AnalysisRuleSelection | null
   id: string
   task_id: string
   source_project_id: string
@@ -556,6 +609,7 @@ export interface JavaAnalysisCoverage {
 }
 
 export interface JavaAnalysisRun {
+  selection?: AnalysisRuleSelection | null
   id: string
   task_id: string
   source_project_id: string
@@ -807,17 +861,19 @@ export interface SystemStatus {
     oldest_heartbeat_at: string | null
     latest_heartbeat_at: string | null
   }
-  repository_used_bytes: number
-  repository_total_bytes: number
+  repository_used_bytes: number | null
+  repository_total_bytes: number | null
   trivy_db_version?: string
   analyzers?: readonly {
     name: string
     version: string
     expected_version: string
-    status: 'available' | 'unavailable'
+    status: 'available' | 'unavailable' | 'unknown'
+    freshness?: 'fresh' | 'stale' | 'missing'
+    verification?: 'probe'
     scope?: string
-    required_worker_kinds: readonly ('image' | 'native' | 'trivy')[]
-    ready_worker_kinds: readonly ('image' | 'native' | 'trivy')[]
+    required_worker_kinds: readonly string[]
+    ready_worker_kinds: readonly string[]
     ready_workers: number
     runtime_name: string
     runtime_version: string
@@ -868,18 +924,35 @@ export interface SystemDiagnostic {
 export type DatabaseBundleHealth =
   | 'active'
   | 'stale'
+  | 'unavailable'
+  | 'unknown'
+
+export interface OfflineDatabaseStatus {
+  name: 'trivy-db' | 'trivy-java-db'
+  status: 'available' | 'unavailable' | 'unknown'
+  path: string
+  schema_version: number | null
+  size_bytes: number
+  updated_at: string | null
+  next_update: string | null
+  downloaded_at: string | null
+  error: string
+}
 
 export interface DatabaseBundleStatus {
-  id: string
+  id?: string
   version: string
   trivy_db_version: string
   trivy_java_db_version: string
   status: DatabaseBundleHealth
-  generated_at: string
+  generated_at?: string
   registered_at: string
-  age_days: number
+  age_days: number | null
   stale_after_days: number
-	content_sha256: string
+  content_sha256?: string
+  freshness?: 'fresh' | 'stale' | 'missing'
+  last_checked_at?: string | null
+  databases?: readonly OfflineDatabaseStatus[]
 }
 
 export type AdminUserStatus = 'active' | 'disabled' | 'locked'
@@ -943,6 +1016,7 @@ export interface AuditLog {
   object_type: string
   object_id: string | null
   request_id: string
+  client_ip?: string | null
   metadata: JsonValue | null
   created_at: string
 }
@@ -1064,6 +1138,17 @@ export type ArchiveImportStatus =
   | 'deleting'
   | 'deleted'
 
+export interface ArchiveTaskGroup {
+  import_id: string
+  upload_id: string
+  status: ArchiveImportStatus
+  source_retained: boolean
+  child_count: number
+  completed_count: number
+  active_count: number
+  failed_count: number
+}
+
 export interface ArchiveImport {
   id: string
   upload_id: string
@@ -1084,6 +1169,7 @@ export interface ArchiveImport {
 }
 
 export interface ArchiveImportListQuery {
+  task_id?: string
   cursor?: string
   page_size?: number
 }
@@ -1210,6 +1296,7 @@ export interface PythonAnalysisCoverage {
 }
 
 export interface PythonAnalysisRun {
+  selection?: AnalysisRuleSelection | null
   id: string
   task_id: string
   source_project_id: string

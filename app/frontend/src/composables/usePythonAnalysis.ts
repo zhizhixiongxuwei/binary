@@ -10,6 +10,7 @@ import {
 
 import { api, ApiError } from '@/api/client'
 import type {
+  AnalysisRuleSelectionInput,
   PythonAnalysisFinding,
   PythonAnalysisRun,
   PythonAnalysisSeverity,
@@ -17,6 +18,7 @@ import type {
   UserRole,
 } from '@/api/types'
 import type { TaskResultState } from '@/components/tasks/taskResultTypes'
+import { normalizeRuleSelection } from '@/components/tasks/analysis-rules/ruleSelection'
 
 interface UsePythonAnalysisOptions {
   taskId: MaybeRefOrGetter<string>
@@ -91,7 +93,7 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
   let generation = 0
   let findingGeneration = 0
   let createRequestContext:
-    | { taskId: string; projectId: string; key: string }
+    | { taskId: string; projectId: string; selectionFingerprint: string; key: string }
     | undefined
   let createSequence = 0
   let cancelSequence = 0
@@ -121,6 +123,7 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
     () =>
       canOperate.value &&
       Boolean(selectedProject.value) &&
+      !loading.value &&
       !activeRun.value &&
       !busy.value,
   )
@@ -429,10 +432,16 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
     void loadFindings()
   }
 
-  async function createRun(): Promise<void> {
+  async function createRun(input: AnalysisRuleSelectionInput): Promise<void> {
     const taskId = toValue(options.taskId)
     const project = selectedProject.value
     if (!taskId || !project || !canCreate.value) return
+    const selection = normalizeRuleSelection(input)
+    if (!selection) {
+      operationError.value = '请先选择本次检测规则。'
+      return
+    }
+    const selectionFingerprint = JSON.stringify(selection)
     const currentGeneration = generation
     const requestSequence = ++createSequence
     creating.value = true
@@ -440,11 +449,13 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
     if (
       !createRequestContext ||
       createRequestContext.taskId !== taskId ||
-      createRequestContext.projectId !== project.id
+      createRequestContext.projectId !== project.id ||
+      createRequestContext.selectionFingerprint !== selectionFingerprint
     ) {
       createRequestContext = {
         taskId,
         projectId: project.id,
+        selectionFingerprint,
         key: newIdempotencyKey(),
       }
     }
@@ -454,10 +465,8 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
         taskId,
         project.id,
         requestContext.key,
+        selection,
       )
-      if (createRequestContext?.key === requestContext.key) {
-        createRequestContext = undefined
-      }
       if (
         currentGeneration !== generation ||
         taskId !== toValue(options.taskId) ||
@@ -469,20 +478,13 @@ export function usePythonAnalysis(options: UsePythonAnalysisOptions) {
         operationError.value = '创建检测失败：服务返回了不匹配的检测版本'
         return
       }
+      if (createRequestContext?.key === requestContext.key) createRequestContext = undefined
       replaceRun(run)
       selectedRunId.value = run.id
       findings.value = []
       selectedFinding.value = undefined
       schedulePoll()
     } catch (caught) {
-      if (
-        caught instanceof ApiError &&
-        caught.status > 0 &&
-        caught.status < 500 &&
-        createRequestContext?.key === requestContext.key
-      ) {
-        createRequestContext = undefined
-      }
       if (
         currentGeneration === generation &&
         taskId === toValue(options.taskId) &&

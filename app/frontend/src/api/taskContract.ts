@@ -1,9 +1,13 @@
 import type {
+  AnalysisMode,
+  ArchiveTaskGroup,
   RiskLevel,
   TaskDetail,
   TaskPage,
   TaskStatus,
+  TaskExecutionStatus,
 } from '@/api/types'
+import { TASK_EXECUTION_STATUSES } from '@/api/types'
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const sha256 = /^[0-9a-f]{64}$/
@@ -53,6 +57,10 @@ const requiredTaskKeys = [
   'sample_deleted_at',
 ] as const
 const optionalTaskKeys = [
+  'analysis_mode',
+  'execution_status',
+  'archive',
+  'archive_path',
   'current_stage',
   'error_code',
   'error_message',
@@ -118,6 +126,34 @@ function optionalText(
   return text(task[key], key, 0, maximum)
 }
 
+export function parseArchiveTaskGroup(value: unknown): ArchiveTaskGroup {
+  const group = record(value, 'archive')
+  exactKeys(group, [
+    'import_id', 'upload_id', 'status', 'source_retained',
+    'child_count', 'completed_count', 'active_count', 'failed_count',
+  ], [], 'archive')
+  const status = text(group.status, 'archive.status', 1, 32) as ArchiveTaskGroup['status']
+  if (!['queued', 'running', 'ready', 'failed', 'unsupported', 'deleting', 'deleted'].includes(status)) {
+    throw new TaskContractError('archive.status')
+  }
+  if (typeof group.source_retained !== 'boolean') throw new TaskContractError('archive.source_retained')
+  for (const key of ['child_count', 'completed_count', 'active_count', 'failed_count'] as const) {
+    if (!Number.isSafeInteger(group[key]) || (group[key] as number) < 0) {
+      throw new TaskContractError(`archive.${key}`)
+    }
+  }
+  return {
+    import_id: text(group.import_id, 'archive.import_id', 1, 128),
+    upload_id: text(group.upload_id, 'archive.upload_id', 1, 128),
+    status,
+    source_retained: group.source_retained,
+    child_count: group.child_count as number,
+    completed_count: group.completed_count as number,
+    active_count: group.active_count as number,
+    failed_count: group.failed_count as number,
+  }
+}
+
 export function parseTaskDetail(value: unknown): TaskDetail {
   const task = record(value, 'task')
   exactKeys(task, requiredTaskKeys, optionalTaskKeys, 'task')
@@ -164,12 +200,25 @@ export function parseTaskDetail(value: unknown): TaskDetail {
   const currentStage = optionalText(task, 'current_stage', 32)
   const errorCode = optionalText(task, 'error_code', 128)
   const errorMessage = optionalText(task, 'error_message', 2_048)
+  const archivePath = optionalText(task, 'archive_path', 4_096)
+  const analysisMode = optionalText(task, 'analysis_mode', 16)
+  const executionStatus = optionalText(task, 'execution_status', 32)
+  if (executionStatus !== undefined && !TASK_EXECUTION_STATUSES.includes(executionStatus as TaskExecutionStatus)) {
+    throw new TaskContractError('execution_status')
+  }
+  if (analysisMode !== undefined && !['binary', 'archive', 'container'].includes(analysisMode)) {
+    throw new TaskContractError('analysis_mode')
+  }
 
   return {
     id,
     name: text(task.name, 'name', 1, 255),
     input_type: text(task.input_type, 'input_type', 1, 64),
+    ...(analysisMode === undefined ? {} : { analysis_mode: analysisMode as AnalysisMode }),
+    ...(task.archive === undefined ? {} : { archive: parseArchiveTaskGroup(task.archive) }),
+    ...(archivePath === undefined ? {} : { archive_path: archivePath }),
     status,
+    ...(executionStatus === undefined ? {} : { execution_status: executionStatus as TaskExecutionStatus }),
     risk_level: riskLevel,
     progress: task.progress,
     progress_indeterminate: task.progress_indeterminate,

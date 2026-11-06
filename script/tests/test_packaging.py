@@ -145,6 +145,9 @@ class PackagingTests(unittest.TestCase):
     def test_release_exports_all_nine_images_and_integrity_metadata(self):
         bundle = self.build()
         self.assertEqual(bundle, self.repo / "release")
+        config = BUILD.load_env(bundle / ".env")
+        self.assertEqual(config["INITIAL_ADMIN_USERNAME"], "admin")
+        self.assertEqual(config["INITIAL_ADMIN_PASSWORD"], "admin123")
         archive = bundle / "images/runtime-images.tar"
         self.assertTrue(archive.is_file())
         save = next(args for args in self.docker.calls if args[0] == "save")
@@ -182,6 +185,8 @@ class PackagingTests(unittest.TestCase):
         config = BUILD.load_env(bundle / ".env")
         self.assertEqual(bundle, self.repo / "local")
         self.assertEqual(config["BINARY_DATA_ROOT"], "./data")
+        self.assertEqual(config["INITIAL_ADMIN_USERNAME"], "admin")
+        self.assertEqual(config["INITIAL_ADMIN_PASSWORD"], "admin123")
         for relative in (
             "mysql", "storage/uploads", "storage/blobs", "storage/artifacts",
             "storage/reports", "storage/projects/native", "storage/projects/jvm",
@@ -217,9 +222,12 @@ class PackagingTests(unittest.TestCase):
         generated = BUILD.load_env(bundle / ".env")
         for entry in replacements.values():
             key, expected = entry.split("=", 1)
-            self.assertEqual(generated[key], expected)
+            if key != "INITIAL_ADMIN_USERNAME":
+                self.assertEqual(generated[key], expected)
+        self.assertEqual(generated["INITIAL_ADMIN_USERNAME"], "admin")
+        self.assertEqual(generated["INITIAL_ADMIN_PASSWORD"], "admin123")
         self.assertIn("delivery-template-marker", (bundle / "manage.sh").read_text(encoding="utf-8"))
-        for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD", "INITIAL_ADMIN_PASSWORD"):
+        for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"):
             self.assertNotEqual(generated[key], self.source_config[key])
             self.assertGreaterEqual(len(generated[key]), 32)
         self.assertEqual(env_file.read_text(encoding="utf-8"), custom)
@@ -291,6 +299,8 @@ class PackagingTests(unittest.TestCase):
                 )
                 services = json.loads(parsed.stdout)["services"]
                 self.assertEqual(set(services), set(SERVICE_IMAGES))
+                self.assertEqual(services["app"]["environment"]["BINARY_INITIAL_ADMIN_USERNAME"], "admin")
+                self.assertEqual(services["app"]["environment"]["BINARY_INITIAL_ADMIN_PASSWORD"], "admin123")
                 for service in services.values():
                     self.assertNotIn("build", service)
                     self.assertEqual(service["pull_policy"], "never")

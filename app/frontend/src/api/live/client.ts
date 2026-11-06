@@ -30,6 +30,9 @@ import {
   type LiveAnalysisRunMetadata,
 } from '@/api/live/analysisRunMetadata'
 import type * as Model from '@/api/types'
+import { AnalysisRulesContractError, analysisRuleRequest, parseAnalysisRuleCatalog } from '@/api/analysisRulesContract'
+import { parseArchiveTaskGroup } from '@/api/taskContract'
+import { buildAuditQuery, mapAuditPage, type LiveAuditPage } from '@/api/auditContract'
 
 interface LiveUser {
   id: string
@@ -43,11 +46,14 @@ interface LiveTask {
   id: string
   displayName: string
   status: string
+  execution_status?: Model.TaskExecutionStatus
   creatorId?: string
   creatorName?: string
   inputSha256?: string
   detectedFormat?: string
   analysisMode?: Model.AnalysisMode
+  archive?: Model.ArchiveTaskGroup
+  archive_path?: string
   createdAt: string
   updatedAt: string
 }
@@ -212,6 +218,14 @@ function errorMessage(code: string, status: number): string {
     decompile_not_supported: '该文件格式暂不支持反编译',
     source_required: '当前反编译结果没有可供检测的源码',
     checker_not_supported: '该源码类型暂不支持安全检测',
+    rule_catalog_unavailable: '检测规则目录尚未就绪，请等待检测引擎上报后重试',
+    rule_catalog_stale: '检测规则目录已过期，请刷新规则后重试',
+    rule_catalog_conflict: '检测引擎的规则版本不一致，请联系管理员更新部署',
+    rule_catalog_changed: '检测规则版本已变化，请重新选择规则后启动',
+    rule_catalog_version_mismatch: '检测规则版本已变化，请重新选择规则后启动',
+    invalid_rule_selection: '请选择当前源码类型支持的检测规则',
+    check_idempotency_conflict: '本次启动标识已用于不同规则选择，请重新启动检测',
+    run_idempotency_conflict: '本次启动标识已用于不同规则选择，请重新启动检测',
     upload_not_found: '上传会话不存在或已失效',
     upload_incomplete: '上传分片尚未完整到达服务端',
     upload_conflict: '上传分片或会话内容发生冲突',
@@ -224,6 +238,9 @@ function errorMessage(code: string, status: number): string {
     invalid_analysis_mode: '请选择二进制、压缩包或容器/映像分析模式',
     task_creation_failed: '分析任务创建失败，请重试',
     archive_import_not_found: '归档导入不存在或已删除',
+    invalid_archive_import_query: '归档查询条件无效，请刷新后重试',
+    archive_source_cleanup_failed: '原始归档清理失败，请稍后重试',
+    archive_source_cleanup_required: '请使用“清理原始归档”操作，保留已创建子任务和报告',
     archive_reports_not_ready: '所选格式还没有可打包的已完成子任务报告',
     archive_report_bundle_too_large: '归档报告包内容超过安全上限，请减少格式或取消包含源码',
     archive_report_bundle_idempotency_conflict: '归档报告包请求参数已经变化，请重新提交',
@@ -233,6 +250,12 @@ function errorMessage(code: string, status: number): string {
     report_run_not_finished: '仍有处理流程未结束，暂时不能生成报告',
     invalid_report_request: '当前报告格式或分析快照无效',
     invalid_report_encoding: '报告下载编码无效',
+    invalid_audit_filter: '审计筛选条件无效，请检查时间范围和操作结果',
+    invalid_audit_query: '审计筛选条件无效，请检查时间范围和操作结果',
+    invalid_audit_page: '审计分页或筛选条件无效，请重新查询',
+    audit_export_too_large: '匹配的审计记录过多，请缩小时间范围后导出',
+    audit_export_failed: '审计导出失败，请重试',
+    audit_export_busy: '正在处理其他审计导出，请稍后重试',
     report_idempotency_conflict: '该报告生成请求已被用于不同的格式或分析流程，请重新提交',
   }
   return messages[code] ?? `请求失败（HTTP ${status}，${code}）`
@@ -264,28 +287,41 @@ function taskStatus(value: string): Model.TaskStatus {
   }
 }
 
-function taskProgress(value: string): { progress: number; indeterminate: boolean } {
-  // 列表接口没有精确百分比，因此这里只给状态级展示估值，并用 indeterminate
-  // 表明“仍在执行”；该数值不能作为后台流程真实完成度。
-  switch (value) {
-    case 'queued': return { progress: 5, indeterminate: true }
-    case 'scanning': return { progress: 58, indeterminate: true }
-    case 'ready':
-    case 'partial':
-    case 'failed':
-    case 'deleted': return { progress: 100, indeterminate: false }
-    default: return { progress: 0, indeterminate: true }
+function taskExecutionStatus(value: LiveTask): Model.TaskExecutionStatus {
+  if (value.execution_status) return value.execution_status
+  // Older servers expose input readiness only. Never infer an analyzer result
+  // from ready/partial: an uploaded file may not have been decompiled or checked.
+  switch (value.status) {
+    case 'scanning': return 'PREPARING'
+    case 'failed': return 'FAILED'
+    case 'deleting': return 'DELETING'
+    case 'deleted': return 'DELETED'
+    case 'cancelled': return 'CANCELLED'
+    default: return 'UPLOADED'
   }
 }
 
+function taskProgress(value: Model.TaskExecutionStatus): { progress: number; indeterminate: boolean } {
+  // The list has no measured percentage; active stages stay indeterminate.
+  // Upload/recognition alone must never produce a completed analysis bar.
+  if (['PREPARING', 'DECOMPILE_QUEUED', 'DECOMPILING', 'SCAN_QUEUED', 'SCANNING'].includes(value)) {
+    return { progress: 0, indeterminate: true }
+  }
+  return { progress: value === 'DECOMPILED' || value === 'SCAN_COMPLETED' ? 100 : 0, indeterminate: false }
+}
+
 function mapTask(value: LiveTask): Model.ScanTask {
-  const progress = taskProgress(value.status)
+  const executionStatus = taskExecutionStatus(value)
+  const progress = taskProgress(executionStatus)
   return {
     id: value.id,
     name: value.displayName,
     input_type: value.detectedFormat || 'binary',
     ...(value.analysisMode ? { analysis_mode: value.analysisMode } : {}),
+    ...(value.archive ? { archive: parseArchiveTaskGroup(value.archive) } : {}),
+    ...(value.archive_path ? { archive_path: value.archive_path } : {}),
     status: taskStatus(value.status),
+    execution_status: executionStatus,
     risk_level: 'UNKNOWN',
     progress: progress.progress,
     progress_indeterminate: progress.indeterminate,
@@ -307,7 +343,9 @@ export function buildLiveTaskListQuery(query: Model.TaskListQuery): string {
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.keyword) params.set('keyword', query.keyword)
   if (query.status) params.set('status', query.status)
+  if (query.execution_status) params.set('execution_status', query.execution_status)
   if (query.input_type) params.set('input_type', query.input_type)
+  if (query.analysis_mode) params.set('analysis_mode', query.analysis_mode)
   if (query.creator) params.set('creator', query.creator)
   if (query.tag) params.set('tag', query.tag)
   if (query.created_from) params.set('created_from', query.created_from)
@@ -329,7 +367,7 @@ function mapTaskDetail(value: LiveTaskDetail): Model.TaskDetail {
     original_filename: root?.path ?? value.task.displayName,
     size_bytes: root?.sizeBytes ?? 0,
     sha256: value.task.inputSha256 ?? '',
-    current_stage: active ? stageForRun(active.kind) : value.task.status === 'ready' ? 'COMPLETED' : base.status,
+    current_stage: active ? stageForRun(active.kind) : base.execution_status ?? base.status,
     ...(failed?.errorCode ? { error_code: failed.errorCode } : {}),
     ...(failed?.errorMessage ? { error_message: failed.errorMessage } : {}),
   }
@@ -345,6 +383,16 @@ function stageForRun(kind: string): string {
 
 async function loadTask(taskId: string): Promise<LiveTaskDetail> {
   return request<LiveTaskDetail>(`/tasks/${encode(taskId)}`)
+}
+
+async function createSourceCheck(taskId: string, projectId: string, key: string, kind: string, input?: Model.AnalysisRuleSelectionInput) {
+  const created = await request<{ run: { id: string } }>(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, {
+    method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(analysisRuleRequest(input)),
+  })
+  const detail = await loadTask(taskId)
+  const run = detail.runs.find((run) => run.id === created.run?.id && run.subjectId === projectId && run.kind === kind)
+  if (!run) throw new ApiError('创建的检测记录尚未返回，请刷新检测历史', 502, { code: 'RUN_NOT_FOUND' })
+  return { detail, run }
 }
 
 function displayName(path: string): string {
@@ -648,6 +696,18 @@ export function createLiveApiClient(): ApiClient {
       }
     },
     async getTask(id) { return mapTaskDetail(await loadTask(id)) },
+    async listTaskChildren(taskId, query) {
+      const result = await request<{ tasks: LiveTask[]; next_cursor?: string }>(
+        `/tasks/${encode(taskId)}/children?${buildLiveTaskListQuery(query)}`,
+      )
+      return {
+        items: result.tasks.map(mapTask),
+        ...(result.next_cursor ? { next_cursor: result.next_cursor } : {}),
+      }
+    },
+    async cleanupArchiveSource(taskId) {
+      await request<void>(`/tasks/${encode(taskId)}/archive-source`, { method: 'DELETE' })
+    },
     async cancelTask() { return unsupported('当前处理任务不能在此阶段取消') },
     async retryTask(id) { return mapTaskDetail(await loadTask(id)) },
     async deleteTask(id) {
@@ -714,11 +774,16 @@ export function createLiveApiClient(): ApiClient {
     async previewDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
     async confirmDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
     async getDecompileProjectDeletion() { return unsupported('当前版本不允许单独删除反编译源码项目') },
-    async createCAnalysisRun(taskId, projectId, idempotencyKey) {
-      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
-      const detail = await loadTask(taskId)
-      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'c_check')
-      if (!run) throw new ApiError('C 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+    async getAnalysisRuleCatalog(taskId, projectId) {
+      try {
+        return parseAnalysisRuleCatalog(await request<unknown>(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check-rules`))
+      } catch (error) {
+        if (!(error instanceof AnalysisRulesContractError)) throw error
+        throw new ApiError('检测规则目录响应无效，请刷新后重试', 502, { code: 'INVALID_RULE_CATALOG' })
+      }
+    },
+    async createCAnalysisRun(taskId, projectId, idempotencyKey, input) {
+      const { detail, run } = await createSourceCheck(taskId, projectId, idempotencyKey, 'c_check', input)
       return mapCAnalysisRun(detail, run)
     },
     async listCAnalysisRuns(taskId, query = {}) {
@@ -738,11 +803,8 @@ export function createLiveApiClient(): ApiClient {
     },
     async cancelCAnalysisRun(taskId, runId) { return client.getCAnalysisRun(taskId, runId) },
     async deleteCAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
-    async createJavaAnalysisRun(taskId, projectId, idempotencyKey) {
-      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
-      const detail = await loadTask(taskId)
-      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'java_check')
-      if (!run) throw new ApiError('Java 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+    async createJavaAnalysisRun(taskId, projectId, idempotencyKey, input) {
+      const { detail, run } = await createSourceCheck(taskId, projectId, idempotencyKey, 'java_check', input)
       return mapJavaAnalysisRun(detail, run)
     },
     async listJavaAnalysisRuns(taskId, query = {}) {
@@ -762,11 +824,8 @@ export function createLiveApiClient(): ApiClient {
     },
     async cancelJavaAnalysisRun(taskId, runId) { return client.getJavaAnalysisRun(taskId, runId) },
     async deleteJavaAnalysisRun() { unsupported('检测运行记录由统一任务生命周期管理') },
-    async createPythonAnalysisRun(taskId, projectId, idempotencyKey) {
-      await request(`/tasks/${encode(taskId)}/projects/${encode(projectId)}/check`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } })
-      const detail = await loadTask(taskId)
-      const run = detail.runs.find((candidate) => candidate.subjectId === projectId && candidate.kind === 'python_check')
-      if (!run) throw new ApiError('Python 检测任务创建后未返回', 502, { code: 'RUN_NOT_FOUND' })
+    async createPythonAnalysisRun(taskId, projectId, idempotencyKey, input) {
+      const { detail, run } = await createSourceCheck(taskId, projectId, idempotencyKey, 'python_check', input)
       return mapPythonAnalysisRun(detail, run)
     },
     async listPythonAnalysisRuns(taskId, query = {}) {
@@ -899,24 +958,7 @@ export function createLiveApiClient(): ApiClient {
       return { kind: 'url', url: apiEndpoint(`/reports/${encode(reportId)}/content${suffix}`) }
     },
     async getSystemStatus() {
-      const [info, tasks] = await Promise.all([
-        request<{ name: string; version: string }>('/system/info'),
-        request<{ tasks: LiveTask[] }>('/tasks?limit=100'),
-      ])
-      const queued = tasks.tasks.filter((task) => task.status === 'queued').length
-      const active = tasks.tasks.filter((task) => task.status === 'scanning').length
-      const names = ['scanner', 'native-decompiler', 'jvm-decompiler', 'pyc-decompiler', 'c-checker', 'java-checker', 'python-checker']
-      return {
-        version: info.version, service_status: 'healthy', active_tasks: active, queued_tasks: queued,
-        queue_depth: queued, task_counts: Object.fromEntries(tasks.tasks.map((task) => task.status).map((status) => [status, tasks.tasks.filter((task) => task.status === status).length])),
-        repository_used_bytes: 0, repository_total_bytes: 0,
-        analyzers: names.map((name) => ({
-          name, version: info.version, expected_version: info.version, status: 'available' as const,
-          required_worker_kinds: [] as ('image' | 'native' | 'trivy')[], ready_worker_kinds: [] as ('image' | 'native' | 'trivy')[],
-          ready_workers: 1, runtime_name: 'container', runtime_version: info.version,
-        })),
-        collected_at: new Date().toISOString(),
-      }
+      return request<Model.SystemStatus>('/admin/system')
     },
     async listAdminUsers(query = {}) {
       const result = await request<{ users: Array<{ id: string; username: string; role: Model.UserRole; active: boolean; mustChangePassword: boolean; createdAt: string; updatedAt: string }> }>('/admin/users')
@@ -955,19 +997,22 @@ export function createLiveApiClient(): ApiClient {
         locked_until: null, last_login_at: null, created_at: result.user.createdAt, updated_at: result.user.updatedAt }
     },
     async listAuditLogs(query = {}) {
-      const params = new URLSearchParams({ limit: String(query.page_size ?? 100) })
-      if (query.cursor) params.set('beforeId', query.cursor)
-      const result = await request<{ entries: Array<{ id: number; actorId: string | null; actorUsername: string | null; action: string; objectType: string | null; objectId: string | null; requestId: string | null; outcome: string; details: Model.JsonValue | null; createdAt: string }>; nextBeforeId: number | null }>(`/admin/audit?${params}`)
-      let items: Model.AuditLog[] = result.entries.map((entry) => ({
-        id: String(entry.id), actor: entry.actorId ? { id: entry.actorId, username: entry.actorUsername ?? '', display_name: entry.actorUsername ?? '' } : null,
-        action: entry.action, outcome: entry.outcome === 'failure' || entry.outcome === 'denied' ? entry.outcome : 'success',
-        object_type: entry.objectType ?? '', object_id: entry.objectId, request_id: entry.requestId ?? '', metadata: entry.details, created_at: entry.createdAt,
-      }))
-      if (query.action) items = items.filter((entry) => entry.action === query.action)
-      if (query.outcome) items = items.filter((entry) => entry.outcome === query.outcome)
-      return result.nextBeforeId === null
-        ? { items }
-        : { items, next_cursor: String(result.nextBeforeId) }
+      return mapAuditPage(await request<LiveAuditPage>(`/admin/audit?${buildAuditQuery(query)}`))
+    },
+    async exportAuditLogs(query = {}) {
+      const params = buildAuditQuery(query, false)
+      const response = await fetchLiveResponse(`/admin/audit/export${params ? `?${params}` : ''}`)
+      if (!response.ok) {
+        const body = parseApiErrorBody(await response.json().catch(() => undefined))
+        const code = body?.code ?? 'audit_export_failed'
+        throw new ApiError(errorMessage(code, response.status), response.status, { code })
+      }
+      if (!response.headers.get('Content-Type')?.toLowerCase().includes('text/csv')) {
+        throw new ApiError('审计导出响应格式错误，请重试', 502, { code: 'INVALID_AUDIT_EXPORT' })
+      }
+      const disposition = response.headers.get('Content-Disposition') ?? ''
+      const filename = /filename="?([a-zA-Z0-9_.-]+\.csv)"?/i.exec(disposition)?.[1] ?? 'audit-logs.csv'
+      return { kind: 'blob', blob: await response.blob(), filename }
     },
     // 上传、归档和源码内容会驱动后续文件读写，不能只依赖 TypeScript 的编译期
     // 类型。对应 parse* 在运行时校验服务端响应，并把契约漂移转换成明确的 502。
@@ -1076,6 +1121,7 @@ export function createLiveApiClient(): ApiClient {
     },
     async listArchiveImports(query = {}) {
       const params = new URLSearchParams()
+      if (query.task_id) params.set('task_id', query.task_id)
       if (query.cursor) params.set('cursor', query.cursor)
       if (query.page_size !== undefined) params.set('page_size', String(query.page_size))
       try {

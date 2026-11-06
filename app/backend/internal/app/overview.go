@@ -38,7 +38,7 @@ type overviewSummary struct {
 	Failures    []overviewFailure `json:"failures"`
 }
 
-// Use the same visibility as the task list, including its exclusion of archive batches.
+// Count actual detection tasks, including archive-derived children; archive group rows do not add detections.
 const overviewVisible = `deleted_at IS NULL AND COALESCE(analysis_mode, input_category, 'binary') <> 'archive'`
 
 func overviewWindow(now time.Time, days int) overviewSummary {

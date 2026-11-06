@@ -53,7 +53,7 @@ function runLabel(run: CAnalysisRun): string {
         <el-select
           :model-value="selectedProjectId"
           :disabled="creating || cancelling || deleting"
-          aria-label="选择 Ghidra 源码项目"
+          aria-label="选择类 C 源码项目"
           @update:model-value="$emit('projectChange', String($event))"
         >
           <el-option

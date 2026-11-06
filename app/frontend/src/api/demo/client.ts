@@ -1,4 +1,5 @@
 import { summarizeOverview } from '@/api/overview'
+import { auditCsv } from '@/api/auditContract'
 import type { ApiClient } from '@/api/contract'
 import { ApiError } from '@/api/client'
 import {
@@ -26,6 +27,7 @@ import type {
   TaskReport,
   ScanTask,
   TaskDetail,
+  TaskExecutionStatus,
   TaskListQuery,
   UploadPartInput,
   UploadSession,
@@ -44,6 +46,7 @@ interface DemoUpload {
 }
 
 interface DemoArchiveImport {
+  taskId: string
   value: ArchiveImport
   entries: ArchiveImportEntry[]
   batchResults: Map<string, string>
@@ -119,7 +122,19 @@ function cloneTask(task: TaskDetail): TaskDetail {
   return {
     ...task,
     tags: [...task.tags],
+    ...(task.archive ? { archive: { ...task.archive } } : {}),
   }
+}
+
+function demoExecutionStatus(task: ScanTask): TaskExecutionStatus {
+  const status = task.status.toUpperCase()
+  if (status === 'DELETING' || status === 'DELETED' || status === 'FAILED' || status === 'CANCELLED') return status
+  if (task.execution_status) return task.execution_status
+  // This preview supplies decompiled APK source, but no security-check runs.
+  // Historical SUCCEEDED fixtures describe input preparation only.
+  if (task.id === DEMO_TASK_IDS.apk) return 'DECOMPILED'
+  if (status === 'SCANNING') return 'PREPARING'
+  return 'UPLOADED'
 }
 
 function cloneFileNode(node: FileNodeDetail): FileNodeDetail {
@@ -165,7 +180,7 @@ function taskMatches(task: ScanTask, query: TaskListQuery): boolean {
   const keyword = query.keyword?.trim().toLocaleLowerCase('zh-CN')
   if (
     keyword &&
-    ![task.name, task.id, task.creator_name, ...task.tags]
+    ![task.name, task.id, task.archive_path ?? '', task.creator_name, ...task.tags]
       .join(' ')
       .toLocaleLowerCase('zh-CN')
       .includes(keyword)
@@ -173,7 +188,9 @@ function taskMatches(task: ScanTask, query: TaskListQuery): boolean {
     return false
   }
   if (query.status && task.status !== query.status) return false
+  if (query.execution_status && demoExecutionStatus(task) !== query.execution_status) return false
   if (query.input_type && task.input_type !== query.input_type) return false
+  if (query.analysis_mode && task.analysis_mode !== query.analysis_mode) return false
   const creator = query.creator?.trim().toLocaleLowerCase('zh-CN')
   if (
     creator &&
@@ -248,7 +265,7 @@ function demoAnalysisOptions(format: string): import('@/api/types').UploadAnalys
  */
 export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
   const delayMs = options.delayMs ?? DEFAULT_DELAY_MS
-  const tasks = DEMO_TASKS.map(cloneTask)
+  const tasks: TaskDetail[] = DEMO_TASKS.map((task) => ({ ...cloneTask(task), execution_status: demoExecutionStatus(task) }))
   const fileNodes = new Map(
     Object.entries(DEMO_FILE_NODES).map(([taskId, nodes]) => [
       taskId,
@@ -274,6 +291,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
   let archiveReportBundleCounter = 0
 
   const demoArchiveImportId = 'demo-archive-history-0001'
+  const demoArchiveTaskId = '70000000-0000-4000-8000-000000000001'
   const demoArchiveReportCreatedAt = '2026-07-30T12:00:00+08:00'
   reports.set(DEMO_TASK_IDS.firmware, [
     {
@@ -304,6 +322,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
     },
   ])
   archiveImports.set(demoArchiveImportId, {
+    taskId: demoArchiveTaskId,
     value: {
       id: demoArchiveImportId,
       upload_id: 'demo-upload-cleaned-0001',
@@ -357,6 +376,23 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       ['2', DEMO_TASK_IDS.apk],
     ]),
   })
+  tasks.unshift({
+    ...cloneTask(tasks.find((task) => task.id === DEMO_TASK_IDS.firmware)!),
+    id: demoArchiveTaskId,
+    name: 'vulnerable-binaries.zip',
+    original_filename: 'vulnerable-binaries.zip',
+    input_type: 'zip',
+    analysis_mode: 'archive',
+    created_at: '2026-07-30T10:00:00+08:00',
+    updated_at: demoArchiveReportCreatedAt,
+  })
+  for (const entry of archiveImports.get(demoArchiveImportId)!.entries) {
+    const child = tasks.find((task) => task.id === entry.task_id)
+    if (!child) continue
+    child.analysis_mode = 'binary'
+    child.input_type = entry.detected_format ?? child.input_type
+    child.archive_path = entry.path
+  }
   archiveReportBundles.set(demoArchiveImportId, [
     {
       id: 'demo-archive-bundle-0000',
@@ -400,6 +436,61 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
     return task
   }
 
+  function taskImports(taskId: string): DemoArchiveImport[] {
+    return [...archiveImports.values()].filter((item) => item.taskId === taskId)
+      .sort((left, right) => right.value.created_at.localeCompare(left.value.created_at)
+        || right.value.id.localeCompare(left.value.id))
+  }
+
+  function archiveImportIsVisible(item: DemoArchiveImport): boolean {
+    return item.value.source_retained || item.entries.some((entry) =>
+      entry.task_id && tasks.some((task) => task.id === entry.task_id && !['DELETING', 'DELETED'].includes(task.status)),
+    ) || (archiveReportBundles.get(item.value.id) ?? []).some((bundle) => bundle.status === 'ready')
+  }
+
+  function taskChildren(taskId: string): TaskDetail[] {
+    const paths = new Map<string, string>()
+    for (const item of taskImports(taskId)) {
+      for (const entry of item.entries) {
+        if (entry.task_id) paths.set(entry.task_id, entry.path)
+      }
+    }
+    return tasks.filter((task) => paths.has(task.id) && !['DELETING', 'DELETED'].includes(task.status))
+      .map((task) => ({ ...cloneTask(task), archive_path: paths.get(task.id)! }))
+  }
+
+  function taskSummary(task: TaskDetail): TaskDetail {
+    const latest = taskImports(task.id)[0]
+    if (!latest) return cloneTask(task)
+    const children = taskChildren(task.id)
+    return {
+      ...cloneTask(task),
+      archive: {
+        import_id: latest.value.id,
+        upload_id: latest.value.upload_id,
+        status: latest.value.status,
+        source_retained: latest.value.source_retained,
+        child_count: children.length,
+        completed_count: children.filter((child) => demoExecutionStatus(child) === 'SCAN_COMPLETED').length,
+        active_count: children.filter((child) => ['PREPARING', 'DECOMPILE_QUEUED', 'DECOMPILING', 'SCAN_QUEUED', 'SCANNING'].includes(demoExecutionStatus(child))).length,
+        failed_count: children.filter((child) => ['FAILED', 'DECOMPILE_FAILED', 'SCAN_FAILED'].includes(demoExecutionStatus(child))).length,
+      },
+    }
+  }
+
+  function taskPage(matching: TaskDetail[], query: TaskListQuery) {
+    const pageSize = normalizePageSize(query.page_size, 20)
+    const offset = pageOffset(query.cursor)
+    if (offset > matching.length) {
+      throw new ApiError('示例分页游标无效', 400, { code: 'INVALID_CURSOR' })
+    }
+    const items = matching.slice(offset, offset + pageSize).map(taskSummary)
+    const nextOffset = offset + items.length
+    return nextOffset < matching.length
+      ? { items, next_cursor: `demo-offset-${nextOffset}` }
+      : { items }
+  }
+
   function findUpload(uploadId: string): DemoUpload {
     const upload = uploads.get(uploadId)
     if (!upload) {
@@ -432,6 +523,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       input_type: inferredInputFormat(upload.input.filename),
       analysis_mode: analysisMode,
       status: 'QUEUED',
+      execution_status: 'UPLOADED',
       risk_level: 'UNKNOWN',
       progress: 0,
       progress_indeterminate: false,
@@ -481,6 +573,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
               inferredInputFormat(upload.input.filename),
             )
           : ['docker-tar', 'oci-tar'].includes(inferredInputFormat(upload.input.filename))
+    findTask(id).execution_status = supported ? 'UPLOADED' : 'UNSUPPORTED'
     const task = {
       task_id: id,
       analysis_mode: analysisMode,
@@ -548,23 +641,59 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
     async listTasks(query) {
       await delay()
       requireUser()
-      const pageSize = normalizePageSize(query.page_size, 20)
-      const matched = tasks.filter((task) => taskMatches(task, query))
-      const offset = pageOffset(query.cursor)
-      if (offset > matched.length) {
-        throw new ApiError('示例分页游标无效', 400, { code: 'INVALID_CURSOR' })
+      const childIds = new Set([...archiveImports.values()].flatMap((item) =>
+        item.entries.flatMap((entry) => entry.task_id ? [entry.task_id] : []),
+      ))
+      const parentQuery = { ...query }
+      delete parentQuery.keyword
+      delete parentQuery.status
+      delete parentQuery.execution_status
+      delete parentQuery.input_type
+      delete parentQuery.tag
+      const childQuery = { ...query }
+      delete childQuery.analysis_mode
+      delete childQuery.creator
+      delete childQuery.created_from
+      delete childQuery.created_to
+      const matched = tasks.filter((task) => {
+        if (childIds.has(task.id) || ['DELETING', 'DELETED'].includes(task.status)) return false
+        const imports = taskImports(task.id)
+        if (imports.length && !imports.some(archiveImportIsVisible)) return false
+        if (!taskMatches(task, parentQuery)) return false
+        if (taskMatches(task, query)) return true
+        return taskChildren(task.id).some((child) => taskMatches(child, childQuery))
+      }).sort((left, right) => right.created_at.localeCompare(left.created_at)
+        || right.id.localeCompare(left.id))
+      return taskPage(matched, query)
+    },
+
+    async listTaskChildren(taskId, query) {
+      await delay()
+      requireUser()
+      findTask(taskId)
+      if (!taskImports(taskId).some(archiveImportIsVisible)) {
+        throw new ApiError('示例归档导入不存在', 404, { code: 'ARCHIVE_IMPORT_NOT_FOUND' })
       }
-      const items = matched.slice(offset, offset + pageSize).map(cloneTask)
-      const nextOffset = offset + items.length
-      return nextOffset < matched.length
-        ? { items, next_cursor: `demo-offset-${nextOffset}` }
-        : { items }
+      return taskPage(taskChildren(taskId).filter((task) => taskMatches(task, query)), query)
+    },
+
+    async cleanupArchiveSource(taskId) {
+      await delay()
+      const user = requireUser()
+      const parent = findTask(taskId)
+      if (user.role === 'reader' || (user.role !== 'administrator' && parent.creator_id !== user.id)) {
+        throw new ApiError('当前账号不能清理该归档', 403, { code: 'operation_not_allowed' })
+      }
+      for (const item of taskImports(taskId)) {
+        item.value.source_retained = false
+        item.entries = item.entries.filter((entry) => entry.status === 'created')
+      }
     },
 
     async getTask(id) {
       await delay()
       requireUser()
-      return cloneTask(findTask(id))
+      return taskSummary(findTask(id))
     },
 
     async cancelTask(id, idempotencyKey) {
@@ -607,6 +736,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       }
       Object.assign(task, {
         status: 'QUEUED' as const,
+        execution_status: 'UPLOADED' as const,
         progress: 0,
         progress_indeterminate: false,
         current_stage: 'QUEUED',
@@ -625,6 +755,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       const task = findTask(id)
       Object.assign(task, {
         status: 'DELETING' as const,
+        execution_status: 'DELETING' as const,
         current_stage: 'DELETING',
         progress_indeterminate: false,
         updated_at: '2026-07-30T11:02:00+08:00',
@@ -739,6 +870,14 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       })
     },
 
+    async getAnalysisRuleCatalog(taskId, projectId) {
+      const project = await this.getDecompileProject(taskId, projectId)
+      const lang = project.language.toLowerCase()
+      if (lang !== 'c' && lang !== 'java' && lang !== 'python') throw new ApiError('该项目不支持源码检测', 400)
+      return { language: lang, engine: { name: `${lang}-checker`, version: '' }, catalogVersion: '', rules: [],
+        freshness: 'missing', available: false, last_checked_at: null,
+        detail: '界面预览没有实际部署的规则目录；连接检测服务后可选择规则。' }
+    },
     async createCAnalysisRun() {
       await delay()
       requireUser()
@@ -1319,8 +1458,8 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         ) {
           return false
         }
-        if (query.created_from && entry.created_at < query.created_from) return false
-        if (query.created_to && entry.created_at > query.created_to) return false
+        if (query.created_from && Date.parse(entry.created_at) < Date.parse(query.created_from)) return false
+        if (query.created_to && Date.parse(entry.created_at) > Date.parse(query.created_to)) return false
         return true
       })
       const offset = pageOffset(query.cursor)
@@ -1332,6 +1471,17 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       return nextOffset < filtered.length
         ? { items, next_cursor: `demo-offset-${nextOffset}` }
         : { items }
+    },
+
+    async exportAuditLogs(query = {}) {
+      const logs: AuditLog[] = []
+      let cursor = ''
+      do {
+        const result = await this.listAuditLogs({ ...query, cursor, page_size: 500 })
+        logs.push(...result.items)
+        cursor = result.next_cursor ?? ''
+      } while (cursor)
+      return { kind: 'blob', blob: new Blob([auditCsv(logs)], { type: 'text/csv;charset=utf-8' }), filename: 'audit-logs-demo.csv' }
     },
 
     async createUpload(input, idempotencyKey) {
@@ -1498,11 +1648,24 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
         throw new ApiError('示例任务创建失败', 500, { code: 'TASK_CREATE_FAILED' })
       }
       if (input.analysis_mode === 'archive') {
+        Object.assign(findTask(taskId), {
+          status: task.supported ? 'SUCCEEDED' : 'PARTIAL_SUCCEEDED',
+          execution_status: task.supported ? 'UPLOADED' : 'UNSUPPORTED',
+          progress: 100,
+          progress_indeterminate: false,
+          ...(!task.supported ? {
+            error_code: 'analysis_mode_not_applicable',
+            error_message: `归档解析器不支持 ${upload.completed.detected_format ?? 'unknown'} 格式`,
+          } : {}),
+        })
+      }
+      if (input.analysis_mode === 'archive' && task.supported) {
         const importId = `demo-archive-${String(taskCounter).padStart(4, '0')}`
         task.archive_import_id = importId
         upload.completed.archive_import_id = importId
         const now = '2026-07-30T10:00:00+08:00'
         archiveImports.set(importId, {
+          taskId,
           value: {
             id: importId,
             upload_id: uploadId,
@@ -1579,6 +1742,8 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       const offset = pageOffset(query.cursor)
       const pageSize = normalizePageSize(query.page_size, 25)
       const matching = [...archiveImports.values()]
+        .filter((archiveImport) => !query.task_id || archiveImport.taskId === query.task_id)
+        .filter(archiveImportIsVisible)
         .map((archiveImport) => archiveImport.value)
         .filter((archiveImport) => archiveImport.status !== 'deleted')
         .sort((left, right) => {
@@ -1599,7 +1764,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       await delay()
       requireUser()
       const archiveImport = archiveImports.get(importId)
-      if (!archiveImport) {
+      if (!archiveImport || !archiveImportIsVisible(archiveImport)) {
         throw new ApiError('示例归档导入不存在', 404, {
           code: 'ARCHIVE_IMPORT_NOT_FOUND',
         })
@@ -1611,7 +1776,7 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       await delay()
       requireUser()
       const archiveImport = archiveImports.get(importId)
-      if (!archiveImport) {
+      if (!archiveImport || !archiveImportIsVisible(archiveImport)) {
         throw new ApiError('示例归档导入不存在', 404, {
           code: 'ARCHIVE_IMPORT_NOT_FOUND',
         })
@@ -1679,7 +1844,10 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
           id: taskId,
           name: `${archiveImport.value.filename} :: ${entry.path}`,
           input_type: entry.detected_format ?? 'unknown',
+          analysis_mode: 'binary',
+          archive_path: entry.path,
           status: 'QUEUED',
+          execution_status: 'UPLOADED',
           risk_level: 'UNKNOWN',
           progress: 0,
           progress_indeterminate: false,

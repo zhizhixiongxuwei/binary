@@ -10,6 +10,7 @@ import {
 
 import { api, ApiError } from '@/api/client'
 import type {
+  AnalysisRuleSelectionInput,
   CAnalysisFinding,
   CAnalysisRun,
   CAnalysisSeverity,
@@ -17,6 +18,7 @@ import type {
   UserRole,
 } from '@/api/types'
 import type { TaskResultState } from '@/components/tasks/taskResultTypes'
+import { normalizeRuleSelection } from '@/components/tasks/analysis-rules/ruleSelection'
 
 interface UseCAnalysisOptions {
   taskId: MaybeRefOrGetter<string>
@@ -85,7 +87,7 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
   let generation = 0
   let findingGeneration = 0
   let createRequestContext:
-    | { taskId: string; projectId: string; key: string }
+    | { taskId: string; projectId: string; selectionFingerprint: string; key: string }
     | undefined
   let createSequence = 0
   let cancelSequence = 0
@@ -115,6 +117,7 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
     () =>
       canOperate.value &&
       Boolean(selectedProject.value) &&
+      !loading.value &&
       !activeRun.value &&
       !busy.value,
   )
@@ -143,7 +146,7 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
       return {
         status: 'loading',
         title: '正在读取 C 源码检测',
-        description: '正在加载可检测的 Ghidra 源码项目和历史运行。',
+        description: '正在加载可检测的类 C 源码项目和历史运行。',
       }
     }
     if (error.value) {
@@ -157,8 +160,8 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
     if (projects.value.length === 0) {
       return {
         status: 'empty',
-        title: '暂无可检测的 Ghidra 源码项目',
-        description: '请先完成 Ghidra 反编译并保存 project-v1 类 C 源码。',
+        title: '暂无可检测的类 C 源码项目',
+        description: '请先完成二进制反编译并保存类 C 源码项目。',
       }
     }
     return { status: 'ready' }
@@ -421,10 +424,16 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
     void loadFindings()
   }
 
-  async function createRun(): Promise<void> {
+  async function createRun(input: AnalysisRuleSelectionInput): Promise<void> {
     const taskId = toValue(options.taskId)
     const project = selectedProject.value
     if (!taskId || !project || !canCreate.value) return
+    const selection = normalizeRuleSelection(input)
+    if (!selection) {
+      operationError.value = '请先选择本次检测规则。'
+      return
+    }
+    const selectionFingerprint = JSON.stringify(selection)
     const currentGeneration = generation
     const requestSequence = ++createSequence
     creating.value = true
@@ -432,11 +441,13 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
     if (
       !createRequestContext ||
       createRequestContext.taskId !== taskId ||
-      createRequestContext.projectId !== project.id
+      createRequestContext.projectId !== project.id ||
+      createRequestContext.selectionFingerprint !== selectionFingerprint
     ) {
       createRequestContext = {
         taskId,
         projectId: project.id,
+        selectionFingerprint,
         key: newIdempotencyKey(),
       }
     }
@@ -446,10 +457,8 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
         taskId,
         project.id,
         requestContext.key,
+        selection,
       )
-      if (createRequestContext?.key === requestContext.key) {
-        createRequestContext = undefined
-      }
       if (
         currentGeneration !== generation ||
         taskId !== toValue(options.taskId) ||
@@ -461,20 +470,13 @@ export function useCAnalysis(options: UseCAnalysisOptions) {
         operationError.value = '创建检测失败：服务返回了不匹配的检测版本'
         return
       }
+      if (createRequestContext?.key === requestContext.key) createRequestContext = undefined
       replaceRun(run)
       selectedRunId.value = run.id
       findings.value = []
       selectedFinding.value = undefined
       schedulePoll()
     } catch (caught) {
-      if (
-        caught instanceof ApiError &&
-        caught.status > 0 &&
-        caught.status < 500 &&
-        createRequestContext?.key === requestContext.key
-      ) {
-        createRequestContext = undefined
-      }
       if (
         currentGeneration === generation &&
         taskId === toValue(options.taskId) &&

@@ -1,24 +1,32 @@
 <script setup lang="ts">
 import { Download, Filter, RefreshCw, ScrollText, Search } from 'lucide-vue-next'
-import { reactive } from 'vue'
+import { reactive, shallowRef } from 'vue'
 
 import type { AuditLog, AuditLogListQuery } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
+import { auditFilterQuery } from '@/components/system/maintenance/auditFilters'
 import { formatDateTime } from '@/utils/formatters'
 
 defineProps<{
   logs: readonly AuditLog[]
   loading: boolean
   loadingMore: boolean
+  loadMoreError?: string
   errorMessage: string
   hasMore: boolean
+  exporting: boolean
+  exportError: string
+  exportFeedback: string
 }>()
 
 const emit = defineEmits<{
   search: [query: AuditLogListQuery]
   retry: []
   loadMore: []
+  export: [query: AuditLogListQuery]
 }>()
+
+const filterError = shallowRef('')
 
 const filters = reactive({
   action: '',
@@ -28,27 +36,28 @@ const filters = reactive({
   createdTo: '',
 })
 
-function toIso(value: string, endOfMinute = false): string | undefined {
-  if (!value) return undefined
-  const date = new Date(`${value}:${endOfMinute ? '59.999' : '00.000'}`)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+function filterQuery(): AuditLogListQuery | null {
+  filterError.value = ''
+  try {
+    return auditFilterQuery(filters)
+  } catch (error) {
+    filterError.value = error instanceof Error ? error.message : '筛选条件无效'
+    return null
+  }
 }
 
 function submitFilters(): void {
-  const action = filters.action.trim()
-  const actor = filters.actor.trim()
-  const createdFrom = toIso(filters.createdFrom)
-  const createdTo = toIso(filters.createdTo, true)
-  emit('search', {
-    ...(action ? { action } : {}),
-    ...(filters.outcome ? { outcome: filters.outcome } : {}),
-    ...(actor ? { actor } : {}),
-    ...(createdFrom ? { created_from: createdFrom } : {}),
-    ...(createdTo ? { created_to: createdTo } : {}),
-  })
+  const query = filterQuery()
+  if (query) emit('search', query)
+}
+
+function exportLogs(): void {
+  const query = filterQuery()
+  if (query) emit('export', query)
 }
 
 function clearFilters(): void {
+  filterError.value = ''
   filters.action = ''
   filters.outcome = ''
   filters.actor = ''
@@ -80,7 +89,7 @@ function actorLabel(log: AuditLog): string {
       <div>
         <span class="section-kicker mono">LIVE / AUDIT EVENTS</span>
         <h2 id="audit-live-title">审计日志</h2>
-        <p>从数据库按游标查询受控事件字段，不读取或解析服务日志文件。</p>
+        <p>记录账号登录、任务操作与管理变更，支持按条件查询和导出CSV。</p>
       </div>
       <div class="heading-actions">
         <button
@@ -94,11 +103,13 @@ function actorLabel(log: AuditLog): string {
         </button>
         <button
           type="button"
-          disabled
-          title="本批后端未提供审计导出接口"
+          :disabled="exporting"
+          class="audit-export"
+          title="按当前填写的筛选条件导出全部匹配记录"
+          @click="exportLogs"
         >
           <Download :size="15" aria-hidden="true" />
-          <span>导出</span>
+          <span>{{ exporting ? '正在导出…' : '导出CSV' }}</span>
         </button>
       </div>
     </header>
@@ -151,6 +162,10 @@ function actorLabel(log: AuditLog): string {
       </div>
     </form>
 
+    <p v-if="filterError || exportError" class="audit-message audit-message--error" role="alert">{{ filterError || exportError }}</p>
+    <p v-else-if="exportFeedback" class="audit-message" role="status">{{ exportFeedback }}</p>
+    <p class="audit-scope">任务进度见任务详情的执行日志；服务启动与程序错误等运行日志由部署环境保存。</p>
+
     <StatePanel v-if="loading" kind="loading" />
     <StatePanel
       v-else-if="errorMessage"
@@ -188,6 +203,7 @@ function actorLabel(log: AuditLog): string {
         <div class="request-meta">
           <span>请求标识</span>
           <code>{{ log.request_id || '—' }}</code>
+          <small v-if="log.client_ip">来源 {{ log.client_ip }}</small>
         </div>
         <span
           class="outcome-label"
@@ -199,7 +215,8 @@ function actorLabel(log: AuditLog): string {
       </li>
     </ol>
 
-    <footer class="audit-footer">
+    <p v-if="loadMoreError" class="audit-message audit-message--error" role="alert">{{ loadMoreError }}</p>
+    <footer v-if="!loading && !errorMessage" class="audit-footer">
       <span>
         当前已加载 <strong class="mono">{{ logs.length }}</strong> 条
       </span>
@@ -209,7 +226,7 @@ function actorLabel(log: AuditLog): string {
         :disabled="loadingMore"
         @click="$emit('loadMore')"
       >
-        {{ loadingMore ? '正在加载…' : '加载更早事件' }}
+        {{ loadingMore ? '正在加载…' : loadMoreError ? '重试加载更早事件' : '加载更早事件' }}
       </button>
       <span v-else>已到达当前查询末尾</span>
     </footer>
@@ -217,6 +234,10 @@ function actorLabel(log: AuditLog): string {
 </template>
 
 <style scoped>
+.heading-actions .audit-export:not(:disabled) { border-color: var(--primary-border); color: var(--primary); background: var(--primary-soft); }
+.audit-message, .audit-scope { margin: 0; padding: 10px 17px; color: var(--ink-600); font-size: 12px; line-height: 1.6; }
+.audit-message--error { color: var(--danger); }
+.audit-scope { border-bottom: 1px solid var(--line); background: var(--surface-raised); }
 .audit-live {
   min-width: 0;
   overflow: hidden;

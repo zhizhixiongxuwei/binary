@@ -8,15 +8,16 @@ import (
 
 func TestParseTaskListOptionsPreservesPaginationAndFilters(t *testing.T) {
 	values := url.Values{
-		"page_size":    {"20"},
-		"cursor":       {"11111111-1111-4111-8111-111111111111"},
-		"keyword":      {"vulnerable"},
-		"status":       {"SUCCEEDED"},
-		"input_type":   {"ELF64"},
-		"creator":      {"admin"},
-		"tag":          {"ELF64"},
-		"created_from": {"2026-08-01"},
-		"created_to":   {"2026-08-27"},
+		"page_size":     {"20"},
+		"cursor":        {"11111111-1111-4111-8111-111111111111"},
+		"keyword":       {"vulnerable"},
+		"status":        {"SUCCEEDED"},
+		"input_type":    {"ELF64"},
+		"analysis_mode": {"archive"},
+		"creator":       {"admin"},
+		"tag":           {"ELF64"},
+		"created_from":  {"2026-08-01"},
+		"created_to":    {"2026-08-27"},
 	}
 
 	options, err := parseTaskListOptions(values)
@@ -28,6 +29,9 @@ func TestParseTaskListOptionsPreservesPaginationAndFilters(t *testing.T) {
 	}
 	if options.Keyword != "vulnerable" || options.Status != "ready" || options.InputType != "elf64" {
 		t.Fatalf("unexpected primary filters: %#v", options)
+	}
+	if options.AnalysisMode != "archive" {
+		t.Fatalf("analysis mode = %q", options.AnalysisMode)
 	}
 	if options.Creator != "admin" || options.Tag != "ELF64" {
 		t.Fatalf("unexpected advanced filters: %#v", options)
@@ -45,6 +49,7 @@ func TestParseTaskListOptionsRejectsInvalidPaginationAndFilters(t *testing.T) {
 		{"page_size": {"0"}},
 		{"page_size": {"101"}},
 		{"status": {"unknown-status"}},
+		{"analysis_mode": {"unknown-mode"}},
 		{"created_from": {"2026-02-30"}},
 		{"created_from": {"2026-08-28"}, "created_to": {"2026-08-27"}},
 		{"keyword": {"unsafe\nvalue"}},

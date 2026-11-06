@@ -1,5 +1,7 @@
 package com.binaryscan.checker.java;
 
+import com.binaryscan.checker.java.RuleCatalog.Rule;
+
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.ImportDeclaration;
@@ -37,25 +39,21 @@ import java.util.regex.Pattern;
  */
 @Component
 final class JavaAnalyzer {
-    private static final Rule WEAK_DIGEST = rule("java-weak-message-digest", "medium", "CWE-328", "Weak message digest");
-    private static final Rule WEAK_CIPHER = rule("java-weak-cipher", "medium", "CWE-327", "Weak cipher");
-    private static final Rule LEGACY_TLS = rule("java-legacy-tls", "medium", "CWE-326", "Legacy TLS protocol");
-    private static final Rule HARDCODED_KEY = rule("java-hardcoded-crypto-key", "high", "CWE-321", "Hardcoded cryptographic key");
-    private static final Rule TRUST_HOSTNAME = rule("java-trust-all-hostname-verifier", "high", "CWE-295", "Trust-all hostname verifier");
-    private static final Rule TRUST_X509 = rule("java-trust-all-x509-manager", "high", "CWE-295", "Trust-all X.509 manager");
-    private static final Rule XXE = rule("java-xxe-enabled", "high", "CWE-611", "External XML entities enabled");
-    private static final Rule DESERIALIZATION = rule("java-unsafe-deserialization", "high", "CWE-502", "Unsafe Java deserialization");
-    private static final Rule SQL_INJECTION = rule("java-sql-injection", "high", "CWE-89", "SQL injection");
-    private static final Rule COMMAND_INJECTION = rule("java-command-injection", "high", "CWE-78", "Command injection");
-    private static final Rule DYNAMIC_CODE = rule("java-dynamic-code-execution", "high", "CWE-94", "Dynamic code execution");
-    private static final Rule BROAD_PERMISSION = rule("java-overly-permissive-file", "medium", "CWE-732", "Overly permissive file mode");
-    private static final Rule INSECURE_COOKIE = rule("java-insecure-cookie", "medium", "CWE-614", "Insecure cookie");
+    private static final Rule WEAK_DIGEST = RuleCatalog.rule("java-weak-message-digest");
+    private static final Rule WEAK_CIPHER = RuleCatalog.rule("java-weak-cipher");
+    private static final Rule LEGACY_TLS = RuleCatalog.rule("java-legacy-tls");
+    private static final Rule HARDCODED_KEY = RuleCatalog.rule("java-hardcoded-crypto-key");
+    private static final Rule TRUST_HOSTNAME = RuleCatalog.rule("java-trust-all-hostname-verifier");
+    private static final Rule TRUST_X509 = RuleCatalog.rule("java-trust-all-x509-manager");
+    private static final Rule XXE = RuleCatalog.rule("java-xxe-enabled");
+    private static final Rule DESERIALIZATION = RuleCatalog.rule("java-unsafe-deserialization");
+    private static final Rule SQL_INJECTION = RuleCatalog.rule("java-sql-injection");
+    private static final Rule COMMAND_INJECTION = RuleCatalog.rule("java-command-injection");
+    private static final Rule DYNAMIC_CODE = RuleCatalog.rule("java-dynamic-code-execution");
+    private static final Rule BROAD_PERMISSION = RuleCatalog.rule("java-overly-permissive-file");
+    private static final Rule INSECURE_COOKIE = RuleCatalog.rule("java-insecure-cookie");
 
-    static final Set<String> RULE_IDS = Set.of(
-        WEAK_DIGEST.id(), WEAK_CIPHER.id(), LEGACY_TLS.id(), HARDCODED_KEY.id(),
-        TRUST_HOSTNAME.id(), TRUST_X509.id(), XXE.id(), DESERIALIZATION.id(),
-        SQL_INJECTION.id(), COMMAND_INJECTION.id(), DYNAMIC_CODE.id(),
-        BROAD_PERMISSION.id(), INSECURE_COOKIE.id());
+    static final Set<String> RULE_IDS = RuleCatalog.IDS;
 
     private static final Pattern SQL_TEXT = Pattern.compile(
         "(?is)\\b(select|insert|update|delete|merge|replace|call)\\b.*");
@@ -70,29 +68,35 @@ final class JavaAnalyzer {
         "http://apache.org/xml/features/disallow-doctype-decl");
 
     Analysis analyze(Models.SourceFile file) {
+        return analyze(file, RULE_IDS);
+    }
+
+    Analysis analyze(Models.SourceFile file, Set<String> enabledRules) {
+        if (!RULE_IDS.containsAll(enabledRules)) throw new IllegalArgumentException("unknown rule");
+        if (enabledRules.isEmpty()) return new Analysis(List.of(), List.of());
         var findings = new ArrayList<Models.Finding>();
         var diagnostics = new ArrayList<String>();
         try {
             CompilationUnit unit = StaticJavaParser.parse(file.content());
-            Emitter emitter = new Emitter(file.path(), findings);
+            Emitter emitter = new Emitter(file.path(), findings, enabledRules);
             // 固定遍历顺序和最终排序，使相同源码在不同运行中生成稳定、可复核的 Finding。
             for (MethodCallExpr call : sorted(unit.findAll(MethodCallExpr.class))) {
-                evaluateCrypto(unit, call, emitter);
-                evaluateXxe(call, emitter);
-                evaluateDeserialization(call, emitter);
-                evaluateSql(call, emitter);
-                evaluateCommand(call, emitter);
-                evaluateDynamicCode(call, emitter);
-                evaluatePermissions(call, emitter);
-                evaluateCookie(call, emitter);
-                evaluateHostnameCall(call, emitter);
+                if (emitter.enabled(WEAK_DIGEST) || emitter.enabled(WEAK_CIPHER) || emitter.enabled(LEGACY_TLS)) evaluateCrypto(unit, call, emitter);
+                if (emitter.enabled(XXE)) evaluateXxe(call, emitter);
+                if (emitter.enabled(DESERIALIZATION)) evaluateDeserialization(call, emitter);
+                if (emitter.enabled(SQL_INJECTION)) evaluateSql(call, emitter);
+                if (emitter.enabled(COMMAND_INJECTION)) evaluateCommand(call, emitter);
+                if (emitter.enabled(DYNAMIC_CODE)) evaluateDynamicCode(call, emitter);
+                if (emitter.enabled(BROAD_PERMISSION)) evaluatePermissions(call, emitter);
+                if (emitter.enabled(INSECURE_COOKIE)) evaluateCookie(call, emitter);
+                if (emitter.enabled(TRUST_HOSTNAME)) evaluateHostnameCall(call, emitter);
             }
             for (ObjectCreationExpr creation : sorted(unit.findAll(ObjectCreationExpr.class))) {
-                evaluateHardcodedKey(creation, emitter);
-                evaluateProcessBuilder(creation, emitter);
+                if (emitter.enabled(HARDCODED_KEY)) evaluateHardcodedKey(creation, emitter);
+                if (emitter.enabled(COMMAND_INJECTION)) evaluateProcessBuilder(creation, emitter);
             }
-            evaluateHostnameImplementations(unit, emitter);
-            evaluateTrustManagers(unit, emitter);
+            if (emitter.enabled(TRUST_HOSTNAME)) evaluateHostnameImplementations(unit, emitter);
+            if (emitter.enabled(TRUST_X509)) evaluateTrustManagers(unit, emitter);
             findings.sort(Comparator.comparingInt(Models.Finding::line)
                 .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));
         } catch (RuntimeException exception) {
@@ -108,14 +112,14 @@ final class JavaAnalyzer {
         if (configured.isEmpty() || configured.get().length() > 128) return;
         String raw = configured.get().trim();
         String algorithm = raw.toUpperCase(Locale.ROOT).replace("-", "");
-        if (isStaticTypeCall(unit, call, "MessageDigest", "java.security.MessageDigest")
+        if (emitter.enabled(WEAK_DIGEST) && isStaticTypeCall(unit, call, "MessageDigest", "java.security.MessageDigest")
             && Set.of("MD2", "MD4", "MD5", "SHA1").contains(algorithm)) {
             emitter.emit(WEAK_DIGEST, call, "MessageDigest selects the weak " + raw + " algorithm");
         }
-        if (isStaticTypeCall(unit, call, "Cipher", "javax.crypto.Cipher") && weakCipher(algorithm)) {
+        if (emitter.enabled(WEAK_CIPHER) && isStaticTypeCall(unit, call, "Cipher", "javax.crypto.Cipher") && weakCipher(algorithm)) {
             emitter.emit(WEAK_CIPHER, call, "Cipher selects a weak algorithm or ECB transformation: " + raw);
         }
-        if (isStaticTypeCall(unit, call, "SSLContext", "javax.net.ssl.SSLContext")
+        if (emitter.enabled(LEGACY_TLS) && isStaticTypeCall(unit, call, "SSLContext", "javax.net.ssl.SSLContext")
             && Set.of("SSL", "SSLV2", "SSLV3", "TLSV1", "TLSV1.0", "TLSV1.1").contains(algorithm)) {
             emitter.emit(LEGACY_TLS, call, "SSLContext explicitly selects legacy protocol " + raw);
         }
@@ -346,22 +350,23 @@ final class JavaAnalyzer {
         return nodes;
     }
 
-    private static Rule rule(String id, String severity, String cwe, String title) {
-        return new Rule(id, severity, cwe, title);
-    }
-    private record Rule(String id, String severity, String cwe, String title) {}
 
     private static final class Emitter {
         private final String path;
         private final List<Models.Finding> findings;
+        private final Set<String> enabledRules;
         private final Set<String> dedupe = new HashSet<>();
 
-        private Emitter(String path, List<Models.Finding> findings) {
+        private Emitter(String path, List<Models.Finding> findings, Set<String> enabledRules) {
             this.path = path;
             this.findings = findings;
+            this.enabledRules = Set.copyOf(enabledRules);
         }
 
+        private boolean enabled(Rule rule) { return enabledRules.contains(rule.id()); }
+
         private void emit(Rule rule, Node node, String message) {
+            if (!enabled(rule)) throw new IllegalStateException("disabled rule evaluated: " + rule.id());
             int line = node.getBegin().map(position -> position.line).orElse(1);
             int column = node.getBegin().map(position -> position.column).orElse(1);
             if (!dedupe.add(rule.id() + ':' + line + ':' + column)) return;

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
 	"binaryscan.local/backend/internal/storage"
@@ -36,6 +37,7 @@ type checkerProject struct {
 	quality        string
 	storageKey     string
 	manifestSHA256 []byte
+	selection      *checkrules.Selection
 }
 
 type checkerSource struct {
@@ -44,10 +46,12 @@ type checkerSource struct {
 }
 
 type checkerRequest struct {
-	Version   string          `json:"version"`
-	ProjectID string          `json:"projectId"`
-	Language  string          `json:"language"`
-	Files     []checkerSource `json:"files"`
+	Version        string          `json:"version"`
+	ProjectID      string          `json:"projectId"`
+	Language       string          `json:"language"`
+	Files          []checkerSource `json:"files"`
+	RuleIDs        []string        `json:"ruleIds,omitempty"`
+	CatalogVersion string          `json:"catalogVersion,omitempty"`
 }
 
 type checkerFinding struct {
@@ -63,11 +67,13 @@ type checkerFinding struct {
 }
 
 type checkerResponse struct {
-	Version     string           `json:"version"`
-	ProjectID   string           `json:"projectId"`
-	Status      string           `json:"status"`
-	Findings    []checkerFinding `json:"findings"`
-	Diagnostics []string         `json:"diagnostics"`
+	Version        string           `json:"version"`
+	ProjectID      string           `json:"projectId"`
+	Status         string           `json:"status"`
+	Findings       []checkerFinding `json:"findings"`
+	Diagnostics    []string         `json:"diagnostics"`
+	CatalogVersion string           `json:"catalogVersion"`
+	AppliedRuleIDs []string         `json:"appliedRuleIds"`
 }
 
 type checkerSourceEvidence struct {
@@ -101,6 +107,11 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	if err != nil {
 		return err
 	}
+	if project.selection != nil {
+		if err := validateCheckerSelection(ctx, url, project.language, project.selection); err != nil {
+			return err
+		}
+	}
 	projectRoot, manifest, err := e.openProject(project)
 	if err != nil {
 		return err
@@ -118,9 +129,14 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		if len(batch) == 0 {
 			return nil
 		}
-		response, err := callChecker(ctx, client, url, checkerRequest{
+		request := checkerRequest{
 			Version: "checker-v1", ProjectID: project.id, Language: project.language, Files: batch,
-		})
+		}
+		if project.selection != nil {
+			request.RuleIDs = project.selection.EnabledRuleIDs
+			request.CatalogVersion = project.selection.CatalogVersion
+		}
+		response, err := callChecker(ctx, client, url, request)
 		if err != nil {
 			return err
 		}
@@ -306,9 +322,13 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		if partial {
 			quality = "partial_source"
 		}
+		rulesetVersion := "checker-v1"
+		if project.selection != nil {
+			rulesetVersion = project.selection.CatalogVersion
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE runs
-            SET result_quality = ?, tool_name = ?, ruleset_version = 'checker-v1' WHERE id = ?`,
-			quality, project.language+"-checker", claim.RunID); err != nil {
+            SET result_quality = ?, tool_name = ?, ruleset_version = ? WHERE id = ?`,
+			quality, project.language+"-checker", rulesetVersion, claim.RunID); err != nil {
 			return fmt.Errorf("record checker runtime: %w", err)
 		}
 		message := fmt.Sprintf("%s 源码检查完成，发现 %d 条问题", strings.ToUpper(project.language), len(validated))
@@ -320,16 +340,39 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	})
 }
 
+func validateCheckerSelection(ctx context.Context, url, language string, selection *checkrules.Selection) error {
+	catalog, err := checkrules.Fetch(ctx, url, language)
+	if err != nil {
+		return job.Retryable(err, 15*time.Second)
+	}
+	actual, err := checkrules.Select(catalog, selection.EnabledRuleIDs, selection.CatalogVersion, false)
+	if err != nil {
+		return err
+	}
+	if !checkrules.Same(actual, selection) {
+		return checkrules.ErrSelection
+	}
+	return nil
+}
+
 func (e *Executor) loadCheckerProject(ctx context.Context, runID string) (checkerProject, error) {
 	var project checkerProject
+	var request []byte
 	err := e.db.QueryRowContext(ctx, `SELECT p.id, p.task_id, p.run_id, p.source_kind,
-		p.language, p.result_quality, p.root_storage_key, p.manifest_sha256
+		p.language, p.result_quality, p.root_storage_key, p.manifest_sha256,r.request
 		FROM runs r JOIN source_projects p ON p.id = r.subject_id AND p.task_id = r.task_id
 		WHERE r.id = ? AND r.subject_type = 'source_project' AND p.state = 'ready'`, runID).Scan(
 		&project.id, &project.taskID, &project.decompileRunID, &project.sourceKind,
-		&project.language, &project.quality, &project.storageKey, &project.manifestSHA256)
+		&project.language, &project.quality, &project.storageKey, &project.manifestSHA256, &request)
 	if err != nil {
 		return checkerProject{}, fmt.Errorf("load checker source project: %w", err)
+	}
+	project.selection, err = checkrules.FromRequest(request)
+	if err != nil {
+		return checkerProject{}, err
+	}
+	if project.selection != nil && project.selection.Language != project.language {
+		return checkerProject{}, checkrules.ErrSelection
 	}
 	return project, nil
 }
@@ -464,6 +507,11 @@ func callChecker(ctx context.Context, client *http.Client, url string, request c
 		return checkerResponse{}, fmt.Errorf("checker response exceeds the supported size")
 	}
 	if response.StatusCode != http.StatusOK {
+		if response.StatusCode == http.StatusBadRequest && request.CatalogVersion != "" {
+			if current, err := checkrules.Fetch(ctx, url, request.Language); err == nil && current.CatalogVersion != request.CatalogVersion {
+				return checkerResponse{}, checkrules.ErrVersion
+			}
+		}
 		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests ||
 			response.StatusCode >= http.StatusInternalServerError {
 			return checkerResponse{}, job.Retryable(
@@ -480,6 +528,31 @@ func callChecker(ctx context.Context, client *http.Client, url string, request c
 	if result.Version != "checker-v1" || result.ProjectID != request.ProjectID ||
 		(result.Status != "complete" && result.Status != "partial") || len(result.Findings) > checkerFindingLimit {
 		return checkerResponse{}, fmt.Errorf("checker response violates checker-v1")
+	}
+	if request.CatalogVersion != "" {
+		expected, err := checkrules.Normalize(request.RuleIDs)
+		if err != nil {
+			return checkerResponse{}, err
+		}
+		if result.CatalogVersion != request.CatalogVersion {
+			return checkerResponse{}, checkrules.ErrVersion
+		}
+		applied, err := checkrules.Normalize(result.AppliedRuleIDs)
+		if err != nil || len(applied) != len(expected) {
+			return checkerResponse{}, checkrules.ErrSelection
+		}
+		allowed := map[string]bool{}
+		for i, id := range expected {
+			if applied[i] != id {
+				return checkerResponse{}, checkrules.ErrSelection
+			}
+			allowed[id] = true
+		}
+		for _, finding := range result.Findings {
+			if !allowed[finding.RuleID] {
+				return checkerResponse{}, checkrules.ErrSelection
+			}
+		}
 	}
 	return result, nil
 }

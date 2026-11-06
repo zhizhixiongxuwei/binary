@@ -278,7 +278,7 @@ function waitingModel(
     indeterminate: false,
     summary: workflow === 'decompile'
       ? '尚未收到反编译执行日志，可从文件结构中手动发起'
-      : '尚未收到 Trivy 执行日志，等待镜像扫描任务开始',
+      : '尚未收到镜像漏洞检测日志，等待检测任务开始',
     workflow,
     workflowLabel: workflowLabel(source, workflow),
   }

@@ -312,54 +312,6 @@ func (s *adminService) patchUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"user": updated.User})
 }
 
-func (s *adminService) listAudit(c *gin.Context) {
-	limit, beforeID, err := parseAuditPage(c.Request.URL.Query())
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_audit_page"})
-		return
-	}
-	rows, err := s.db.QueryContext(c, `SELECT a.id, u.public_id, u.username, a.action,
-        a.object_type, a.object_id, a.request_id, a.client_ip, a.outcome, a.details, a.created_at
-        FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_user_id
-        WHERE (? = 0 OR a.id < ?) ORDER BY a.id DESC LIMIT ?`, beforeID, beforeID, limit+1)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "audit_query_failed"})
-		return
-	}
-	defer rows.Close()
-	entries := make([]auditEntry, 0, limit)
-	for rows.Next() {
-		var entry auditEntry
-		var actorID, actorUsername, objectType, objectID, requestID, clientIP sql.NullString
-		var details []byte
-		if err := rows.Scan(&entry.ID, &actorID, &actorUsername, &entry.Action, &objectType,
-			&objectID, &requestID, &clientIP, &entry.Outcome, &details, &entry.CreatedAt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "audit_query_failed"})
-			return
-		}
-		entry.ActorID = nullableString(actorID)
-		entry.ActorUsername = nullableString(actorUsername)
-		entry.ObjectType = nullableString(objectType)
-		entry.ObjectID = nullableString(objectID)
-		entry.RequestID = nullableString(requestID)
-		entry.ClientIP = nullableString(clientIP)
-		if len(details) != 0 {
-			_ = json.Unmarshal(details, &entry.Details)
-		}
-		entries = append(entries, entry)
-	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "audit_query_failed"})
-		return
-	}
-	var nextBeforeID any
-	if len(entries) > limit {
-		entries = entries[:limit]
-		nextBeforeID = entries[len(entries)-1].ID
-	}
-	c.JSON(http.StatusOK, gin.H{"entries": entries, "nextBeforeId": nextBeforeID})
-}
-
 func requireAdministrator() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := mustCurrentUser(c)
@@ -385,7 +337,7 @@ func (s *adminService) auditRejectedMutation(action string) gin.HandlerFunc {
 		outcome := "denied"
 		reason := "request_rejected_before_handler"
 		if c.Writer.Status() >= http.StatusInternalServerError {
-			outcome = "failed"
+			outcome = "failure"
 			reason = "request_failed_before_handler"
 		}
 		if err := insertAdminAudit(c, s.db, &actor.ID, action, "user", objectID, outcome,
@@ -538,7 +490,7 @@ func (s *adminService) rejectChange(c *gin.Context, status int, action, objectID
 
 func (s *adminService) failChange(c *gin.Context, action, objectID, code string, cause error) {
 	actor := mustCurrentUser(c)
-	if err := insertAdminAudit(c, s.db, &actor.ID, action, "user", objectID, "failed",
+	if err := insertAdminAudit(c, s.db, &actor.ID, action, "user", objectID, "failure",
 		map[string]string{"reason": code}); err != nil {
 		slog.Error("record failed administrator change", "request_id", c.GetString("requestID"), "error", err)
 	}

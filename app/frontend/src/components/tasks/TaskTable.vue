@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  Archive,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -8,8 +9,11 @@ import {
 } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-import type { ScanTask, UserRole } from '@/api/types'
-import StatusBadge from '@/components/common/StatusBadge.vue'
+import type { ScanTask, TaskListQuery, UserRole } from '@/api/types'
+import TaskExecutionBadge from '@/components/tasks/TaskExecutionBadge.vue'
+import { taskExecutionProgressLabel } from '@/components/tasks/taskExecutionPresentation'
+import ArchiveTaskExpansion from '@/components/tasks/ArchiveTaskExpansion.vue'
+import { archiveStatusLabels } from '@/components/tasks/archiveTaskPresentation'
 import { getTaskActionModel } from '@/components/tasks/taskActions'
 import { useSampleRetentionClock } from '@/composables/useSampleRetentionClock'
 import { formatDateTime } from '@/utils/formatters'
@@ -32,18 +36,26 @@ const props = withDefaults(
     userRole?: UserRole | null
     currentUserId?: string | null
     pendingTaskId?: string | null
+    expandedId?: string
+    filters?: TaskListQuery
+    refreshVersion?: number
   }>(),
   {
     loading: false,
     userRole: null,
     currentUserId: null,
     pendingTaskId: null,
+    expandedId: '',
+    filters: () => ({ page_size: 20 }),
+    refreshVersion: 0,
   },
 )
 
 const emit = defineEmits<{
   open: [id: string]
   delete: [task: ScanTask]
+  toggleArchive: [id: string]
+  archiveChanged: []
   firstPage: []
   previousPage: []
   nextPage: []
@@ -78,11 +90,6 @@ function taskSampleRetention(task: ScanTask): SampleRetentionSnapshot {
   )
 }
 
-function normalizeProgress(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(100, value))
-}
-
 function deleteAction(task: ScanTask) {
   return getTaskActionModel({
     task,
@@ -97,12 +104,23 @@ function changePageSize(value: unknown): void {
   if (typeof value !== 'number' || ![10, 20, 50].includes(value)) return
   emit('pageSizeChange', value)
 }
+
+function openRow(task: ScanTask): void {
+  if (task.archive) emit('toggleArchive', task.id)
+  else emit('open', task.id)
+}
+
+function expandedChanged(task: ScanTask, expandedRows: ScanTask[]): void {
+  if (!task.archive) return
+  const expanded = expandedRows.some((row) => row.id === task.id)
+  if (expanded !== (props.expandedId === task.id)) emit('toggleArchive', task.id)
+}
 </script>
 
 <template>
   <div class="task-table">
     <span class="sr-only">
-      点击任务名称或任务所在行可打开详情，操作列可删除任务。
+      点击归档导入行可展开子任务，点击其他任务可打开详情。
     </span>
     <div
       class="task-table__scroller"
@@ -116,21 +134,42 @@ function changePageSize(value: unknown): void {
         :data="items"
         empty-text="当前批次暂无任务"
         row-key="id"
-        @row-click="(row: ScanTask) => emit('open', row.id)"
+        :expand-row-keys="expandedId ? [expandedId] : []"
+        :row-class-name="({ row }: { row: ScanTask }) => row.archive ? 'task-row--archive' : 'task-row--standalone'"
+        @row-click="openRow"
+        @expand-change="expandedChanged"
       >
+        <el-table-column type="expand" width="34">
+          <template #default="{ row }: { row: ScanTask }">
+            <ArchiveTaskExpansion
+              v-if="row.archive && expandedId === row.id"
+              :task="row"
+              :filters="filters"
+              :user-role="userRole"
+              :current-user-id="currentUserId"
+              :pending-task-id="pendingTaskId"
+              :refresh-version="refreshVersion"
+              @open="emit('open', $event)"
+              @delete="emit('delete', $event)"
+              @changed="emit('archiveChanged')"
+            />
+          </template>
+        </el-table-column>
         <el-table-column label="任务" min-width="22">
           <template #default="{ row }: { row: ScanTask }">
             <div class="task-cell">
               <span class="task-cell__icon" aria-hidden="true">
-                <FileCode2 :size="17" aria-hidden="true" />
+                <Archive v-if="row.archive" :size="17" aria-hidden="true" />
+                <FileCode2 v-else :size="17" aria-hidden="true" />
               </span>
               <span class="task-cell__copy">
                 <button
                   class="task-cell__open"
                   type="button"
-                  :aria-label="`查看任务：${row.name}`"
+                  :aria-label="row.archive ? `${expandedId === row.id ? '收起' : '展开'}归档子任务：${row.name}` : `查看任务：${row.name}`"
+                  v-bind="row.archive ? { 'aria-expanded': expandedId === row.id, 'aria-controls': `archive-task-${row.id}` } : {}"
                   :title="row.name"
-                  @click.stop="emit('open', row.id)"
+                  @click.stop="openRow(row)"
                 >
                   {{ row.name }}
                 </button>
@@ -138,7 +177,7 @@ function changePageSize(value: unknown): void {
                   {{ row.id }}
                 </small>
                 <small
-                  v-if="taskSampleRetention(row).status !== 'available'"
+                  v-if="!row.archive && taskSampleRetention(row).status !== 'available'"
                   class="task-cell__retention"
                   :class="`task-cell__retention--${taskSampleRetention(row).status}`"
                   :data-retention-status="taskSampleRetention(row).status"
@@ -146,6 +185,7 @@ function changePageSize(value: unknown): void {
                 >
                   {{ taskSampleRetention(row).statusLabel }}
                 </small>
+                <small v-if="row.archive && !row.archive.source_retained" class="task-cell__archive-note">原始归档已清理</small>
               </span>
             </div>
           </template>
@@ -160,32 +200,26 @@ function changePageSize(value: unknown): void {
         <el-table-column label="分析模式" min-width="12" align="center">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token">
-              {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '压缩包' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
+              {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '归档导入' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
             </span>
           </template>
         </el-table-column>
         <el-table-column label="执行状态" min-width="12">
           <template #default="{ row }: { row: ScanTask }">
-            <StatusBadge :value="row.status" kind="status" />
+            <div v-if="row.archive" class="archive-state">
+              <span :class="{ 'archive-state--failed': row.archive.status === 'failed' }">{{ archiveStatusLabels[row.archive.status] }}</span>
+              <small>{{ row.archive.active_count }} 执行中 · {{ row.archive.failed_count }} 失败</small>
+            </div>
+            <TaskExecutionBadge v-else :task="row" />
           </template>
         </el-table-column>
-        <el-table-column label="进度" min-width="14">
+        <el-table-column label="当前阶段" min-width="14">
           <template #default="{ row }: { row: ScanTask }">
-            <div class="progress-cell">
-              <el-progress
-                :percentage="normalizeProgress(row.progress)"
-                :stroke-width="5"
-                :show-text="false"
-                :indeterminate="row.progress_indeterminate"
-                :duration="2"
-                :aria-label="row.progress_indeterminate
-                  ? `${row.name} 检测进度计算中`
-                  : `${row.name} 检测进度 ${normalizeProgress(row.progress)}%`"
-              />
-              <span class="mono">
-                {{ row.progress_indeterminate ? '计算中' : `${normalizeProgress(row.progress)}%` }}
-              </span>
+            <div v-if="row.archive" class="archive-state">
+              <span>{{ row.archive.completed_count }}/{{ row.archive.child_count }} 检测完成</span>
+              <small>子任务检测结果</small>
             </div>
+            <span v-else class="table-muted">{{ taskExecutionProgressLabel(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="创建者" min-width="10" align="center">
@@ -202,7 +236,7 @@ function changePageSize(value: unknown): void {
         </el-table-column>
         <el-table-column label="操作" width="64" align="center">
           <template #default="{ row }: { row: ScanTask }">
-            <div class="row-commands" role="group" :aria-label="`${row.name} 任务操作`">
+            <div v-if="!row.archive" class="row-commands" role="group" :aria-label="`${row.name} 任务操作`">
               <button
                 class="row-command"
                 type="button"
@@ -214,13 +248,14 @@ function changePageSize(value: unknown): void {
                 <Trash2 :size="16" aria-hidden="true" />
               </button>
             </div>
+            <span v-else class="table-muted" title="展开归档行可管理成员和总报告">—</span>
           </template>
         </el-table-column>
       </el-table>
     </div>
 
     <footer class="task-table__footer">
-      <span>本批 {{ items.length }} 个任务</span>
+      <span>本批 {{ items.length }} 项 · 子任务单独分页</span>
       <div class="task-table__cursor-controls" role="group" aria-label="任务列表游标分页">
         <el-select
           class="task-table__page-size"
@@ -288,6 +323,20 @@ function changePageSize(value: unknown): void {
 .task-table :deep(.el-table__row) {
   cursor: pointer;
 }
+
+.task-table :deep(.task-row--standalone > td .el-table__expand-icon) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.task-table :deep(.el-table__expanded-cell) {
+  padding: 0 !important;
+}
+
+.archive-state { display: grid; gap: 4px; color: var(--ink-700); font-size: 12px; line-height: 1.5; }
+.archive-state small, .task-cell__archive-note { color: var(--ink-500); font-size: 11px; }
+.archive-state--failed { color: var(--danger); }
+.task-cell__archive-note { display: block; margin-top: 5px; }
 
 .task-table :deep(.el-table th.el-table__cell) {
   height: 48px;
@@ -412,23 +461,6 @@ function changePageSize(value: unknown): void {
   background: var(--surface-raised);
 }
 
-.progress-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
-  align-items: center;
-  gap: 8px;
-}
-
-.progress-cell :deep(.el-progress-bar__inner) {
-  background: var(--primary);
-}
-
-.progress-cell span {
-  color: var(--ink-600);
-  font-size: 12px;
-  text-align: right;
-}
-
 .table-muted {
   display: block;
   color: var(--ink-600);
@@ -491,15 +523,6 @@ function changePageSize(value: unknown): void {
 
   .task-cell__icon {
     display: none;
-  }
-
-  .progress-cell {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .progress-cell span {
-    text-align: left;
   }
 
   .task-table :deep(.status-badge) {

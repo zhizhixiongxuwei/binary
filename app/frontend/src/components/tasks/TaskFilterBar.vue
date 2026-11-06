@@ -8,6 +8,7 @@ import {
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 import {
+  ANALYSIS_MODE_OPTIONS,
   INPUT_FORMAT_GROUPS,
   normalizeInputFormat,
   normalizeTaskCreator,
@@ -73,15 +74,17 @@ watch(
       props.initialValue.keyword,
       props.initialValue.status,
       props.initialValue.input_type,
+      props.initialValue.analysis_mode,
       props.initialValue.creator,
       props.initialValue.tag,
       props.initialValue.created_from,
       props.initialValue.created_to,
     ] as const,
-  ([keyword, status, inputType, creator, tag, createdFrom, createdTo]) => {
+  ([keyword, status, inputType, analysisMode, creator, tag, createdFrom, createdTo]) => {
     form.keyword = keyword
     form.status = status
     form.input_type = inputType
+    form.analysis_mode = analysisMode
     form.creator = creator
     form.tag = tag
     form.created_from = createdFrom
@@ -145,6 +148,7 @@ function reset(): void {
   form.keyword = ''
   form.status = ''
   form.input_type = ''
+  form.analysis_mode = ''
   form.creator = ''
   form.tag = ''
   form.created_from = ''
@@ -174,6 +178,22 @@ function reset(): void {
           {{ errors.keyword }}
         </span>
       </div>
+
+      <el-select
+        v-model="form.analysis_mode"
+        class="task-filters__select"
+        clearable
+        aria-label="分析模式"
+        placeholder="全部分析模式"
+      >
+        <el-option label="全部分析模式" value="" />
+        <el-option
+          v-for="option in ANALYSIS_MODE_OPTIONS"
+          :key="option.value"
+          :label="option.label"
+          :value="option.value"
+        />
+      </el-select>
 
       <el-select
         v-model="form.status"
@@ -329,7 +349,7 @@ function reset(): void {
 
 .task-filters__primary {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 150px 170px auto;
+  grid-template-columns: minmax(180px, 1fr) 130px 130px 150px auto;
   gap: 12px;
   align-items: start;
 }
@@ -462,7 +482,7 @@ function reset(): void {
   line-height: 1.4;
 }
 
-@container task-list (max-width: 920px) {
+@container task-list (max-width: 1120px) {
   .task-filters__primary {
     grid-template-columns: 1fr 1fr;
   }

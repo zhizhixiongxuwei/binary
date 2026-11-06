@@ -15,6 +15,7 @@ import BytecodeAnalyzerSummary from './BytecodeAnalyzerSummary.vue'
 import BytecodeMethodIndexPanel from './BytecodeMethodIndexPanel.vue'
 import { parseAnalyzerSummary } from './analyzerSummary'
 import { neutralizeUnsafeDisplayCharacters } from './displayText'
+import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
 import { parseBytecodeMethodIndex } from './jvmMethodIndex'
 import { adjacentSourceTab, rememberSourceTab, sourceTabKey, sourceWorkbenchLayout, type SourceTab } from './sourceWorkspaceState'
 
@@ -345,10 +346,11 @@ onScopeDispose(() => {
     </div>
     <div v-show="workspaceMode === 'code'" class="code-workspace">
     <details class="workbench-details">
-      <summary><Info :size="14" /><span>{{ isJvmBytecodeResult && bytecodeMethodIndex.present ? '详情与方法索引' : '反编译详情' }}</span><span class="details-hint">{{ selectedResult?.engine_name || '引擎信息' }}</span></summary>
+      <summary><Info :size="14" /><span>{{ isJvmBytecodeResult && bytecodeMethodIndex.present ? '详情与方法索引' : '反编译详情' }}</span><span class="details-hint">{{ analysisEngineLabel(selectedResult?.engine_name) }}</span></summary>
       <div class="workbench-details__content">
         <p>{{ capabilityMessage }}</p>
-        <dl><div><dt>项目</dt><dd>{{ selectedResult?.display_name || '未选择' }}</dd></div><div><dt>引擎</dt><dd>{{ selectedResult?.engine_name || '未知' }} {{ selectedResult?.engine_version }}</dd></div><div><dt>签名 / 说明</dt><dd>{{ selectedResult?.signature || selectedResult?.detail || '暂无' }}</dd></div><div><dt>任务</dt><dd>{{ taskId }}</dd></div></dl>
+        <dl><div><dt>项目</dt><dd>{{ selectedResult?.display_name || '未选择' }}</dd></div><div><dt>引擎</dt><dd>{{ analysisEngineLabel(selectedResult?.engine_name) }}</dd></div><div><dt>签名 / 说明</dt><dd>{{ selectedResult?.signature || analysisMessage(selectedResult?.detail) || '暂无' }}</dd></div><div><dt>任务</dt><dd>{{ taskId }}</dd></div></dl>
+        <details><summary>技术诊断（原始组件信息）</summary><p>{{ selectedResult?.engine_name }} {{ selectedResult?.engine_version }}</p><p>{{ selectedResult?.detail }}</p></details>
         <p v-if="diagnosticMessage" class="workbench-diagnostic"><TriangleAlert :size="14" />{{ diagnosticMessage }}</p>
         <BytecodeAnalyzerSummary v-if="analyzerSummary.present" :summary="analyzerSummary" />
         <BytecodeMethodIndexPanel v-if="isJvmBytecodeResult && bytecodeMethodIndex.present" :key="selectedId" :index="bytecodeMethodIndex" :selected-key="activeBytecodeMethodKey" @select="selectedBytecodeMethodKey = $event" />

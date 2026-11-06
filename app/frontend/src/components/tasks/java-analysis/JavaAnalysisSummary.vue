@@ -3,7 +3,9 @@ import { AlertTriangle, CircleCheck, Cpu, FileWarning } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import type { JavaAnalysisRun, JavaAnalysisSeverity } from '@/api/types'
+import RuleSelectionSummary from '@/components/tasks/analysis-rules/RuleSelectionSummary.vue'
 import { formatBytes, formatDateTime } from '@/utils/formatters'
+import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
 
 const props = defineProps<{
   run: JavaAnalysisRun
@@ -39,6 +41,7 @@ const coveragePercent = computed(() =>
 </script>
 
 <template>
+  <RuleSelectionSummary :selection="run.selection" />
   <section class="analysis-summary" aria-label="Java 源码检测汇总">
     <div class="analysis-summary__identity">
       <CircleCheck
@@ -76,7 +79,7 @@ const coveragePercent = computed(() =>
   </section>
 
   <section class="analysis-meta" aria-label="Java 源码检测版本信息">
-    <span><small>检测器</small><code>{{ run.analyzer_name }} {{ run.analyzer_version }}</code></span>
+    <span><small>检测器</small><span>{{ analysisEngineLabel(run.analyzer_name) }}</span></span>
     <span><small>规则集</small><code>{{ run.ruleset_version || '等待引擎返回' }}</code></span>
     <span><small>源码</small><code>{{ formatBytes(run.source_size_bytes) }} · {{ run.source_file_count }} 文件</code></span>
     <span><small>解析诊断</small><code>{{ run.diagnostic_count }}</code></span>
@@ -96,7 +99,7 @@ const coveragePercent = computed(() =>
 
   <div v-if="run.error_message" class="analysis-error" role="alert">
     <AlertTriangle :size="16" aria-hidden="true" />
-    <span><code>{{ run.error_code || 'java_analysis_failed' }}</code>{{ run.error_message }}</span>
+    <span><code>{{ run.error_code || 'java_analysis_failed' }}</code>{{ analysisMessage(run.error_message) }}</span>
   </div>
 </template>
 

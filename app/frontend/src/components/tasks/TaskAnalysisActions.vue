@@ -94,7 +94,7 @@ const selectedNodeLabel = computed(
           :icon="ScanSearch"
           @click="emit('openVulnerabilities')"
         >
-          查看 Trivy 检测
+          查看镜像漏洞检测
         </el-button>
         <el-button
           :type="containerTask ? 'default' : 'primary'"

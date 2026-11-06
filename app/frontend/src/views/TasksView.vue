@@ -12,7 +12,7 @@ const { launchTaskCreation } = useTaskCreationLauncher()
 
 <template>
   <div class="page-view">
-    <PageHeader title="检测任务" eyebrow="TASKS / INDEX">
+    <PageHeader title="检测任务" eyebrow="TASKS / INDEX" description="统一查看检测任务，展开归档可查看子任务、管理成员和下载总报告。">
       <template #actions>
         <el-button
           v-if="session.user?.role !== 'reader'"

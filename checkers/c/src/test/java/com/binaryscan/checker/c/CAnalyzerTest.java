@@ -51,6 +51,13 @@ final class CAnalyzerTest {
             .map(Models.Finding::ruleId).collect(Collectors.toSet());
 
         assertEquals(CAnalyzer.RULE_IDS, actual);
+        // Every singleton must run without evaluating any disabled rule: the
+        // emitter deliberately throws if a disabled evaluator reaches it.
+        for (String id : CAnalyzer.RULE_IDS) {
+            Set<String> selected = new CAnalyzer().analyze(new Models.SourceFile("rules.c", content), Set.of(id))
+                .stream().map(Models.Finding::ruleId).collect(Collectors.toSet());
+            assertEquals(Set.of(id), selected, id);
+        }
     }
 
     @Test

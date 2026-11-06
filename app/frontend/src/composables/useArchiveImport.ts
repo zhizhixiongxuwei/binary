@@ -22,6 +22,7 @@ const MAX_BATCH_SIZE = 10
 export interface UseArchiveImportOptions {
   importId: string
   uploadId: string
+  taskId?: string
   applyInitialSelection?: boolean
   initialSelectedIds?: readonly string[]
 }
@@ -79,7 +80,9 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
       (status === 'queued' || status === 'running' || status === 'deleting')
     )
   })
-  const isReady = computed(() => archiveImport.value?.status === 'ready')
+  const isReady = computed(() =>
+    archiveImport.value?.status === 'ready' && archiveImport.value.source_retained,
+  )
   const isEmpty = computed(
     () =>
       archiveImport.value?.status === 'ready' &&
@@ -91,7 +94,7 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
       archiveImport.value?.source_retained === true &&
       !submitting.value &&
       !deleting.value &&
-      (status === 'ready' || status === 'failed')
+      (status === 'ready' || status === 'failed' || status === 'unsupported')
     )
   })
   const progress = computed(() => {
@@ -401,6 +404,13 @@ export function useArchiveImport(options: UseArchiveImportOptions) {
     deleting.value = true
     deletionError.value = ''
     try {
+      if (options.taskId) {
+        await api.cleanupArchiveSource(options.taskId)
+        if (disposed || lifecycle !== lifecycleGeneration) return
+        selectedIds.value = new Set()
+        await refreshImport()
+        return
+      }
       await api.deleteUpload(options.uploadId)
       if (disposed || lifecycle !== lifecycleGeneration) return
       markDeleted()

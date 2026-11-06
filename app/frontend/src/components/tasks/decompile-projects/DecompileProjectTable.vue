@@ -10,6 +10,7 @@ import type {
   PythonAnalysisRun,
 } from '@/api/types'
 import { formatBytes, formatDateTime } from '@/utils/formatters'
+import { analysisEngineLabel } from '@/utils/analysisPresentation'
 
 defineProps<{
   projects: readonly DecompileProject[]
@@ -34,7 +35,7 @@ defineEmits<{
 }>()
 
 const sourceKindLabels: Readonly<Record<DecompileProjectSourceKind, string>> = {
-  'ghidra-pseudoc': 'Ghidra 伪 C',
+  'ghidra-pseudoc': '类 C 源码',
   java: 'Java',
   kotlin: 'Kotlin',
   python: 'Python',
@@ -109,7 +110,7 @@ function sourceLabel(project: DecompileProject): string {
 }
 
 function engineLabel(project: DecompileProject): string {
-  return [project.engine_name, project.engine_version].filter(Boolean).join(' ')
+  return analysisEngineLabel(project.engine_name)
 }
 </script>
 

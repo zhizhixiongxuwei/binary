@@ -77,7 +77,7 @@ function openTasks(status?: TaskStatus, current = false, date?: string, format?:
     <div class="overview-toolbar">
       <div class="overview-toolbar__copy">
         <span class="section-kicker">检测态势</span>
-        <p>统计范围：近 {{ days }} 天 · UTC 自然日<span v-if="summary"> · 更新于 {{ formatDateTime(summary.collected_at) }}</span></p>
+        <p>统计实际检测任务（含归档子任务） · 近 {{ days }} 天 · UTC 自然日<span v-if="summary"> · 更新于 {{ formatDateTime(summary.collected_at) }}</span></p>
       </div>
       <div class="overview-toolbar__actions">
         <el-radio-group v-model="days" aria-label="统计时间范围">

@@ -185,7 +185,12 @@ func TestTaskDeletionCleansDataAndPreservesSharedSamples(t *testing.T) {
 	requestCleanup(t, s, "first", currentUser{ID: 2, Role: "operator"}, http.StatusForbidden)
 	requestCleanup(t, s, "first", currentUser{ID: 1, Role: "reader"}, http.StatusForbidden)
 	cleanupCount(t, s, `SELECT COUNT(*) FROM task_cleanup_queue`, 0)
-	requestCleanup(t, s, "first", currentUser{ID: 1, Role: "operator"}, http.StatusNoContent)
+	requestCleanup(t, s, "first", currentUser{ID: 1, Role: "operator"}, http.StatusConflict)
+	// A grouped parent cannot be purged through the ordinary delete API. The
+	// durable worker still must finish cleanup requests queued before grouping
+	// was introduced, including this complete shared-blob legacy fixture.
+	cleanupExec(t, s, `UPDATE tasks SET status = 'deleting', deleted_at = UTC_TIMESTAMP(6) WHERE id = 'first'`)
+	cleanupExec(t, s, `INSERT INTO task_cleanup_queue (kind, target) VALUES ('task', 'first')`)
 	cleanupCount(t, s, `SELECT COUNT(*) FROM tasks WHERE id = 'first' AND status = 'deleting' AND deleted_at IS NOT NULL`, 1)
 	requestCleanup(t, s, "first", currentUser{ID: 1, Role: "operator"}, http.StatusNotFound)
 	// Reconstruct the service to exercise recovery from persisted work.
@@ -207,7 +212,9 @@ func TestTaskDeletionCleansDataAndPreservesSharedSamples(t *testing.T) {
 	}
 	cleanupCount(t, s, `SELECT COUNT(*) FROM tasks WHERE id = 'second' AND deleted_at IS NULL`, 1)
 	cleanupCount(t, s, `SELECT COUNT(*) FROM resource_slots WHERE job_id IS NULL AND fencing_token IS NULL AND lease_owner IS NULL`, 1)
-	cleanupCount(t, s, `SELECT COUNT(*) FROM audit_logs WHERE object_id = 'first'`, 2)
+	// Only the completed cleanup audit is new: the rejected group deletion did
+	// not create a successful task.delete audit event.
+	cleanupCount(t, s, `SELECT COUNT(*) FROM audit_logs WHERE object_id = 'first'`, 1)
 	if _, err := os.Stat(shared); err != nil {
 		t.Fatal("shared sample was deleted", err)
 	}

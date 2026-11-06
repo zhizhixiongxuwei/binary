@@ -1,3 +1,4 @@
+import { parseAnalysisRuleSelection } from '@/api/analysisRulesContract'
 import type {
   PythonAnalysisFinding,
   PythonAnalysisFindingPage,
@@ -174,7 +175,7 @@ function runValue(value: unknown, field: string): PythonAnalysisRun {
       'created_at',
       'updated_at',
     ],
-    [],
+    ['selection'],
     field,
   )
 
@@ -280,6 +281,10 @@ function runValue(value: unknown, field: string): PythonAnalysisRun {
   return {
     id: uuid(run.id, `${field}.id`),
     task_id: uuid(run.task_id, `${field}.task_id`),
+    ...(run.selection === undefined ? {} : { selection: (() => {
+      try { return parseAnalysisRuleSelection(run.selection) }
+      catch { throw new PythonAnalysisContractError(`${field}.selection`) }
+    })() }),
     source_project_id: sourceProjectID,
     source_project: {
       id: projectID,

@@ -1,4 +1,6 @@
 import type {
+  AnalysisRuleCatalog,
+  AnalysisRuleSelectionInput,
   AdminUser,
   AdminUserListQuery,
   AdminUserPage,
@@ -93,6 +95,8 @@ export interface ApiClient {
   changePassword(input: ChangePasswordInput): Promise<void>
   getOverview(days: 7 | 30): Promise<OverviewSummary>
   listTasks(query: TaskListQuery): Promise<TaskPage>
+  listTaskChildren(taskId: string, query: TaskListQuery): Promise<TaskPage>
+  cleanupArchiveSource(taskId: string): Promise<void>
   getTask(id: string): Promise<TaskDetail>
   cancelTask(id: string, idempotencyKey: string): Promise<TaskDetail>
   retryTask(id: string, idempotencyKey: string): Promise<TaskDetail>
@@ -135,10 +139,12 @@ export interface ApiClient {
     taskId: string,
     operationId: string,
   ): Promise<DecompileProjectDeletionOperation>
+  getAnalysisRuleCatalog(taskId: string, projectId: string): Promise<AnalysisRuleCatalog>
   createCAnalysisRun(
     taskId: string,
     projectId: string,
     idempotencyKey: string,
+    input?: AnalysisRuleSelectionInput,
   ): Promise<CAnalysisRun>
   listCAnalysisRuns(
     taskId: string,
@@ -156,6 +162,7 @@ export interface ApiClient {
     taskId: string,
     projectId: string,
     idempotencyKey: string,
+    input?: AnalysisRuleSelectionInput,
   ): Promise<JavaAnalysisRun>
   listJavaAnalysisRuns(
     taskId: string,
@@ -173,6 +180,7 @@ export interface ApiClient {
     taskId: string,
     projectId: string,
     idempotencyKey: string,
+    input?: AnalysisRuleSelectionInput,
   ): Promise<PythonAnalysisRun>
   listPythonAnalysisRuns(
     taskId: string,
@@ -243,6 +251,7 @@ export interface ApiClient {
     input: ResetAdminUserPasswordInput,
   ): Promise<AdminUser>
   listAuditLogs(query?: AuditLogListQuery): Promise<AuditLogPage>
+  exportAuditLogs(query?: AuditLogListQuery): Promise<ReportDownload>
   createUpload(
     input: CreateUploadInput,
     idempotencyKey: string,

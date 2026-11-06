@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Archive, Binary, ChevronRight, ChevronsLeft, ChevronsRight, CircleGauge, FileScan, KeyRound, LogOut, Menu, Plus, ServerCog, X } from 'lucide-vue-next'
+import { Binary, ChevronRight, ChevronsLeft, ChevronsRight, CircleGauge, FileScan, KeyRound, LogOut, Menu, Plus, ServerCog, UsersRound, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -37,9 +37,11 @@ const navigationGroups = computed(() => {
     { label: '工作区', items: [
       { label: '系统概览', to: '/', icon: CircleGauge },
       { label: '检测任务', to: '/tasks', icon: FileScan },
-      { label: '归档批次', to: '/archives', icon: Archive },
     ] },
-    ...(session.user?.role === 'administrator' ? [{ label: '系统管理', items: [{ label: '系统维护', to: '/system', icon: ServerCog }] }] : []),
+    ...(session.user?.role === 'administrator' ? [{ label: '系统管理', items: [
+      { label: '系统维护', to: '/system', icon: ServerCog },
+      { label: '用户与角色', to: '/users', icon: UsersRound },
+    ] }] : []),
   ]
 })
 const displayName = computed(() => session.user?.display_name || session.user?.username || '当前用户')

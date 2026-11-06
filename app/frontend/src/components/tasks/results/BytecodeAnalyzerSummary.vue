@@ -7,6 +7,7 @@ import type {
   ParsedAnalyzerSummary,
 } from '@/components/tasks/results/analyzerSummary'
 import { formatBytes } from '@/utils/formatters'
+import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
 
 const props = withDefaults(
   defineProps<{
@@ -66,7 +67,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
     <dl v-if="summary.identity.length" class="analyzer-summary__identity">
       <div v-for="field in summary.identity" :key="field.key">
         <dt>{{ field.label }}</dt>
-        <dd>{{ field.value }}</dd>
+        <dd>{{ field.key === 'engine' ? analysisMessage(analysisEngineLabel(field.value)) : field.value }}</dd>
       </div>
     </dl>
 
@@ -99,7 +100,7 @@ function formatMetric(metric: AnalyzerSummaryMetric): string {
         </div>
         <ul>
           <li v-for="(message, index) in group.messages" :key="index">
-            {{ message }}
+            {{ analysisMessage(message) }}
           </li>
         </ul>
         <small v-if="group.omittedCount">

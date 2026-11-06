@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { analysisMessage } from '@/utils/analysisPresentation'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -306,7 +307,7 @@ const deferredResultStates = computed<TaskResultStates>(() => {
     'c-analysis': {
       status: 'unavailable',
       title: '界面预览不执行 C 源码检测',
-      description: '连接后端后可对已保存的 Ghidra 类 C 源码项目发起检测。',
+      description: '连接后端后可对已保存的类 C 源码项目发起检测。',
     },
     'java-analysis': {
       status: 'unavailable',
@@ -1005,7 +1006,8 @@ function handleReportState(state: TaskResultState): void {
           <ShieldAlert :size="18" />
           <div>
             <strong>{{ task.error_code || 'TASK_ERROR' }}</strong>
-            <span>{{ task.error_message }}</span>
+            <span>{{ analysisMessage(task.error_message) }}</span>
+            <details><summary>原始诊断</summary><p>{{ task.error_message }}</p></details>
           </div>
         </section>
 

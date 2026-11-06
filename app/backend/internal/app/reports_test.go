@@ -29,7 +29,7 @@ func TestHTMLReportIncludesStableSourceLocatorAndEscapesContent(t *testing.T) {
 	}
 	body := string(buildHTMLReport(snapshot))
 	for _, expected := range []string{
-		"binaryscan-report-v3", "执行摘要", "检测运行（1）", "漏洞明细（1）", "src/Foo.java:12:5",
+		reportSchemaVersion, "执行摘要", "检测运行（1）", "漏洞明细（1）", "src/Foo.java:12:5",
 		"unsafe &lt;name&gt;", "Runtime &lt;exec&gt;", "value &lt; 1",
 	} {
 		if !strings.Contains(body, expected) {

@@ -39,6 +39,7 @@ const deleteTarget = shallowRef<ScanTask | null>(null)
 const deletingTaskId = shallowRef<string | null>(null)
 const deleteError = shallowRef('')
 const deleteFeedback = shallowRef('')
+const childrenRefreshVersion = shallowRef(0)
 let lastLoadedQueryKey = ''
 let paginationContextKey = ''
 let expectedRouteCursor: string | undefined
@@ -47,6 +48,7 @@ const appliedFilters = computed<TaskFilterValue>(() => ({
   keyword: query.keyword,
   status: query.status,
   input_type: query.input_type,
+  analysis_mode: query.analysis_mode,
   creator: query.creator,
   tag: query.tag,
   created_from: query.created_from,
@@ -59,8 +61,9 @@ function requestQuery(state: TaskListRouteState = query): TaskListQuery {
   }
   if (state.cursor) value.cursor = state.cursor
   if (state.keyword) value.keyword = state.keyword
-  if (state.status) value.status = state.status
+  if (state.status) value.execution_status = state.status
   if (state.input_type) value.input_type = state.input_type
+  if (state.analysis_mode) value.analysis_mode = state.analysis_mode
   if (state.creator) value.creator = state.creator
   if (state.tag) value.tag = state.tag
   if (state.created_from) value.created_from = state.created_from
@@ -73,6 +76,7 @@ function contextKey(state: TaskListRouteState): string {
     keyword: state.keyword,
     status: state.status,
     input_type: state.input_type,
+    analysis_mode: state.analysis_mode,
     creator: state.creator,
     tag: state.tag,
     created_from: state.created_from,
@@ -121,11 +125,13 @@ function resetFilters(): void {
     keyword: '',
     status: '',
     input_type: '',
+    analysis_mode: '',
     creator: '',
     tag: '',
     created_from: '',
     created_to: '',
     cursor: '',
+    expanded: '',
   })
 }
 
@@ -164,6 +170,7 @@ function changePageSize(pageSize: number): void {
 }
 
 function requestDelete(task: ScanTask): void {
+  if (task.archive) return
   const action = getTaskActionModel({
     task,
     mode: 'live',
@@ -184,6 +191,7 @@ async function confirmDelete(): Promise<void> {
   deleteFeedback.value = ''
   try {
     await api.deleteTask(target.id)
+    childrenRefreshVersion.value += 1
     deleteDialogOpen.value = false
     deleteFeedback.value = `“${target.name}”已从列表移除，后台正在清理任务及关联数据。`
     await taskList.reload()
@@ -201,6 +209,19 @@ async function confirmDelete(): Promise<void> {
   } finally {
     deletingTaskId.value = null
   }
+}
+
+function toggleArchive(taskId: string): void {
+  const expanded = query.expanded === taskId ? '' : taskId
+  void router.replace({ query: serializeTaskListRouteQuery({ ...query, expanded }) })
+}
+
+function openTask(taskId: string): void {
+  void router.push({
+    name: 'task-detail',
+    params: { id: taskId },
+    query: { return_to: route.fullPath },
+  })
 }
 
 watch(
@@ -298,7 +319,12 @@ watch(
         :user-role="userRole"
         :current-user-id="currentUserId"
         :pending-task-id="deletingTaskId"
-        @open="router.push({ name: 'task-detail', params: { id: $event } })"
+        :expanded-id="query.expanded"
+        :filters="requestQuery()"
+        :refresh-version="childrenRefreshVersion"
+        @open="openTask"
+        @toggle-archive="toggleArchive"
+        @archive-changed="taskList.reload"
         @delete="requestDelete"
         @first-page="showFirstPage"
         @previous-page="showPreviousPage"

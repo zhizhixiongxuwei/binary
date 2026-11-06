@@ -27,8 +27,10 @@ func (s *taskService) delete(c *gin.Context) {
 	defer tx.Rollback()
 	var creator uint64
 	var name string
-	if err := tx.QueryRowContext(c, `SELECT created_by, display_name FROM tasks
-		WHERE id = ? AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&creator, &name); err != nil {
+	var hasArchiveHistory bool
+	if err := tx.QueryRowContext(c, `SELECT created_by, display_name,
+		EXISTS (SELECT 1 FROM runs r WHERE r.task_id = tasks.id AND r.kind = 'archive_import') FROM tasks
+		WHERE id = ? AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&creator, &name, &hasArchiveHistory); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task_not_found"})
 		} else {
@@ -38,6 +40,10 @@ func (s *taskService) delete(c *gin.Context) {
 	}
 	if user.Role != "administrator" && (user.Role != "operator" || user.ID != creator) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
+		return
+	}
+	if hasArchiveHistory {
+		c.JSON(http.StatusConflict, gin.H{"error": "archive_source_cleanup_required"})
 		return
 	}
 	for _, query := range []string{

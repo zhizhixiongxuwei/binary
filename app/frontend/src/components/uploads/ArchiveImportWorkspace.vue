@@ -19,11 +19,14 @@ const props = withDefaults(
     importId: string
     uploadId: string
     filename: string
+    taskId?: string
+    canManage?: boolean
     applyInitialSelection?: boolean
     initialSelectedIds?: readonly string[]
   }>(),
   {
     applyInitialSelection: true,
+    canManage: true,
     initialSelectedIds: () => [],
   },
 )
@@ -32,11 +35,13 @@ const emit = defineEmits<{
   deleted: []
   openTask: [taskId: string]
   selectionChange: [entryIds: string[]]
+  changed: []
 }>()
 
 const model = useArchiveImport({
   importId: props.importId,
   uploadId: props.uploadId,
+  ...(props.taskId ? { taskId: props.taskId } : {}),
   applyInitialSelection: props.applyInitialSelection,
   initialSelectedIds: props.initialSelectedIds,
 })
@@ -91,10 +96,12 @@ async function deleteArchive(): Promise<void> {
   )
   try {
     await ElMessageBox.confirm(
-      `将清理 ${uncreatedCandidates} 个尚未创建任务的候选和 ${current.skipped_entries} 个已跳过条目；已创建的 ${current.created_tasks} 个任务及其样本会保留。`,
-      '删除外层归档上传？',
+      props.taskId
+        ? '将清理原始归档及各次解析中尚未创建任务的成员；所有已创建子任务、样本及总报告关系会保留。'
+        : `将清理 ${uncreatedCandidates} 个尚未创建任务的候选和 ${current.skipped_entries} 个已跳过条目；已创建的 ${current.created_tasks} 个任务及其样本会保留。`,
+      '清理原始归档？',
       {
-        confirmButtonText: '删除归档上传',
+        confirmButtonText: '清理原始归档',
         cancelButtonText: '保留归档',
         type: 'warning',
         distinguishCancelAndClose: true,
@@ -120,6 +127,17 @@ watch(
   model.selectedIds,
   (entryIds) => emit('selectionChange', [...entryIds]),
   { immediate: true },
+)
+
+watch(
+  () => model.archiveImport.value,
+  (current, previous) => {
+    if (current && previous && (
+      current.status !== previous.status ||
+      current.created_tasks !== previous.created_tasks ||
+      current.source_retained !== previous.source_retained
+    )) emit('changed')
+  },
 )
 </script>
 
@@ -159,10 +177,10 @@ watch(
           <RefreshCw :size="16" aria-hidden="true" />
         </button>
         <button
-          v-if="model.canDelete.value"
+          v-if="canManage && model.canDelete.value"
           type="button"
-          aria-label="删除归档上传"
-          title="删除归档上传"
+          aria-label="清理原始归档"
+          title="清理原始归档，保留已创建子任务和报告"
           :disabled="model.deleting.value"
           @click="deleteArchive"
         >
@@ -183,7 +201,7 @@ watch(
     </div>
 
     <ArchiveReportBundlePanel
-      v-if="model.archiveImport.value && model.archiveImport.value.created_tasks > 0"
+      v-if="model.archiveImport.value && (taskId || model.archiveImport.value.created_tasks > 0)"
       :archive-import="model.archiveImport.value"
     />
 
@@ -250,7 +268,7 @@ watch(
         :selected-count="model.selectedCount.value"
         :loading="model.loadingEntries.value"
         :submitting="model.submitting.value"
-        :creation-enabled="model.isReady.value"
+        :creation-enabled="canManage && model.isReady.value"
         :has-previous-page="model.hasPreviousPage.value"
         :has-next-page="model.hasNextPage.value"
         :page-index="model.pageIndex.value"
@@ -262,6 +280,7 @@ watch(
       />
 
       <ArchiveImportBatchActions
+        v-if="canManage && model.archiveImport.value?.source_retained"
         :selected-count="model.selectedCount.value"
         :submitting="model.submitting.value"
         :disabled="!model.isReady.value"

@@ -12,7 +12,7 @@ import (
 	"unicode"
 )
 
-const reportSchemaVersion = "binaryscan-report-v3"
+const reportSchemaVersion = "binaryscan-report-v4"
 
 var reportSeverities = []string{"critical", "high", "medium", "low", "info", "unknown"}
 
@@ -109,10 +109,10 @@ func buildHTMLReport(snapshot map[string]any) []byte {
 	if len(runs) == 0 {
 		output.WriteString(`<p class="empty">没有运行记录。</p>`)
 	} else {
-		output.WriteString(`<table><thead><tr><th>类型</th><th>状态</th><th class="run-tool">检测工具</th><th>结果质量</th><th>完成时间</th></tr></thead><tbody>`)
+		output.WriteString(`<table><thead><tr><th>类型</th><th>状态</th><th class="run-tool">分析引擎</th><th>规则选择覆盖范围</th><th>结果质量</th><th>完成时间</th></tr></thead><tbody>`)
 		for _, run := range runs {
-			output.WriteString(`<tr><td>` + html.EscapeString(reportDisplayText(run["kind"])) + `</td><td>` + html.EscapeString(reportDisplayText(run["status"])) + `</td>`)
-			output.WriteString(`<td class="run-tool">` + html.EscapeString(reportToolText(run)) + `</td><td>` + html.EscapeString(reportDisplayText(run["resultQuality"])) + `</td><td>` + html.EscapeString(reportTimeText(run["completedAt"])) + `</td></tr>`)
+			output.WriteString(`<tr><td>` + html.EscapeString(reportRunKindText(run["kind"])) + `</td><td>` + html.EscapeString(reportDisplayText(run["status"])) + `</td>`)
+			output.WriteString(`<td class="run-tool">` + html.EscapeString(reportToolText(run)) + `</td><td>` + html.EscapeString(reportRuleSelectionText(run)) + `</td><td>` + html.EscapeString(reportDisplayText(run["resultQuality"])) + `</td><td>` + html.EscapeString(reportTimeText(run["completedAt"])) + `</td></tr>`)
 		}
 		output.WriteString(`</tbody></table>`)
 	}
@@ -237,11 +237,11 @@ func docxDocumentXML(snapshot map[string]any) string {
 	if len(runs) == 0 {
 		body.WriteString(docxParagraph("没有运行记录。", "Muted"))
 	} else {
-		rows := [][]string{{"类型", "状态", "检测工具", "结果质量", "完成时间"}}
+		rows := [][]string{{"类型", "状态", "分析引擎", "规则选择覆盖范围", "结果质量", "完成时间"}}
 		for _, run := range runs {
-			rows = append(rows, []string{reportDisplayText(run["kind"]), reportDisplayText(run["status"]), reportToolText(run), reportDisplayText(run["resultQuality"]), reportTimeText(run["completedAt"])})
+			rows = append(rows, []string{reportRunKindText(run["kind"]), reportDisplayText(run["status"]), reportToolText(run), reportRuleSelectionText(run), reportDisplayText(run["resultQuality"]), reportTimeText(run["completedAt"])})
 		}
-		body.WriteString(docxTable(rows, []int{1500, 1200, 2400, 1500, 2760}, true, false))
+		body.WriteString(docxTable(rows, []int{1200, 900, 1800, 3300, 900, 1260}, true, false))
 	}
 
 	body.WriteString(docxParagraph("漏洞明细（"+strconv.Itoa(len(findings))+"）", "Heading1"))
@@ -429,18 +429,6 @@ func reportSeverityLabel(severity string) string {
 		return label
 	}
 	return labels["unknown"]
-}
-
-func reportToolText(run map[string]any) string {
-	name := reportText(run["toolName"])
-	version := reportText(run["toolVersion"])
-	if name == "" {
-		return "—"
-	}
-	if version == "" {
-		return name
-	}
-	return name + " " + version
 }
 
 func reportSourceLocation(finding map[string]any) string {

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: BinaryScan internal checker API
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Checker findings use one-based line numbers and one-based UTF-16 code-unit
     columns. This is the coordinate system consumed directly by Monaco Editor;
@@ -12,6 +12,16 @@ paths:
       responses:
         "200":
           description: Checker is ready to accept bounded requests.
+  /v1/rules:
+    get:
+      description: Returns the deployed engine's complete rule registry and its metadata fingerprint. No source files are analyzed.
+      responses:
+        "200":
+          description: Language-specific selectable rules; registry order is stable by ID.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuleCatalog"
   /v1/check:
     post:
       requestBody:
@@ -27,8 +37,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CheckResponse"
+        "400":
+          description: Invalid request, empty or unknown rule selection, wrong language, or catalog version mismatch. A malformed selection never falls back to all rules.
 components:
   schemas:
+    CatalogVersion:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+      description: SHA-256 of the complete rule metadata array sorted by ID, encoded as compact UTF-8 JSON with object keys in alphabetical order. Independent of checker-v1 wire protocol version.
+    RuleDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, cwes, severity, language, default_enabled, limitations]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, description: Human-readable Chinese rule name. }
+        description: { type: string }
+        cwes:
+          type: array
+          minItems: 1
+          items: { type: string, pattern: '^CWE-[0-9]+$' }
+        severity: { enum: [critical, high, medium, low, info] }
+        language: { enum: [c, java, python] }
+        default_enabled: { type: boolean }
+        limitations:
+          type: array
+          items: { type: string }
+    RuleCatalog:
+      type: object
+      additionalProperties: false
+      required: [version, language, catalogVersion, rules]
+      properties:
+        version: { const: checker-v1 }
+        language: { enum: [c, java, python] }
+        catalogVersion: { $ref: "#/components/schemas/CatalogVersion" }
+        rules:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/RuleDefinition" }
     SourceFile:
       type: object
       additionalProperties: false
@@ -57,6 +104,15 @@ components:
           maxItems: 3000
           items:
             $ref: "#/components/schemas/SourceFile"
+        ruleIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: Omit for all rules (legacy compatibility). Explicit selections must contain only IDs of this engine. Duplicates are normalized and the applied list is sorted.
+          items: { type: string, minLength: 1, maxLength: 128 }
+        catalogVersion:
+          $ref: "#/components/schemas/CatalogVersion"
+          description: If provided, must match the deployed registry fingerprint exactly; new callers should always pin this alongside ruleIds.
     Finding:
       type: object
       additionalProperties: false
@@ -85,7 +141,7 @@ components:
     CheckResponse:
       type: object
       additionalProperties: false
-      required: [version, projectId, status, findings, diagnostics]
+      required: [version, projectId, status, findings, diagnostics, catalogVersion, appliedRuleIds]
       properties:
         version:
           const: checker-v1
@@ -101,4 +157,13 @@ components:
         diagnostics:
           type: array
           maxItems: 1000
+          items: { type: string }
+        catalogVersion:
+          $ref: "#/components/schemas/CatalogVersion"
+        appliedRuleIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: Exact normalized execution selection, including the resolved full list for legacy requests. Only these rule evaluators run; common source parsing and shared facts are still computed.
           items: { type: string }

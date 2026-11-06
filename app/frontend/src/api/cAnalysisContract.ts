@@ -1,3 +1,4 @@
+import { parseAnalysisRuleSelection } from '@/api/analysisRulesContract'
 import type {
   CAnalysisFinding,
   CAnalysisFindingPage,
@@ -167,7 +168,7 @@ function runValue(value: unknown, field: string): CAnalysisRun {
       'created_at',
       'updated_at',
     ],
-    ['ruleset_version'],
+    ['ruleset_version', 'selection'],
     field,
   )
 
@@ -247,6 +248,10 @@ function runValue(value: unknown, field: string): CAnalysisRun {
   const parsed: CAnalysisRun = {
     id: uuid(run.id, `${field}.id`),
     task_id: uuid(run.task_id, `${field}.task_id`),
+    ...(run.selection === undefined ? {} : { selection: (() => {
+      try { return parseAnalysisRuleSelection(run.selection) }
+      catch { throw new CAnalysisContractError(`${field}.selection`) }
+    })() }),
     source_project_id: uuid(
       run.source_project_id,
       `${field}.source_project_id`,

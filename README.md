@@ -49,7 +49,7 @@ cd local
 docker compose up -d --wait
 ```
 
-脚本构建 8 个产品镜像并准备 MySQL 镜像，生成 Compose、配置、管理脚本和已初始化的数据目录。`local` 使用构建机 Docker 中的镜像，不额外导出 tar。默认访问 `http://localhost:8080`；若修改了根配置，以包内 `.env` 为准。初始管理员密码在生成目录的 `.env` 中，每个新包独立生成。
+脚本构建 8 个产品镜像并准备 MySQL 镜像，生成 Compose、配置、管理脚本和已初始化的数据目录。`local` 使用构建机 Docker 中的镜像，不额外导出 tar。默认访问 `http://localhost:8080`；若修改了根配置，以包内 `.env` 为准。`local` 和 `release` 新包的初始管理员账号和密码均为 `admin` / `admin123`，首次启动前可修改包内 `.env` 的 `INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_PASSWORD`。
 
 ## 离线交付
 

@@ -1,4 +1,5 @@
 import type { JsonValue, TaskEventMessage } from '@/api/types'
+import { analysisEngineLabel } from '@/utils/analysisPresentation'
 
 export type TaskExecutionLogTone = 'neutral' | 'info' | 'warning' | 'error'
 export type TaskWorkflowKind = 'decompile' | 'image-scan' | 'task'
@@ -75,10 +76,12 @@ const defaultSeverity = { label: '信息', tone: 'info' } as const
 const decompileAnalyzerModels: Readonly<
   Record<string, { label: string; counterLabel: string }>
 > = {
-  ghidra: { label: 'Ghidra', counterLabel: '函数' },
-  vineflower: { label: 'Java 反编译器', counterLabel: '类' },
-  jadx: { label: 'JADX', counterLabel: '类' },
-  'python-bytecode': { label: 'Python 字节码分析器', counterLabel: '模块' },
+  ghidra: { label: analysisEngineLabel('ghidra'), counterLabel: '函数' },
+  vineflower: { label: analysisEngineLabel('vineflower'), counterLabel: '类' },
+  cfr: { label: analysisEngineLabel('cfr'), counterLabel: '类' },
+  jadx: { label: analysisEngineLabel('jadx'), counterLabel: '类' },
+  pycdc: { label: analysisEngineLabel('pycdc'), counterLabel: '模块' },
+  'python-bytecode': { label: analysisEngineLabel('python-bytecode'), counterLabel: '模块' },
 }
 const safeToken = /^[A-Za-z0-9][A-Za-z0-9._:+-]{0,63}$/
 const safeErrorCode = /^[a-z0-9][a-z0-9_.-]{0,63}$/
@@ -137,25 +140,24 @@ function decompileSummary(
   const analyzerModel = analyzer ? decompileAnalyzerModels[analyzer] : null
   if (!analyzerModel) return null
   const { label: analyzerLabel, counterLabel } = analyzerModel
+  const operationLabel = analyzerLabel.replace(/引擎$/, '')
   const phase = safePayloadToken(payload, 'phase')
   const current = safeCounter(payload, 'current')
   const total = safeCounter(payload, 'total')
 
   if (eventType === 'decompile.progress') {
     if (phase === 'preparing') {
-      return { title: `${analyzerLabel} 正在准备输入`, detailLabel: null }
+      return { title: `${operationLabel}：正在准备输入`, detailLabel: null }
     }
     if (phase === 'starting') {
       return {
-        title: analyzer === 'ghidra'
-          ? 'Ghidra JVM 正在启动'
-          : `${analyzerLabel} 正在启动`,
+        title: `${analyzerLabel} 正在启动`,
         detailLabel: null,
       }
     }
     if (phase === 'running') {
       return {
-        title: `${analyzerLabel} 正在反编译`,
+        title: `正在进行${operationLabel}`,
         detailLabel: appendElapsed(
           countDetail(counterLabel, current, total),
           safeSeconds(payload),
@@ -174,8 +176,8 @@ function decompileSummary(
     const partial = safePayloadToken(payload, 'completeness') === 'partial'
     return {
       title: partial
-        ? `${analyzerLabel} 反编译部分完成`
-        : `${analyzerLabel} 反编译已完成`,
+        ? `${operationLabel}部分完成`
+        : `${operationLabel}已完成`,
       detailLabel: partial
         ? countDetail(counterLabel, current, total) ?? '已保存上限内的反编译结果'
         : countDetail(counterLabel, current, total),
@@ -184,7 +186,7 @@ function decompileSummary(
   if (eventType === 'decompile.failed' && phase === 'failed') {
     const errorCode = safePayloadToken(payload, 'error_code', safeErrorCode)
     return {
-      title: `${analyzerLabel} 反编译失败`,
+      title: `${operationLabel}失败`,
       detailLabel: errorCode ? `错误码 ${errorCode}` : null,
     }
   }
@@ -242,7 +244,7 @@ function trivySummary(
     }
     if (phase === 'scanning') {
       return {
-        title: 'Trivy 正在检测镜像',
+        title: '正在进行镜像漏洞检测',
         detailLabel: appendElapsed(
           trivyCountDetail(payload),
           safeSeconds(payload),
@@ -275,14 +277,14 @@ function trivySummary(
   }
   if (eventType === 'trivy.completed' && phase === 'completed') {
     return {
-      title: 'Trivy 镜像检测已完成',
+      title: '镜像漏洞检测已完成',
       detailLabel: trivyCountDetail(payload, findingDetail(payload)),
     }
   }
   if (eventType === 'trivy.failed' && phase === 'failed') {
     const errorCode = safePayloadToken(payload, 'error_code', safeErrorCode)
     return {
-      title: 'Trivy 镜像检测失败',
+      title: '镜像漏洞检测失败',
       detailLabel: errorCode ? `错误码 ${errorCode}` : null,
     }
   }

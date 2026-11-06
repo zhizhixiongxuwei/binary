@@ -27,7 +27,7 @@ const groups = [
     icon: Box,
     title: '容器/映像分析',
     formats:
-      'Docker/OCI TAR（可使用 .tar / .img）；ISO、EXT4 选择归档模式，Trivy 不适用',
+      'Docker/OCI TAR（可使用 .tar / .img）；ISO、EXT4 选择归档模式，镜像漏洞检测不适用',
   },
 ] as const
 

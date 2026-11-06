@@ -82,7 +82,7 @@ export function getFileNodeImageScanActionModel(
       visible: true,
       enabled: false,
       reason: context.node.parent_id === null
-        ? '文件基础识别尚未完成；任务就绪后可手动开始 Trivy 检测。'
+        ? '文件基础识别尚未完成；任务就绪后可手动开始镜像漏洞检测。'
         : '任务结束后才能单独检测该镜像。',
     }
   }
@@ -111,7 +111,7 @@ export function getFileNodeImageScanActionModel(
     visible: true,
     enabled: true,
     reason: context.node.parent_id === null
-      ? '手动将上传的容器镜像加入 Trivy 检测队列。'
-      : '绕过自动嵌套镜像数量限制，将该镜像单独加入 Trivy 检测队列。',
+      ? '手动将上传的容器镜像加入漏洞检测队列。'
+      : '绕过自动嵌套镜像数量限制，将该镜像单独加入漏洞检测队列。',
   }
 }

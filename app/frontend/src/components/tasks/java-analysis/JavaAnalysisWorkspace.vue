@@ -5,6 +5,7 @@ import { onScopeDispose, watch } from 'vue'
 
 import type { SourceNavigationTarget, UserRole } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
+import RuleSelectionDialog from '@/components/tasks/analysis-rules/RuleSelectionDialog.vue'
 import JavaAnalysisFindingDrawer from '@/components/tasks/java-analysis/JavaAnalysisFindingDrawer.vue'
 import JavaAnalysisFindingFilters from '@/components/tasks/java-analysis/JavaAnalysisFindingFilters.vue'
 import JavaAnalysisFindingTable from '@/components/tasks/java-analysis/JavaAnalysisFindingTable.vue'
@@ -12,6 +13,7 @@ import JavaAnalysisSummary from '@/components/tasks/java-analysis/JavaAnalysisSu
 import JavaAnalysisToolbar from '@/components/tasks/java-analysis/JavaAnalysisToolbar.vue'
 import type { TaskResultState } from '@/components/tasks/taskResultTypes'
 import { useJavaAnalysis } from '@/composables/useJavaAnalysis'
+import { useAnalysisRuleSelection } from '@/composables/useAnalysisRuleSelection'
 
 const props = withDefaults(
   defineProps<{
@@ -33,6 +35,18 @@ const analysis = useJavaAnalysis({
   userRole: () => props.userRole,
   enabled: () => props.enabled,
 })
+const ruleSelection = useAnalysisRuleSelection({
+  taskId: () => props.taskId,
+  projectId: () => analysis.selectedProjectId.value,
+  language: 'java',
+  enabled: () => props.enabled,
+  canCreate: () => analysis.canCreate.value,
+  createRun: analysis.createRun,
+  operationError: () => analysis.operationError.value,
+  clearOperationError: analysis.clearOperationError,
+})
+let startSequence = 0
+watch(() => props.taskId, () => { startSequence += 1 })
 
 watch(
   analysis.state,
@@ -44,7 +58,7 @@ watch(
   (busy) => emit('busyChange', busy),
   { immediate: true },
 )
-onScopeDispose(() => emit('busyChange', false))
+onScopeDispose(() => { startSequence += 1; emit('busyChange', false) })
 
 async function confirmDeleteRun(): Promise<void> {
   const run = analysis.selectedRun.value
@@ -67,8 +81,12 @@ async function confirmDeleteRun(): Promise<void> {
 }
 
 async function startProject(projectId: string): Promise<void> {
+  const sequence = ++startSequence
+  const taskId = props.taskId
+  ruleSelection.close()
   await analysis.selectProject(projectId)
-  await analysis.createRun()
+  if (sequence !== startSequence || taskId !== props.taskId || analysis.selectedProjectId.value !== projectId) return
+  await ruleSelection.openDialog()
 }
 
 defineExpose({
@@ -106,7 +124,7 @@ defineExpose({
       :deleting="analysis.deleting.value"
       @project-change="analysis.selectProject"
       @run-change="analysis.selectRun"
-      @create="analysis.createRun"
+      @create="ruleSelection.openDialog"
       @cancel="analysis.cancelRun"
       @delete-run="confirmDeleteRun"
       @refresh="analysis.refresh"
@@ -156,6 +174,18 @@ defineExpose({
     :finding="analysis.selectedFinding.value"
     @close="analysis.selectFinding(undefined)"
     @open-source="emit('openSource', $event)"
+  />
+  <RuleSelectionDialog
+    :open="ruleSelection.open.value"
+    :catalog="ruleSelection.catalog.value"
+    :loading="ruleSelection.loading.value"
+    :pending="ruleSelection.submitting.value"
+    :error-message="ruleSelection.errorMessage.value"
+    :stale="ruleSelection.stale.value"
+    :can-start="analysis.canCreate.value"
+    @close="ruleSelection.close"
+    @retry="ruleSelection.retry"
+    @confirm="ruleSelection.confirm"
   />
 </template>
 

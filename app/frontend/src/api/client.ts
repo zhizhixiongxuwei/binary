@@ -1,4 +1,5 @@
 import type {
+  AnalysisRuleSelectionInput,
   AdminUser,
   AdminUserListQuery,
   AdminUserPage,
@@ -78,6 +79,8 @@ import type {
   VulnerabilityListQuery,
   CreateTaskReportInput,
 } from '@/api/types'
+import { buildAuditQuery, mapAuditPage, type LiveAuditPage } from '@/api/auditContract'
+import { analysisRuleRequest, parseAnalysisRuleCatalog } from '@/api/analysisRulesContract'
 import type { ApiClient } from '@/api/contract'
 import {
   ArchiveImportContractError,
@@ -430,7 +433,9 @@ function buildQuery(query: TaskListQuery): string {
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.keyword) params.set('keyword', query.keyword)
   if (query.status) params.set('status', query.status)
+  if (query.execution_status) params.set('execution_status', query.execution_status)
   if (query.input_type) params.set('input_type', query.input_type)
+  if (query.analysis_mode) params.set('analysis_mode', query.analysis_mode)
   if (query.creator) params.set('creator', query.creator)
   if (query.tag) params.set('tag', query.tag)
   if (query.created_from) params.set('created_from', query.created_from)
@@ -564,12 +569,14 @@ async function createCAnalysisRun(
   taskId: string,
   projectId: string,
   idempotencyKey: string,
+  input?: AnalysisRuleSelectionInput,
 ): Promise<CAnalysisRun> {
   try {
     const payload = await request<unknown>(
       `/tasks/${encodeURIComponent(taskId)}/decompile-projects/${encodeURIComponent(projectId)}/c-analysis-runs`,
       {
         method: 'POST',
+        body: JSON.stringify(analysisRuleRequest(input)),
         headers: { 'Idempotency-Key': idempotencyKey },
       },
     )
@@ -663,12 +670,14 @@ async function createPythonAnalysisRun(
   taskId: string,
   projectId: string,
   idempotencyKey: string,
+  input?: AnalysisRuleSelectionInput,
 ): Promise<PythonAnalysisRun> {
   try {
     const payload = await request<unknown>(
       `/tasks/${encodeURIComponent(taskId)}/decompile-projects/${encodeURIComponent(projectId)}/python-analysis-runs`,
       {
         method: 'POST',
+        body: JSON.stringify(analysisRuleRequest(input)),
         headers: { 'Idempotency-Key': idempotencyKey },
       },
     )
@@ -749,12 +758,14 @@ async function createJavaAnalysisRun(
   taskId: string,
   projectId: string,
   idempotencyKey: string,
+  input?: AnalysisRuleSelectionInput,
 ): Promise<JavaAnalysisRun> {
   try {
     const payload = await request<unknown>(
       `/tasks/${encodeURIComponent(taskId)}/decompile-projects/${encodeURIComponent(projectId)}/java-analysis-runs`,
       {
         method: 'POST',
+        body: JSON.stringify(analysisRuleRequest(input)),
         headers: { 'Idempotency-Key': idempotencyKey },
       },
     )
@@ -857,6 +868,7 @@ function buildArchiveEntryQuery(query: ArchiveImportEntryListQuery): string {
 
 function buildArchiveImportQuery(query: ArchiveImportListQuery): string {
   const params = new URLSearchParams()
+  if (query.task_id) params.set('task_id', query.task_id)
   if (query.cursor) params.set('cursor', query.cursor)
   if (query.page_size !== undefined) params.set('page_size', String(query.page_size))
   const value = params.toString()
@@ -1087,6 +1099,10 @@ export const httpApi: ApiClient = {
   getOverview: (days) => request<OverviewSummary>(`/overview?days=${days}`),
   listTasks: async (query: TaskListQuery) =>
     parseTaskPage(await request<unknown>(`/tasks?${buildQuery(query)}`)),
+  listTaskChildren: async (taskId: string, query: TaskListQuery) =>
+    parseTaskPage(await request<unknown>(`/tasks/${encodeURIComponent(taskId)}/children?${buildQuery(query)}`)),
+  cleanupArchiveSource: (taskId: string) =>
+    request<void>(`/tasks/${encodeURIComponent(taskId)}/archive-source`, { method: 'DELETE' }),
   getTask: (id: string) => taskRequest(`/tasks/${encodeURIComponent(id)}`),
   cancelTask: (id: string, idempotencyKey: string) =>
     taskRequest(`/tasks/${encodeURIComponent(id)}/cancel`, {
@@ -1183,6 +1199,7 @@ export const httpApi: ApiClient = {
       return invalidDecompileProjectResponse(error)
     }
   },
+  getAnalysisRuleCatalog: async (taskId, projectId) => parseAnalysisRuleCatalog(await request<unknown>(`/tasks/${encodeURIComponent(taskId)}/projects/${encodeURIComponent(projectId)}/check-rules`)),
   createCAnalysisRun,
   listCAnalysisRuns,
   getCAnalysisRun,
@@ -1383,8 +1400,12 @@ export const httpApi: ApiClient = {
         body: JSON.stringify(input),
       },
     ),
-  listAuditLogs: (query: AuditLogListQuery = {}) =>
-    request<AuditLogPage>(`/admin/audit-logs${buildCursorQuery(query)}`),
+  listAuditLogs: async (query: AuditLogListQuery = {}) =>
+    mapAuditPage(await request<LiveAuditPage>(`/admin/audit?${buildAuditQuery(query)}`)),
+  exportAuditLogs: (query: AuditLogListQuery = {}) => {
+    const params = buildAuditQuery(query, false)
+    return Promise.resolve(sameOriginReportDownload(`/admin/audit/export${params ? `?${params}` : ''}`))
+  },
   createUpload,
   listUploads,
   getUpload,
@@ -1448,6 +1469,8 @@ export const api: ApiClient = {
   changePassword: (input) => activeApi.changePassword(input),
   getOverview: (days) => activeApi.getOverview(days),
   listTasks: (query) => activeApi.listTasks(query),
+  listTaskChildren: (taskId, query) => activeApi.listTaskChildren(taskId, query),
+  cleanupArchiveSource: (taskId) => activeApi.cleanupArchiveSource(taskId),
   getTask: (id) => activeApi.getTask(id),
   cancelTask: (id, idempotencyKey) => activeApi.cancelTask(id, idempotencyKey),
   retryTask: (id, idempotencyKey) => activeApi.retryTask(id, idempotencyKey),
@@ -1477,8 +1500,9 @@ export const api: ApiClient = {
     activeApi.confirmDecompileProjectDeletion(taskId, projectId, input),
   getDecompileProjectDeletion: (taskId, operationId) =>
     activeApi.getDecompileProjectDeletion(taskId, operationId),
-  createCAnalysisRun: (taskId, projectId, idempotencyKey) =>
-    activeApi.createCAnalysisRun(taskId, projectId, idempotencyKey),
+  getAnalysisRuleCatalog: (taskId, projectId) => activeApi.getAnalysisRuleCatalog(taskId, projectId),
+  createCAnalysisRun: (taskId, projectId, idempotencyKey, input) =>
+    activeApi.createCAnalysisRun(taskId, projectId, idempotencyKey, input),
   listCAnalysisRuns: (taskId, query) =>
     activeApi.listCAnalysisRuns(taskId, query),
   getCAnalysisRun: (taskId, runId) =>
@@ -1489,8 +1513,8 @@ export const api: ApiClient = {
     activeApi.cancelCAnalysisRun(taskId, runId),
   deleteCAnalysisRun: (taskId, runId) =>
     activeApi.deleteCAnalysisRun(taskId, runId),
-  createJavaAnalysisRun: (taskId, projectId, idempotencyKey) =>
-    activeApi.createJavaAnalysisRun(taskId, projectId, idempotencyKey),
+  createJavaAnalysisRun: (taskId, projectId, idempotencyKey, input) =>
+    activeApi.createJavaAnalysisRun(taskId, projectId, idempotencyKey, input),
   listJavaAnalysisRuns: (taskId, query) =>
     activeApi.listJavaAnalysisRuns(taskId, query),
   getJavaAnalysisRun: (taskId, runId) =>
@@ -1501,8 +1525,8 @@ export const api: ApiClient = {
     activeApi.cancelJavaAnalysisRun(taskId, runId),
   deleteJavaAnalysisRun: (taskId, runId) =>
     activeApi.deleteJavaAnalysisRun(taskId, runId),
-  createPythonAnalysisRun: (taskId, projectId, idempotencyKey) =>
-    activeApi.createPythonAnalysisRun(taskId, projectId, idempotencyKey),
+  createPythonAnalysisRun: (taskId, projectId, idempotencyKey, input) =>
+    activeApi.createPythonAnalysisRun(taskId, projectId, idempotencyKey, input),
   listPythonAnalysisRuns: (taskId, query) =>
     activeApi.listPythonAnalysisRuns(taskId, query),
   getPythonAnalysisRun: (taskId, runId) =>
@@ -1545,6 +1569,7 @@ export const api: ApiClient = {
   resetAdminUserPassword: (id, input) =>
     activeApi.resetAdminUserPassword(id, input),
   listAuditLogs: (query) => activeApi.listAuditLogs(query),
+  exportAuditLogs: (query) => activeApi.exportAuditLogs(query),
   createUpload: (input, idempotencyKey) =>
     activeApi.createUpload(input, idempotencyKey),
   listUploads: (query) => activeApi.listUploads(query),

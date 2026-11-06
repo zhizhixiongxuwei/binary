@@ -5,6 +5,9 @@ import { computed, onMounted, shallowRef } from 'vue'
 import { api, ApiError } from '@/api/client'
 import type { SystemStatus } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
+import AnalyzerTechnicalDetails from './maintenance/AnalyzerTechnicalDetails.vue'
+import { analysisEngineLabel } from '@/utils/analysisPresentation'
+import { analyzerProbeHealth, databaseBundleHealth } from '@/components/system/maintenance/systemStatusPresentation'
 import { formatBytes, formatDateTime } from '@/utils/formatters'
 
 const props = withDefaults(
@@ -55,6 +58,24 @@ const repositoryPercent = computed(() => {
   return Math.min(100, Math.max(0, Math.round((used / total) * 100)))
 })
 
+const repositoryUsageKnown = computed(() => {
+  const total = visibleStatus.value?.repository_total_bytes
+  const used = visibleStatus.value?.repository_used_bytes
+  return typeof total === 'number' && total > 0 && typeof used === 'number' && used >= 0
+})
+
+const databaseSummary = computed(() => {
+  const bundle = visibleStatus.value?.trivy_database_bundle
+  return bundle ? databaseBundleHealth(bundle.status, bundle.freshness).label : '未收到探测'
+})
+
+const databaseVersions = computed(() =>
+  (visibleStatus.value?.trivy_database_bundle?.databases ?? [])
+    .filter((database) => database.schema_version !== null)
+    .map((database) => `${database.name === 'trivy-db' ? '主库' : database.name === 'trivy-java-db' ? 'Java 库' : database.name} Schema ${database.schema_version}`)
+    .join(' / '),
+)
+
 const taskCountEntries = computed(() =>
   Object.entries(visibleStatus.value?.task_counts ?? {}).sort(([left], [right]) =>
     left.localeCompare(right),
@@ -66,10 +87,6 @@ const leaseKindEntries = computed(() =>
     visibleStatus.value?.worker_summary?.leases_by_kind ?? {},
   ).sort(([left], [right]) => left.localeCompare(right)),
 )
-
-function analyzerStatusLabel(value: 'available' | 'unavailable'): string {
-  return value === 'available' ? '可用' : '不可用'
-}
 
 async function load(): Promise<void> {
   localLoading.value = true
@@ -145,11 +162,13 @@ onMounted(() => {
         </span>
         <div>
           <dt>仓库使用</dt>
-          <dd class="mono">
-            {{ formatBytes(visibleStatus.repository_used_bytes) }} /
-            {{ formatBytes(visibleStatus.repository_total_bytes) }}
+          <dd v-if="repositoryUsageKnown" class="mono">
+            {{ formatBytes(visibleStatus.repository_used_bytes ?? undefined) }} /
+            {{ formatBytes(visibleStatus.repository_total_bytes ?? undefined) }}
           </dd>
+          <dd v-else>容量未观测</dd>
           <div
+            v-if="repositoryUsageKnown"
             class="repository-meter"
             role="progressbar"
             aria-label="仓库存储使用率"
@@ -166,8 +185,9 @@ onMounted(() => {
           <Database :size="18" aria-hidden="true" />
         </span>
         <div>
-          <dt>Trivy DB</dt>
-          <dd class="mono">{{ visibleStatus.trivy_db_version || '未导入' }}</dd>
+          <dt>离线漏洞库</dt>
+          <dd>{{ databaseSummary }}</dd>
+          <small v-if="databaseVersions" class="summary-detail mono">{{ databaseVersions }}</small>
         </div>
       </div>
       <div class="summary-item">
@@ -225,7 +245,7 @@ onMounted(() => {
             <p>仅表示数据库中观察到的有效租约与心跳，不是进程在线清单。</p>
           </div>
           <span class="mono">
-            {{ visibleStatus.worker_summary?.observed_leases ?? 0 }} LEASES
+            {{ visibleStatus.worker_summary?.observed_leases ?? '—' }} LEASES
           </span>
         </header>
         <div v-if="visibleStatus.worker_summary" class="lease-summary">
@@ -291,31 +311,34 @@ onMounted(() => {
       />
       <div v-else class="analyzer-table">
         <table>
-          <caption class="sr-only">分析器名称、版本和可用状态</caption>
+          <caption class="sr-only">分析器名称、本地探测版本、状态和探测时间</caption>
           <thead>
             <tr>
               <th scope="col">分析器</th>
-              <th scope="col">版本</th>
+              <th scope="col">技术诊断</th>
               <th scope="col">状态</th>
+              <th scope="col">最近探测</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="analyzer in visibleStatus.analyzers" :key="analyzer.name">
-              <td><strong>{{ analyzer.name }}</strong></td>
-              <td class="mono">{{ analyzer.version }}</td>
+              <td><strong>{{ analysisEngineLabel(analyzer.name) }}</strong></td>
+              <td><AnalyzerTechnicalDetails :analyzer="analyzer" /></td>
               <td>
                 <span
                   class="analyzer-state"
-                  :class="`analyzer-state--${analyzer.status}`"
+                  :class="`analyzer-state--${analyzerProbeHealth(analyzer.status, analyzer.freshness).tone}`"
                 >
                   <i aria-hidden="true" />
-                  {{ analyzerStatusLabel(analyzer.status) }}
+                  {{ analyzerProbeHealth(analyzer.status, analyzer.freshness).label }}
                 </span>
               </td>
+              <td class="mono">{{ formatDateTime(analyzer.last_checked_at ?? undefined) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
+      <p class="analyzer-note">可用状态表示环境就绪检查通过，实际处理结果以任务执行记录为准。</p>
     </section>
   </div>
 </template>
@@ -690,15 +713,15 @@ onMounted(() => {
 }
 
 .analyzer-table th:first-child {
-  width: 40%;
+  width: 27%;
 }
 
 .analyzer-table th:nth-child(2) {
-  width: 36%;
+  width: 23%;
 }
 
 .analyzer-table th:last-child {
-  width: 24%;
+  width: 28%;
 }
 
 .analyzer-table tbody tr:last-child td {
@@ -725,12 +748,16 @@ onMounted(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--ink-400);
 }
 
 .analyzer-state--available i {
   background: var(--success);
 }
+
+.analyzer-state--unavailable i { background: var(--danger); }
+.analyzer-state--stale i { background: var(--warning); }
+.analyzer-note { margin: 0; padding: 10px 17px; border-top: 1px solid var(--line); color: var(--ink-500); font-size: 11px; line-height: 1.6; }
 
 @container system-status (max-width: 900px) {
   .system-summary {
@@ -800,15 +827,15 @@ onMounted(() => {
   }
 
   .analyzer-table th:first-child {
-    width: 42%;
+    width: 27%;
   }
 
   .analyzer-table th:nth-child(2) {
-    width: 33%;
+    width: 23%;
   }
 
   .analyzer-table th:last-child {
-    width: 25%;
+    width: 28%;
   }
 }
 </style>

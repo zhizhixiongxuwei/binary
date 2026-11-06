@@ -13,8 +13,8 @@ type taskRunRowStub struct {
 }
 
 func (row taskRunRowStub) Scan(dest ...any) error {
-	if len(dest) != 14 {
-		return fmt.Errorf("scan destination count = %d, want 14", len(dest))
+	if len(dest) != 15 {
+		return fmt.Errorf("scan destination count = %d, want 15", len(dest))
 	}
 	*dest[0].(*string) = "run-1"
 	*dest[1].(*string) = "java_check"
@@ -30,6 +30,7 @@ func (row taskRunRowStub) Scan(dest ...any) error {
 	*dest[11].(*time.Time) = row.created
 	*dest[12].(*sql.NullTime) = sql.NullTime{Time: row.created, Valid: true}
 	*dest[13].(*sql.NullTime) = sql.NullTime{Time: row.created.Add(time.Second), Valid: true}
+	*dest[14].(*[]byte) = nil
 	return nil
 }
 

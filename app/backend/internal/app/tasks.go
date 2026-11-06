@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/config"
 	"binaryscan.local/backend/internal/filetype"
 	"binaryscan.local/backend/internal/identity"
@@ -27,50 +28,57 @@ import (
 )
 
 type taskService struct {
-	db             *sql.DB
-	blobs          *storage.BlobStore
-	uploadMaxBytes int64
-	storageRoot    string
-	reportRoot     string
-	cleanupWake    chan struct{}
+	db                  *sql.DB
+	blobs               *storage.BlobStore
+	uploadMaxBytes      int64
+	storageRoot         string
+	reportRoot          string
+	cleanupWake         chan struct{}
+	capabilityReportTTL time.Duration
 }
 
 type taskSummary struct {
-	ID               string    `json:"id"`
-	DisplayName      string    `json:"displayName"`
-	Status           string    `json:"status"`
-	CreatorID        string    `json:"creatorId,omitempty"`
-	CreatorName      string    `json:"creatorName,omitempty"`
-	InputSHA256      string    `json:"inputSha256,omitempty"`
-	InputCategory    string    `json:"inputCategory,omitempty"`
-	AnalysisMode     string    `json:"analysisMode,omitempty"`
-	DetectedCategory string    `json:"detectedCategory,omitempty"`
-	DetectedFormat   string    `json:"detectedFormat,omitempty"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	ID               string              `json:"id"`
+	DisplayName      string              `json:"displayName"`
+	Status           string              `json:"status"`
+	ExecutionStatus  string              `json:"execution_status"`
+	CreatorID        string              `json:"creatorId,omitempty"`
+	CreatorName      string              `json:"creatorName,omitempty"`
+	InputSHA256      string              `json:"inputSha256,omitempty"`
+	InputCategory    string              `json:"inputCategory,omitempty"`
+	AnalysisMode     string              `json:"analysisMode,omitempty"`
+	DetectedCategory string              `json:"detectedCategory,omitempty"`
+	DetectedFormat   string              `json:"detectedFormat,omitempty"`
+	CreatedAt        time.Time           `json:"createdAt"`
+	UpdatedAt        time.Time           `json:"updatedAt"`
+	Archive          *taskArchiveSummary `json:"archive,omitempty"`
+	ArchivePath      string              `json:"archive_path,omitempty"`
 }
 
 type queuedRun struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID        string                `json:"id"`
+	Kind      string                `json:"kind"`
+	Status    string                `json:"status"`
+	CreatedAt time.Time             `json:"createdAt"`
+	Selection *checkrules.Selection `json:"selection"`
 }
 
 type taskListOptions struct {
-	PageSize    int
-	Cursor      string
-	Keyword     string
-	Status      string
-	InputType   string
-	Creator     string
-	Tag         string
-	CreatedFrom *time.Time
-	CreatedTo   *time.Time
+	PageSize        int
+	Cursor          string
+	Keyword         string
+	Status          string
+	ExecutionStatus string
+	InputType       string
+	AnalysisMode    string
+	Creator         string
+	Tag             string
+	CreatedFrom     *time.Time
+	CreatedTo       *time.Time
 }
 
 const taskRunsQuery = `SELECT id, kind, status, subject_type, subject_id, result_quality,
-        tool_name, tool_version, ruleset_version, error_code, error_message, created_at, started_at, completed_at
+        tool_name, tool_version, ruleset_version, error_code, error_message, created_at, started_at, completed_at, request
         FROM runs WHERE task_id = ? ORDER BY created_at DESC LIMIT 100`
 
 type taskRunRowScanner interface {
@@ -87,7 +95,7 @@ func newTaskService(cfg config.Config, db *sql.DB) (*taskService, error) {
 		return nil, fmt.Errorf("create report storage: %w", err)
 	}
 	return &taskService{db: db, blobs: blobs, uploadMaxBytes: cfg.App.UploadMaxBytes,
-		storageRoot: cfg.App.StorageRoot, reportRoot: reportRoot, cleanupWake: make(chan struct{}, 1)}, nil
+		storageRoot: cfg.App.StorageRoot, reportRoot: reportRoot, cleanupWake: make(chan struct{}, 1), capabilityReportTTL: cfg.Worker.CapabilityReportTTL}, nil
 }
 
 func (s *taskService) create(c *gin.Context) {
@@ -279,113 +287,13 @@ func (s *taskService) persistUpload(
 	if err := tx.Commit(); err != nil {
 		return taskSummary{}, fmt.Errorf("commit upload: %w", err)
 	}
-	return taskSummary{ID: taskID, DisplayName: name, Status: "queued", InputCategory: string(inputCategory), AnalysisMode: string(inputCategory),
+	return taskSummary{ID: taskID, DisplayName: name, Status: "queued", ExecutionStatus: "PREPARING", InputCategory: string(inputCategory), AnalysisMode: string(inputCategory),
 		InputSHA256: fmt.Sprintf("%x", blob.SHA256), DetectedCategory: string(detected.Category), DetectedFormat: detected.Format,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
 }
 
 func (s *taskService) list(c *gin.Context) {
-	options, err := parseTaskListOptions(c.Request.URL.Query())
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_task_list_query"})
-		return
-	}
-
-	conditions := []string{
-		"t.deleted_at IS NULL",
-		"COALESCE(t.analysis_mode, t.input_category, 'binary') <> 'archive'",
-	}
-	args := make([]any, 0, 16)
-	if options.Keyword != "" {
-		pattern := "%" + options.Keyword + "%"
-		conditions = append(conditions, "(t.display_name LIKE ? OR t.id LIKE ?)")
-		args = append(args, pattern, pattern)
-	}
-	if options.Status != "" {
-		conditions = append(conditions, "t.status = ?")
-		args = append(args, options.Status)
-	}
-	if options.InputType != "" {
-		conditions = append(conditions, "LOWER(COALESCE(NULLIF(t.detected_format, ''), 'unknown')) = ?")
-		args = append(args, options.InputType)
-	}
-	if options.Creator != "" {
-		pattern := "%" + strings.ToLower(options.Creator) + "%"
-		conditions = append(conditions, "(LOWER(u.username) LIKE ? OR LOWER(u.public_id) = ?)")
-		args = append(args, pattern, strings.ToLower(options.Creator))
-	}
-	if options.Tag != "" {
-		conditions = append(conditions, "LOWER(COALESCE(t.detected_format, '')) = ?")
-		args = append(args, strings.ToLower(options.Tag))
-	}
-	if options.CreatedFrom != nil {
-		conditions = append(conditions, "t.created_at >= ?")
-		args = append(args, *options.CreatedFrom)
-	}
-	if options.CreatedTo != nil {
-		conditions = append(conditions, "t.created_at < ?")
-		args = append(args, *options.CreatedTo)
-	}
-	if options.Cursor != "" {
-		var cursorCreated time.Time
-		if queryErr := s.db.QueryRowContext(c, `SELECT created_at FROM tasks
-			WHERE id = ? AND deleted_at IS NULL
-			  AND COALESCE(analysis_mode, input_category, 'binary') <> 'archive'`, options.Cursor).Scan(&cursorCreated); queryErr != nil {
-			if errors.Is(queryErr, sql.ErrNoRows) {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_task_list_cursor"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
-			}
-			return
-		}
-		conditions = append(conditions, "(t.created_at < ? OR (t.created_at = ? AND t.id < ?))")
-		args = append(args, cursorCreated, cursorCreated, options.Cursor)
-	}
-
-	query := `SELECT t.id, t.display_name, t.status, u.public_id, u.username, HEX(b.sha256),
-		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category,
-		t.detected_format, t.created_at, t.updated_at
-		FROM tasks t
-		JOIN blobs b ON b.id = t.blob_id
-		JOIN users u ON u.id = t.created_by
-		WHERE ` + strings.Join(conditions, " AND ") + `
-		ORDER BY t.created_at DESC, t.id DESC LIMIT ?`
-	args = append(args, options.PageSize+1)
-	rows, err := s.db.QueryContext(c, query, args...)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
-		return
-	}
-	defer rows.Close()
-	tasks := make([]taskSummary, 0, options.PageSize+1)
-	for rows.Next() {
-		var item taskSummary
-		var inputCategory, analysisMode, detectedCategory, detected sql.NullString
-		if err := rows.Scan(&item.ID, &item.DisplayName, &item.Status, &item.CreatorID,
-			&item.CreatorName, &item.InputSHA256,
-			&inputCategory, &analysisMode, &detectedCategory,
-			&detected, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
-			return
-		}
-		item.InputCategory = inputCategory.String
-		item.AnalysisMode = analysisMode.String
-		item.DetectedCategory = detectedCategory.String
-		item.DetectedFormat = detected.String
-		item.InputSHA256 = strings.ToLower(item.InputSHA256)
-		tasks = append(tasks, item)
-	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "task_query_failed"})
-		return
-	}
-	response := gin.H{}
-	if len(tasks) > options.PageSize {
-		response["next_cursor"] = tasks[options.PageSize-1].ID
-		tasks = tasks[:options.PageSize]
-	}
-	response["tasks"] = tasks
-	c.JSON(http.StatusOK, response)
+	s.listTaskPage(c, "")
 }
 
 func parseTaskListOptions(values url.Values) (taskListOptions, error) {
@@ -413,6 +321,10 @@ func parseTaskListOptions(values url.Values) (taskListOptions, error) {
 		return taskListOptions{}, err
 	}
 	options.InputType = strings.ToLower(options.InputType)
+	options.AnalysisMode = strings.ToLower(strings.TrimSpace(values.Get("analysis_mode")))
+	if options.AnalysisMode != "" && options.AnalysisMode != "binary" && options.AnalysisMode != "archive" && options.AnalysisMode != "container" {
+		return taskListOptions{}, fmt.Errorf("invalid analysis mode")
+	}
 	if options.Creator, err = taskListText(values.Get("creator"), 128); err != nil {
 		return taskListOptions{}, err
 	}
@@ -425,6 +337,9 @@ func parseTaskListOptions(values url.Values) (taskListOptions, error) {
 		return taskListOptions{}, err
 	}
 	options.Status = status
+	if options.ExecutionStatus, err = taskExecutionStatus(values.Get("execution_status")); err != nil {
+		return taskListOptions{}, err
+	}
 
 	createdFrom := strings.TrimSpace(values.Get("created_from"))
 	createdTo := strings.TrimSpace(values.Get("created_to"))
@@ -490,11 +405,11 @@ func (s *taskService) get(c *gin.Context) {
 	var task taskSummary
 	var inputCategory, analysisMode, detectedCategory, detected sql.NullString
 	if err := s.db.QueryRowContext(c, `SELECT t.id, t.display_name, t.status, HEX(b.sha256),
-		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category, t.detected_format, t.created_at, t.updated_at
+		t.input_category, COALESCE(t.analysis_mode, t.input_category), t.detected_category, t.detected_format, t.created_at, t.updated_at, `+taskExecutionStatusSQL("t")+`
 		FROM tasks t JOIN blobs b ON b.id = t.blob_id
 		WHERE t.id = ? AND t.deleted_at IS NULL`, taskID).Scan(
 		&task.ID, &task.DisplayName, &task.Status, &task.InputSHA256, &inputCategory, &analysisMode, &detectedCategory,
-		&detected, &task.CreatedAt, &task.UpdatedAt,
+		&detected, &task.CreatedAt, &task.UpdatedAt, &task.ExecutionStatus,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task_not_found"})
@@ -668,8 +583,9 @@ func (s *taskService) queueImageScan(c *gin.Context) {
 func (s *taskService) queueCheck(c *gin.Context) {
 	taskID, projectID := c.Param("taskID"), c.Param("projectID")
 	var language, quality string
-	if err := s.db.QueryRowContext(c, `SELECT language, result_quality FROM source_projects
-        WHERE id = ? AND task_id = ? AND state = 'ready'`, projectID, taskID).Scan(&language, &quality); err != nil {
+	if err := s.db.QueryRowContext(c, `SELECT p.language, p.result_quality FROM source_projects p
+	 JOIN tasks t ON t.id=p.task_id AND t.deleted_at IS NULL
+        WHERE p.id = ? AND p.task_id = ? AND p.state = 'ready'`, projectID, taskID).Scan(&language, &quality); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "source_project_not_found"})
 		} else {
@@ -687,7 +603,7 @@ func (s *taskService) queueCheck(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "checker_not_supported"})
 		return
 	}
-	s.queueManualRun(c, taskID, "source_project", projectID, kind)
+	s.queueCheckRules(c, taskID, projectID, language, kind)
 }
 
 func (s *taskService) queueManualRun(c *gin.Context, taskID, subjectType, subjectID string, kind job.Kind) {
@@ -727,6 +643,12 @@ func (s *taskService) enqueueRun(
 		return queuedRun{}, false, err
 	}
 	defer tx.Rollback()
+	// Serialize manual launches with archive-source removal. A source that has
+	// been removed must not acquire a new import after the cleanup active check.
+	var liveTask string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM tasks WHERE id = ? AND deleted_at IS NULL FOR UPDATE`, taskID).Scan(&liveTask); err != nil {
+		return queuedRun{}, false, err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO runs
         (id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
         VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)
@@ -734,12 +656,26 @@ func (s *taskService) enqueueRun(
 		return queuedRun{}, false, err
 	}
 	var actual queuedRun
-	if err := tx.QueryRowContext(ctx, `SELECT id, kind, status, created_at FROM runs
+	var storedRequest []byte
+	if err := tx.QueryRowContext(ctx, `SELECT id, kind, status, created_at, request FROM runs
         WHERE created_by = ? AND kind = ? AND subject_id = ? AND idempotency_key = ? FOR UPDATE`,
-		userID, kind, subjectID, idempotencyKey).Scan(&actual.ID, &actual.Kind, &actual.Status, &actual.CreatedAt); err != nil {
+		userID, kind, subjectID, idempotencyKey).Scan(&actual.ID, &actual.Kind, &actual.Status, &actual.CreatedAt, &storedRequest); err != nil {
 		return queuedRun{}, false, err
 	}
 	created := actual.ID == runID
+	if kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck {
+		selection, err := checkrules.FromRequest(request)
+		if err != nil {
+			return queuedRun{}, false, err
+		}
+		actual.Selection, err = checkrules.FromRequest(storedRequest)
+		if err != nil {
+			return queuedRun{}, false, err
+		}
+		if !created && !checkrules.Same(selection, actual.Selection) {
+			return queuedRun{}, false, errRunIntentConflict
+		}
+	}
 	if created {
 		maxAttempts := 3
 		if kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck {
@@ -813,8 +749,13 @@ func scanTaskRun(row taskRunRowScanner) (gin.H, error) {
 	var quality, toolName, toolVersion, rulesetVersion, errorCode, errorMessage sql.NullString
 	var created time.Time
 	var started, completed sql.NullTime
+	var request []byte
 	if err := row.Scan(&id, &kind, &status, &subjectType, &subjectID, &quality, &toolName,
-		&toolVersion, &rulesetVersion, &errorCode, &errorMessage, &created, &started, &completed); err != nil {
+		&toolVersion, &rulesetVersion, &errorCode, &errorMessage, &created, &started, &completed, &request); err != nil {
+		return nil, err
+	}
+	selection, err := checkrules.FromRequest(request)
+	if err != nil {
 		return nil, err
 	}
 	return gin.H{"id": id, "kind": kind, "status": status,
@@ -822,7 +763,7 @@ func scanTaskRun(row taskRunRowScanner) (gin.H, error) {
 		"toolName": nullableString(toolName), "toolVersion": nullableString(toolVersion),
 		"rulesetVersion": nullableString(rulesetVersion), "errorCode": nullableString(errorCode),
 		"errorMessage": nullableString(errorMessage), "createdAt": created,
-		"startedAt": nullableTime(started), "completedAt": nullableTime(completed)}, nil
+		"startedAt": nullableTime(started), "completedAt": nullableTime(completed), "selection": selection}, nil
 }
 
 func (s *taskService) queryProjects(ctx *gin.Context, taskID string) ([]gin.H, error) {

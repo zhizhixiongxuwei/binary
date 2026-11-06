@@ -1,25 +1,23 @@
 import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
-import type { TaskStatus } from '@/api/types'
+import type { AnalysisMode, TaskExecutionStatus } from '@/api/types'
+import { taskExecutionStatusLabels } from '@/components/tasks/taskExecutionPresentation'
 
 export const TASK_PAGE_SIZES = [10, 20, 50] as const
 
-export const USER_TASK_STATUS_OPTIONS = [
-  { value: 'UPLOADING', label: '上传中' },
-  { value: 'QUEUED', label: '排队中' },
-  { value: 'VALIDATING', label: '校验中' },
-  { value: 'IDENTIFYING', label: '识别中' },
-  { value: 'EXTRACTING', label: '解包中' },
-  { value: 'INDEXING', label: '索引中' },
-  { value: 'SCANNING', label: '检测中' },
-  { value: 'REPORTING', label: '报告生成中' },
-  { value: 'SUCCEEDED', label: '已完成' },
-  { value: 'PARTIAL_SUCCEEDED', label: '部分完成' },
-  { value: 'FAILED', label: '失败' },
-  { value: 'CANCEL_REQUESTED', label: '正在取消' },
-  { value: 'CANCELLED', label: '已取消' },
-  { value: 'DELETING', label: '正在删除' },
-] as const satisfies readonly { value: TaskStatus; label: string }[]
+export const ANALYSIS_MODE_OPTIONS = [
+  { value: 'binary', label: '二进制' },
+  { value: 'archive', label: '归档导入' },
+  { value: 'container', label: '容器/映像' },
+] as const satisfies readonly { value: AnalysisMode; label: string }[]
+
+const taskExecutionFilterStatuses = [
+  'UPLOADED', 'PREPARING', 'DECOMPILING', 'DECOMPILED',
+  'DECOMPILE_PARTIAL', 'DECOMPILE_FAILED', 'SCANNING',
+  'SCAN_COMPLETED', 'SCAN_PARTIAL', 'SCAN_FAILED', 'FAILED', 'CANCELLED',
+  'UNSUPPORTED', 'DELETING',
+] as const satisfies readonly TaskExecutionStatus[]
+export const USER_TASK_STATUS_OPTIONS = taskExecutionFilterStatuses.map((value) => ({ value, label: taskExecutionStatusLabels[value] }))
 
 export type TaskFilterStatus = (typeof USER_TASK_STATUS_OPTIONS)[number]['value']
 
@@ -77,6 +75,7 @@ export interface TaskFilterValue {
   keyword: string
   status: TaskFilterStatus | ''
   input_type: string
+  analysis_mode: AnalysisMode | ''
   creator: string
   tag: string
   created_from: string
@@ -85,6 +84,7 @@ export interface TaskFilterValue {
 
 export interface TaskListRouteState extends TaskFilterValue {
   cursor: string
+  expanded: string
   page_size: (typeof TASK_PAGE_SIZES)[number]
 }
 
@@ -92,11 +92,13 @@ export const DEFAULT_TASK_LIST_STATE: Readonly<TaskListRouteState> = {
   keyword: '',
   status: '',
   input_type: '',
+  analysis_mode: '',
   creator: '',
   tag: '',
   created_from: '',
   created_to: '',
   cursor: '',
+  expanded: '',
   page_size: 20,
 }
 
@@ -178,6 +180,20 @@ function parseStatus(value: RouteQueryValue): TaskFilterStatus | '' {
     : ''
 }
 
+function parseAnalysisMode(value: RouteQueryValue): AnalysisMode | '' {
+  const candidate = singleQueryValue(value)
+  return ANALYSIS_MODE_OPTIONS.some((option) => option.value === candidate)
+    ? candidate as AnalysisMode
+    : ''
+}
+
+function parseExpanded(value: RouteQueryValue): string {
+  const candidate = singleQueryValue(value)
+  return candidate && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(candidate)
+    ? candidate
+    : ''
+}
+
 export function normalizeInputFormat(value: string): string | null {
   const candidate = value.trim().toLowerCase()
   if (!candidate) return ''
@@ -247,11 +263,13 @@ export function parseTaskListRouteQuery(query: LocationQuery): TaskListRouteStat
     keyword: parseText(query.keyword, normalizeTaskKeyword),
     status: parseStatus(query.status),
     input_type: parseInputFormat(query.input_type),
+    analysis_mode: parseAnalysisMode(query.analysis_mode),
     creator: parseText(query.creator, normalizeTaskCreator),
     tag: parseText(query.tag, normalizeTaskTag),
     created_from: createdFrom,
     created_to: createdTo,
     cursor: parseCursor(query.cursor),
+    expanded: parseExpanded(query.expanded),
     page_size: pageSize,
   }
 }
@@ -266,6 +284,8 @@ export function serializeTaskListRouteQuery(
   if (state.keyword) query.keyword = state.keyword
   if (state.status) query.status = state.status
   if (state.input_type) query.input_type = state.input_type
+  if (state.analysis_mode) query.analysis_mode = state.analysis_mode
+  if (state.expanded) query.expanded = state.expanded
   if (state.creator) query.creator = state.creator
   if (state.tag) query.tag = state.tag
   if (state.created_from) query.created_from = state.created_from

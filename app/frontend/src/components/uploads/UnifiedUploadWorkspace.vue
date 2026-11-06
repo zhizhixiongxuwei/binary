@@ -8,9 +8,9 @@ import {
 } from 'lucide-vue-next'
 import { shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
+import { analysisMessage } from '@/utils/analysisPresentation'
 
 import type { AnalysisMode, UploadAnalysisTask } from '@/api/types'
-import ArchiveImportWorkspace from '@/components/uploads/ArchiveImportWorkspace.vue'
 import FileDropzone from '@/components/uploads/FileDropzone.vue'
 import SupportedUploadTypes from '@/components/uploads/SupportedUploadTypes.vue'
 import {
@@ -22,13 +22,6 @@ import { formatBytes } from '@/utils/formatters'
 const router = useRouter()
 const uploads = useUnifiedUpload()
 const warningMessage = shallowRef('')
-// 普通二进制/容器模式创建后直接进入任务详情；归档模式需要先在当前页完成
-// 一层解析和成员选择，因此只保留正在交互的 archive import 身份。
-const activeArchive = shallowRef<{
-  id: string
-  uploadId: string
-  filename: string
-} | null>(null)
 
 const modes: readonly {
   value: AnalysisMode
@@ -48,7 +41,7 @@ const modes: readonly {
   {
     value: 'container',
     label: '容器/映像分析',
-    description: 'Docker/OCI 可手动启动 Trivy，其他格式记录不适用',
+    description: 'Docker/OCI 可手动启动镜像漏洞检测，其他格式记录不适用',
   },
 ]
 
@@ -74,19 +67,18 @@ async function chooseMode(
 ): Promise<void> {
   const created = await uploads.selectMode(item.localId, mode)
   if (!created) return
-  // 归档任务的顶层 task 只是导入载体，真正的二进制子任务要由用户在解析结果中
-  // 批量创建；上传卡片可移除，因为后续状态以服务端 archive import 为准。
+  // The unified list owns the persistent archive workspace, including imports
+  // still parsing and those waiting for member selection.
   if (
     created.analysis_mode === 'archive' &&
     created.archive_import_id &&
     item.uploadId
   ) {
-    activeArchive.value = {
-      id: created.archive_import_id,
-      uploadId: item.uploadId,
-      filename: item.filename,
-    }
     uploads.forget(item.localId)
+    void router.push({
+      name: 'tasks',
+      query: { keyword: created.task_id, expanded: created.task_id },
+    })
     return
   }
   // “不支持”不是禁止创建：验收要求允许用户按任意模式分析，后端会持久化
@@ -99,9 +91,6 @@ function openCreatedTask(created: UploadAnalysisTask): void {
   void router.push({ name: 'task-detail', params: { id: created.task_id } })
 }
 
-function forgetArchive(): void {
-  activeArchive.value = null
-}
 </script>
 
 <template>
@@ -192,7 +181,7 @@ function forgetArchive(): void {
                   v-if="option(item, mode.value)?.supported === false"
                   class="mode-card__unsupported"
                 >
-                  {{ option(item, mode.value)?.reason }}
+                  {{ analysisMessage(option(item, mode.value)?.reason) }}
                 </small>
               </div>
               <el-button
@@ -219,32 +208,14 @@ function forgetArchive(): void {
     </div>
   </section>
 
-  <section v-if="activeArchive" class="archive-list surface-panel">
-    <header class="archive-list__header">
-      <div>
-        <span class="mono">ARCHIVE IMPORTS</span>
-        <h2>归档解析与二进制任务</h2>
-      </div>
-    </header>
-    <ArchiveImportWorkspace
-      :key="activeArchive.id"
-      :import-id="activeArchive.id"
-      :upload-id="activeArchive.uploadId"
-      :filename="activeArchive.filename"
-      @deleted="forgetArchive"
-      @open-task="(taskId) => router.push({ name: 'task-detail', params: { id: taskId } })"
-    />
-  </section>
 </template>
 
 <style scoped>
-.unified-upload,
-.archive-list {
+.unified-upload {
   overflow: hidden;
 }
 
 .unified-upload__header,
-.archive-list__header,
 .asset-card__header,
 .asset-card__state {
   display: flex;
@@ -253,27 +224,23 @@ function forgetArchive(): void {
   gap: 16px;
 }
 
-.unified-upload__header,
-.archive-list__header {
+.unified-upload__header {
   padding: 20px 22px;
   border-bottom: 1px solid var(--line);
 }
 
 .unified-upload__header h2,
-.archive-list__header h2,
 .unified-upload__header p {
   margin: 0;
 }
 
-.unified-upload__header h2,
-.archive-list__header h2 {
+.unified-upload__header h2 {
   color: var(--ink-950);
   font-size: 16px;
   font-weight: 600;
 }
 
-.unified-upload__header > div > .mono,
-.archive-list__header > div > .mono {
+.unified-upload__header > div > .mono {
   display: none;
 }
 
@@ -349,10 +316,6 @@ function forgetArchive(): void {
   line-height: 1.55;
 }
 
-.archive-list {
-  margin-top: 18px;
-}
-
 @media (max-width: 860px) {
   .mode-grid {
     grid-template-columns: 1fr;
@@ -365,7 +328,6 @@ function forgetArchive(): void {
 
 @media (max-width: 620px) {
   .unified-upload__header,
-  .archive-list__header,
   .asset-card__header,
   .asset-card__state {
     align-items: stretch;

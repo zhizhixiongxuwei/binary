@@ -8,6 +8,7 @@
 """
 
 import ast
+import hashlib
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,22 +18,61 @@ MAX_FILES = 3000
 MAX_FINDINGS = 10000
 
 
+def rule_definition(rule_id, name, description, cwe, severity, limitation):
+    return {"id": rule_id, "name": name, "description": description, "cwes": [cwe],
+            "severity": severity, "language": "python", "default_enabled": True,
+            "limitations": ["基于单文件 Python AST 和导入别名，不提供跨模块调用图或运行时污点传播。", limitation]}
+
+
+RULES = tuple(sorted([
+    rule_definition("python-dynamic-code-execution", "动态执行 Python 代码", "检测 eval、exec 动态代码执行接口。", "CWE-95", "high", "接口使用提示，不证明执行文本一定由外部输入控制。"),
+    rule_definition("python-command-injection", "操作系统命令执行", "检测 os、subprocess 命令接口以及开启 shell 的 Popen。", "CWE-78", "high", "部分命令接口直接提示使用风险，不推导输入可信度或完整参数净化。"),
+    rule_definition("python-unsafe-deserialization", "不安全的对象反序列化", "检测 pickle、shelve 模块导入及已实现的对象反序列化调用。", "CWE-502", "high", "模块导入本身也可能触发提示；不能据此认定存在可利用的反序列化入口。"),
+    rule_definition("python-weak-message-digest", "弱消息摘要算法", "检测 hashlib.md5、hashlib.sha1 的使用。", "CWE-328", "medium", "未区分安全认证用途和普通非安全校验用途。"),
+    rule_definition("python-insecure-request", "关闭 HTTPS 证书校验", "检测 requests 调用中 verify=False，包括受支持的 pycdc 参数形态。", "CWE-295", "medium", "不检查全局会话配置、所有 HTTP 库或运行时动态参数。"),
+], key=lambda rule: rule["id"]))
+RULE_BY_ID = {rule["id"]: rule for rule in RULES}
+RULE_IDS = frozenset(RULE_BY_ID)
+CATALOG_BYTES = json.dumps(RULES, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+CATALOG_VERSION = "sha256:" + hashlib.sha256(CATALOG_BYTES).hexdigest()
+
+
+def rule_catalog():
+    return {"version": "checker-v1", "language": "python", "catalogVersion": CATALOG_VERSION,
+            "rules": json.loads(CATALOG_BYTES)}
+
+
+def selected_rules(request):
+    if "catalogVersion" in request and request["catalogVersion"] != CATALOG_VERSION:
+        raise ValueError("catalog version mismatch")
+    if "ruleIds" not in request:
+        return sorted(RULE_IDS)
+    ids = request["ruleIds"]
+    if (not isinstance(ids, list) or not ids or len(ids) > 100
+            or any(not isinstance(rule_id, str) or rule_id not in RULE_IDS for rule_id in ids)):
+        raise ValueError("invalid rule selection")
+    return sorted(set(ids))
+
+
 class Analyzer(ast.NodeVisitor):
     """单个源码文件的 AST 访问器，集中维护导入别名和 Finding 输出。"""
 
-    def __init__(self, path, content):
+    def __init__(self, path, content, enabled_rules=None):
         self.path = path
         self.lines = content.split("\n")
         self.findings = []
         self.module_aliases = {}
         self.imported_symbols = {}
+        self.enabled_rules = RULE_IDS if enabled_rules is None else frozenset(enabled_rules)
+        if not self.enabled_rules <= RULE_IDS:
+            raise ValueError("unknown rule")
 
     def visit_Import(self, node):
         for alias in node.names:
             module = alias.name.split(".")[0]
             local_name = alias.asname or module
             self.module_aliases[local_name] = module
-            if module in {"pickle", "shelve"}:
+            if "python-unsafe-deserialization" in self.enabled_rules and module in {"pickle", "shelve"}:
                 self.add_finding(
                     node,
                     "python-unsafe-deserialization",
@@ -48,7 +88,7 @@ class Analyzer(ast.NodeVisitor):
         module = (node.module or "").split(".")[0]
         for alias in node.names:
             self.imported_symbols[alias.asname or alias.name] = (module, alias.name)
-        if module in {"pickle", "shelve"}:
+        if "python-unsafe-deserialization" in self.enabled_rules and module in {"pickle", "shelve"}:
             self.add_finding(
                 node,
                 "python-unsafe-deserialization",
@@ -65,24 +105,24 @@ class Analyzer(ast.NodeVisitor):
         # 规则无需为每种别名写重复分支，也能匹配 pycdc 常见的反编译结果。
         name = self.resolved_call_name(node.func)
         rule = None
-        if name in {"eval", "exec"}:
+        if "python-dynamic-code-execution" in self.enabled_rules and name in {"eval", "exec"}:
             rule = ("python-dynamic-code-execution", "high", "CWE-95", "Dynamic code execution",
                     f"{name} executes dynamic Python code")
-        elif name in {"os.system", "os.popen", "subprocess.call", "subprocess.check_call",
+        elif "python-command-injection" in self.enabled_rules and name in {"os.system", "os.popen", "subprocess.call", "subprocess.check_call",
                       "subprocess.check_output", "subprocess.run"}:
             rule = ("python-command-injection", "high", "CWE-78", "Command injection",
                     f"{name} executes an operating-system command")
-        elif name == "subprocess.Popen" and has_shell_true(node):
+        elif "python-command-injection" in self.enabled_rules and name == "subprocess.Popen" and has_shell_true(node):
             rule = ("python-command-injection", "high", "CWE-78", "Subprocess shell enabled",
                     "subprocess.Popen with shell=True may execute attacker-controlled shell syntax")
-        elif name in {"pickle.load", "pickle.loads", "yaml.loads", "shelve.open"}:
+        elif "python-unsafe-deserialization" in self.enabled_rules and name in {"pickle.load", "pickle.loads", "yaml.loads", "shelve.open"}:
             rule = ("python-unsafe-deserialization", "high", "CWE-502", "Unsafe deserialization",
                     f"{name} may construct attacker-controlled Python objects")
-        elif name in {"hashlib.md5", "hashlib.sha1"}:
+        elif "python-weak-message-digest" in self.enabled_rules and name in {"hashlib.md5", "hashlib.sha1"}:
             algorithm = name.rsplit(".", 1)[1]
             rule = ("python-weak-message-digest", "medium", "CWE-328", "Weak message digest",
                     f"hashlib.{algorithm} selects a collision-prone digest algorithm")
-        elif name.startswith("requests.") and has_keyword_false(node, "verify"):
+        elif "python-insecure-request" in self.enabled_rules and name.startswith("requests.") and has_keyword_false(node, "verify"):
             rule = ("python-insecure-request", "medium", "CWE-295", "TLS verification disabled",
                     f"{name} disables certificate verification with verify=False")
         if rule:
@@ -103,10 +143,15 @@ class Analyzer(ast.NodeVisitor):
         return raw
 
     def add_finding(self, node, rule_id, severity, cwe, title, message, evidence):
+        if rule_id not in self.enabled_rules:
+            raise AssertionError("disabled rule evaluated")
+        definition = RULE_BY_ID[rule_id]
+        if cwe not in definition["cwes"]:
+            raise AssertionError("rule CWE differs from registry")
         line = getattr(node, "lineno", 1)
         self.findings.append({
             "ruleId": rule_id,
-            "severity": severity,
+            "severity": definition["severity"],
             "cwe": cwe,
             "path": self.path,
             "line": line,
@@ -183,8 +228,9 @@ def valid_path(path):
 
 def analyze(request):
     """校验一个 checker-v1 项目批次并返回稳定、有上限的检测结果。"""
-    if request.get("version") != "checker-v1" or request.get("language") != "python":
+    if not isinstance(request, dict) or request.get("version") != "checker-v1" or request.get("language") != "python":
         raise ValueError("unsupported contract or language")
+    applied = selected_rules(request)
     project_id = request.get("projectId")
     files = request.get("files")
     if not isinstance(project_id, str) or not isinstance(files, list) or len(files) > MAX_FILES:
@@ -198,7 +244,7 @@ def analyze(request):
             raise ValueError("invalid source file")
         try:
             tree = ast.parse(content, filename=path)
-            analyzer = Analyzer(path, content)
+            analyzer = Analyzer(path, content, applied)
             analyzer.visit(tree)
             findings.extend(analyzer.findings)
         except SyntaxError as error:
@@ -214,6 +260,8 @@ def analyze(request):
         "status": "partial" if diagnostics else "complete",
         "findings": findings,
         "diagnostics": diagnostics[:1000],
+        "catalogVersion": CATALOG_VERSION,
+        "appliedRuleIds": applied,
     }
 
 
@@ -223,6 +271,9 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "BinaryScanPythonChecker/1"
 
     def do_GET(self):
+        if self.path == "/v1/rules":
+            self.respond(200, rule_catalog())
+            return
         if self.path != "/healthz":
             self.send_error(404)
             return

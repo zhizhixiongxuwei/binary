@@ -40,44 +40,47 @@ type archiveImportRecord struct {
 func (s *taskService) listArchiveImports(c *gin.Context) {
 	pageSize := boundedPageSize(c.Query("page_size"), 50, 100)
 	cursorID := strings.TrimSpace(c.Query("cursor"))
-	var rows *sql.Rows
-	var err error
-	if cursorID == "" {
-		rows, err = s.db.QueryContext(c, `SELECT r.id FROM runs r
-			JOIN tasks t ON t.id = r.task_id
-			WHERE r.kind = 'archive_import'
-			  AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
-				JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
-				WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
-				WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))
-			  AND NOT EXISTS (SELECT 1 FROM runs newer WHERE newer.task_id = r.task_id
-				AND newer.kind = 'archive_import'
-				AND (newer.created_at > r.created_at OR (newer.created_at = r.created_at AND newer.id > r.id)))
-			ORDER BY r.created_at DESC, r.id DESC LIMIT ?`, pageSize+1)
+	parentID, queryErr := taskListText(c.Query("task_id"), 256)
+	if queryErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_archive_import_query"})
+		return
+	}
+	query := `SELECT r.id FROM runs r JOIN tasks t ON t.id = r.task_id
+	 WHERE r.kind = 'archive_import'
+	 AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
+	 JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
+	 WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
+	 WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))`
+	args := make([]any, 0, 5)
+	if parentID != "" {
+		query += " AND r.task_id = ?"
+		args = append(args, parentID)
 	} else {
+		query += ` AND NOT EXISTS (SELECT 1 FROM runs newer WHERE newer.task_id = r.task_id
+		 AND newer.kind = 'archive_import' AND (newer.created_at > r.created_at OR (newer.created_at = r.created_at AND newer.id > r.id)))`
+	}
+	if cursorID != "" {
 		var cursorCreated time.Time
-		if queryErr := s.db.QueryRowContext(c, `SELECT created_at FROM runs
-			WHERE id = ? AND kind = 'archive_import'`, cursorID).Scan(&cursorCreated); queryErr != nil {
-			if errors.Is(queryErr, sql.ErrNoRows) {
+		cursorQuery := `SELECT created_at FROM runs WHERE id = ? AND kind = 'archive_import'`
+		cursorArgs := []any{cursorID}
+		if parentID != "" {
+			cursorQuery += " AND task_id = ?"
+			cursorArgs = append(cursorArgs, parentID)
+		}
+		if err := s.db.QueryRowContext(c, cursorQuery, cursorArgs...).Scan(&cursorCreated); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_archive_import_cursor"})
 			} else {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_import_query_failed"})
 			}
 			return
 		}
-		rows, err = s.db.QueryContext(c, `SELECT r.id FROM runs r
-			JOIN tasks t ON t.id = r.task_id
-			WHERE r.kind = 'archive_import'
-			  AND (t.deleted_at IS NULL OR EXISTS (SELECT 1 FROM archive_entries retained
-				JOIN tasks child ON child.id = retained.created_task_id AND child.deleted_at IS NULL
-				WHERE retained.import_run_id = r.id) OR EXISTS (SELECT 1 FROM archive_report_bundles bundle
-				WHERE bundle.import_run_id = r.id AND bundle.status = 'ready' AND bundle.deleted_at IS NULL))
-			  AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))
-			  AND NOT EXISTS (SELECT 1 FROM runs newer WHERE newer.task_id = r.task_id
-				AND newer.kind = 'archive_import'
-				AND (newer.created_at > r.created_at OR (newer.created_at = r.created_at AND newer.id > r.id)))
-			ORDER BY r.created_at DESC, r.id DESC LIMIT ?`, cursorCreated, cursorCreated, cursorID, pageSize+1)
+		query += " AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))"
+		args = append(args, cursorCreated, cursorCreated, cursorID)
 	}
+	query += " ORDER BY r.created_at DESC, r.id DESC LIMIT ?"
+	args = append(args, pageSize+1)
+	rows, err := s.db.QueryContext(c, query, args...)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_import_query_failed"})
 		return
@@ -150,8 +153,9 @@ func (s *taskService) loadArchiveImport(ctx context.Context, importID string) (a
 	result.Status = archiveImportStatus(runStatus)
 	result.SourceRetained = !parentDeleted.Valid
 	result.ErrorCode, result.ErrorMessage = errorCode.String, errorMessage.String
-	rows, err := s.db.QueryContext(ctx, `SELECT detected_format, status, created_task_id
-		FROM archive_entries WHERE import_run_id = ? ORDER BY ordinal`, importID)
+	rows, err := s.db.QueryContext(ctx, `SELECT ae.detected_format, ae.status, child.id
+		FROM archive_entries ae LEFT JOIN tasks child ON child.id = ae.created_task_id AND child.deleted_at IS NULL
+		WHERE ae.import_run_id = ? ORDER BY ae.ordinal`, importID)
 	if err != nil {
 		return archiveImportRecord{}, err
 	}
@@ -165,7 +169,8 @@ func (s *taskService) loadArchiveImport(ctx context.Context, importID string) (a
 		result.ScannedEntries++
 		result.TotalEntries++
 		category, supported := filetype.CategoryForFormat(detected.String)
-		if supported && category == filetype.CategoryBinary && status != "skipped" && status != "failed" {
+		if supported && category == filetype.CategoryBinary && status != "skipped" && status != "failed" &&
+			(createdTask.Valid || (result.SourceRetained && status != "task_created")) {
 			result.EligibleEntries++
 			if createdTask.Valid {
 				result.CreatedTasks++
@@ -220,7 +225,8 @@ type archiveEntryResponse struct {
 
 func (s *taskService) listArchiveImportEntries(c *gin.Context) {
 	importID := c.Param("importID")
-	if _, err := s.loadArchiveImport(c, importID); err != nil {
+	archive, err := s.loadArchiveImport(c, importID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "archive_import_not_found"})
 		} else {
@@ -247,8 +253,10 @@ func (s *taskService) listArchiveImportEntries(c *gin.Context) {
 	}
 	pageSize := boundedPageSize(c.Query("page_size"), 50, 100)
 	rows, err := s.db.QueryContext(c, `SELECT ae.id, ae.logical_path, ae.size_bytes,
-		HEX(b.sha256), ae.detected_format, ae.status, ae.created_task_id
+		HEX(b.sha256), ae.detected_format, ae.status, child.id,
+		(ae.created_task_id IS NOT NULL AND child.id IS NULL)
 		FROM archive_entries ae LEFT JOIN blobs b ON b.id = ae.blob_id
+		LEFT JOIN tasks child ON child.id = ae.created_task_id AND child.deleted_at IS NULL
 		WHERE ae.import_run_id = ? AND ae.id > ? ORDER BY ae.id LIMIT 20000`, importID, cursor)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_entry_query_failed"})
@@ -260,11 +268,17 @@ func (s *taskService) listArchiveImportEntries(c *gin.Context) {
 		var id, size uint64
 		var logicalPath, storedStatus string
 		var sha, detected, createdTask sql.NullString
-		if err := rows.Scan(&id, &logicalPath, &size, &sha, &detected, &storedStatus, &createdTask); err != nil {
+		var deletedChild bool
+		if err := rows.Scan(&id, &logicalPath, &size, &sha, &detected, &storedStatus, &createdTask, &deletedChild); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "archive_entry_query_failed"})
 			return
 		}
 		entry := mapArchiveEntry(id, logicalPath, size, sha, detected, storedStatus, createdTask)
+		if deletedChild {
+			entry.Status, entry.SkipReason = "skipped", "关联任务已删除，正在清理"
+		} else if !archive.SourceRetained && entry.Status == "eligible" {
+			entry.Status, entry.SkipReason = "skipped", "归档源已清理，无法创建新任务"
+		}
 		if filter != "all" && entry.Status != filter {
 			continue
 		}
@@ -400,18 +414,23 @@ func (s *taskService) createTaskFromArchiveEntry(
 	var detected, blobID, existingTask sql.NullString
 	var size uint64
 	var ownerID uint64
+	var existingDeleted bool
 	err = tx.QueryRowContext(ctx, `SELECT r.task_id, t.created_by, ae.logical_path, ae.size_bytes,
-		ae.detected_format, ae.status, ae.blob_id, ae.created_task_id
+		ae.detected_format, ae.status, ae.blob_id, ae.created_task_id, existing_child.deleted_at IS NOT NULL
 		FROM archive_entries ae
 		JOIN runs r ON r.id = ae.import_run_id AND r.kind = 'archive_import'
 		JOIN tasks t ON t.id = r.task_id AND t.deleted_at IS NULL
+		LEFT JOIN tasks existing_child ON existing_child.id = ae.created_task_id
 		WHERE ae.import_run_id = ? AND ae.id = ? FOR UPDATE`, importID, entryID).Scan(
-		&parentTaskID, &ownerID, &logicalPath, &size, &detected, &storedStatus, &blobID, &existingTask,
+		&parentTaskID, &ownerID, &logicalPath, &size, &detected, &storedStatus, &blobID, &existingTask, &existingDeleted,
 	)
 	if err != nil {
 		return "", false, err
 	}
 	if existingTask.Valid {
+		if existingDeleted {
+			return "", false, errArchiveEntryNotEligible
+		}
 		return existingTask.String, false, nil
 	}
 	category, supported := filetype.CategoryForFormat(detected.String)

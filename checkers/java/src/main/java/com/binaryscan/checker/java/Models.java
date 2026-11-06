@@ -7,9 +7,11 @@ import java.util.Map;
 final class Models {
     private Models() {}
     record SourceFile(String path, String content) {}
-    record CheckRequest(String version, String projectId, String language, List<SourceFile> files) {}
+    record CheckRequest(String version, String projectId, String language, List<SourceFile> files,
+                        List<String> ruleIds, String catalogVersion) {}
     record Finding(String ruleId, String severity, String cwe, String path, int line, int column,
                    String title, String message, Map<String, Object> evidence) {}
     record CheckResponse(String version, String projectId, String status,
-                         List<Finding> findings, List<String> diagnostics) {}
+                         List<Finding> findings, List<String> diagnostics,
+                         String catalogVersion, List<String> appliedRuleIds) {}
 }

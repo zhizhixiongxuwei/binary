@@ -135,7 +135,7 @@ const unavailableStates: Readonly<Record<TaskResultTab, TaskResultState>> = {
   'c-analysis': {
     status: 'unavailable',
     title: 'C 源码检测未接入',
-    description: '当前任务没有可读取的 Ghidra 类 C 源码检测结果。',
+    description: '当前任务没有可读取的类 C 源码检测结果。',
   },
   'java-analysis': {
     status: 'unavailable',

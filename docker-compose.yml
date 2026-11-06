@@ -8,6 +8,9 @@ x-db-client: &db-client
   BINARY_DB_NAME: ${MYSQL_DATABASE:?required}
   BINARY_DB_USER: ${MYSQL_USER:?required}
   BINARY_DB_PASSWORD: ${MYSQL_PASSWORD:?required}
+  BINARY_CAPABILITY_PROBE_SECONDS: ${CAPABILITY_PROBE_SECONDS:-60}
+  BINARY_CAPABILITY_REPORT_TTL_SECONDS: ${CAPABILITY_REPORT_TTL_SECONDS:-180}
+  BINARY_TRIVY_DB_STALE_DAYS: ${TRIVY_DB_STALE_DAYS:-30}
 
 # 产品容器的共同加固基线：只读根文件系统、非 root 用户、删除 Linux capabilities、
 # 禁止提权并限制临时目录和日志尺寸。各服务只额外挂载自己职责所需的数据目录。

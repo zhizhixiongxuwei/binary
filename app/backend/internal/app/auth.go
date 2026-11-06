@@ -251,6 +251,11 @@ func (a *authService) audit(
         (actor_user_id, action, object_type, object_id, request_id, client_ip, outcome, details)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, actor, action, objectType, objectID,
 		requestIDFromContext(ctx), clientIPFromContext(ctx), outcome, details)
+	if err == nil {
+		if c, ok := ctx.(*gin.Context); ok {
+			c.Set(adminAuditRecorded, true)
+		}
+	}
 	return err
 }
 

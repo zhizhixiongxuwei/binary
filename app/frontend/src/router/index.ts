@@ -40,8 +40,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'archives',
         name: 'archive-imports',
-        component: () => import('@/views/ArchiveImportsView.vue'),
-        meta: { title: '归档批次' },
+        redirect: { name: 'tasks', query: { analysis_mode: 'archive' } },
       },
       {
         path: 'change-password',
@@ -66,6 +65,12 @@ const routes: RouteRecordRaw[] = [
         name: 'system',
         component: () => import('@/views/SystemView.vue'),
         meta: { title: '系统维护', roles: ['administrator'] },
+      },
+      {
+        path: 'users',
+        name: 'users',
+        component: () => import('@/views/UsersView.vue'),
+        meta: { title: '用户与角色', roles: ['administrator'] },
       },
     ],
   },

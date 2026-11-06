@@ -20,7 +20,7 @@ const workspaceComponent =
     <PageHeader
       title="系统维护"
       eyebrow="SYSTEM / MAINTENANCE"
-      description="查看本地节点、持久化目录、离线工具、用户权限与审计事件。"
+      description="查看本地节点、离线工具与审计事件。"
     />
     <component :is="workspaceComponent" />
   </div>

@@ -290,8 +290,9 @@ def source_state(repo: Path, skip_build: bool) -> dict:
 
 def runtime_config(config: dict[str, str], keys: set[str], mode: str) -> dict[str, str]:
     result = {key: value for key, value in config.items() if key in keys}
-    result.update(COMPOSE_PROJECT_NAME=f"binary-{mode}", BINARY_DATA_ROOT="./data")
-    for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD", "INITIAL_ADMIN_PASSWORD"):
+    result.update(COMPOSE_PROJECT_NAME=f"binary-{mode}", BINARY_DATA_ROOT="./data",
+                  INITIAL_ADMIN_USERNAME="admin", INITIAL_ADMIN_PASSWORD="admin123")
+    for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"):
         result[key] = secrets.token_hex(24)
     return result
 
@@ -375,7 +376,9 @@ macOS：`cd release && sh ./install.sh`。
 {start}
 
 运行配置在 `.env`，来自构建时仓库根目录配置；版本和镜像引用原样保留。
-数据库密码、MySQL root 密码和初始管理员密码已为本包随机生成，请从 `.env` 读取并妥善保管。
+初始管理员账号和密码默认为 `admin` / `admin123`，由包内 `.env` 的
+`INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_PASSWORD` 配置，首次启动前可自行修改。
+数据库密码和 MySQL root 密码仍为每个包独立随机生成，请从 `.env` 读取并妥善保管。
 `.env` 和 `data/` 可变，不计入包校验清单；修改镜像、平台或项目名称前应先停止服务。
 管理员账号由 `INITIAL_ADMIN_USERNAME` 指定，初始密码仅在首次创建用户时使用。
 访问地址见 `PUBLIC_BASE_URL`；默认绑定 `127.0.0.1`。需要远程访问时同步配置

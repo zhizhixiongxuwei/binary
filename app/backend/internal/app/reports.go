@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/storage"
 
@@ -300,7 +301,7 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 		arguments = append(arguments, runID)
 	}
 	runRows, err := s.db.QueryContext(ctx, `SELECT id, kind, status, subject_type, subject_id,
-        result_quality, tool_name, tool_version, error_code, error_message, created_at, started_at, completed_at
+        result_quality, tool_name, tool_version, error_code, error_message, created_at, started_at, completed_at, request
         FROM runs WHERE task_id = ? AND id IN (`+placeholders+`) ORDER BY created_at`, arguments...)
 	if err != nil {
 		return nil, err
@@ -311,8 +312,9 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 		var quality, toolName, toolVersion, errorCode, errorMessage sql.NullString
 		var created time.Time
 		var started, completed sql.NullTime
+		var request []byte
 		if err := runRows.Scan(&id, &kind, &status, &subjectType, &subjectID, &quality, &toolName,
-			&toolVersion, &errorCode, &errorMessage, &created, &started, &completed); err != nil {
+			&toolVersion, &errorCode, &errorMessage, &created, &started, &completed, &request); err != nil {
 			runRows.Close()
 			return nil, err
 		}
@@ -320,11 +322,16 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 			runRows.Close()
 			return nil, errMutableReportRun
 		}
+		selection, err := checkrules.FromRequest(request)
+		if err != nil {
+			runRows.Close()
+			return nil, err
+		}
 		runs = append(runs, map[string]any{"id": id, "kind": kind, "status": status,
 			"subjectType": subjectType, "subjectId": subjectID, "resultQuality": nullableString(quality),
 			"toolName": nullableString(toolName), "toolVersion": nullableString(toolVersion),
 			"errorCode": nullableString(errorCode), "errorMessage": nullableString(errorMessage),
-			"createdAt": created, "startedAt": nullableTime(started), "completedAt": nullableTime(completed)})
+			"createdAt": created, "startedAt": nullableTime(started), "completedAt": nullableTime(completed), "selection": selection})
 	}
 	if err := runRows.Close(); err != nil {
 		return nil, err

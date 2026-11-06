@@ -30,12 +30,7 @@ import java.util.Set;
  */
 @Component
 final class CAnalyzer {
-    static final Set<String> RULE_IDS = Set.of(
-        "cwe-242-gets", "cwe-120-bounds", "cwe-134-format", "cwe-78-command",
-        "cwe-787-oob-write", "cwe-125-oob-read", "cwe-562-stack-address",
-        "cwe-590-invalid-free", "cwe-761-offset-free", "cwe-369-zero-divisor",
-        "cwe-377-temp-file", "cwe-252-unchecked-return", "cwe-131-size-calculation",
-        "cwe-327-328-weak-crypto", "cwe-732-permissions");
+    static final Set<String> RULE_IDS = RuleCatalog.IDS;
 
     private static final Set<String> UNSAFE_COPY = Set.of("strcpy", "strcat", "sprintf", "vsprintf");
     private static final Set<String> SCANF = Set.of(
@@ -54,6 +49,12 @@ final class CAnalyzer {
         "undefined4", "undefined8", "byte", "word", "dword", "qword", "float10");
 
     List<Models.Finding> analyze(Models.SourceFile file) {
+        return analyze(file, RULE_IDS);
+    }
+
+    List<Models.Finding> analyze(Models.SourceFile file, Set<String> enabledRules) {
+        if (!RULE_IDS.containsAll(enabledRules)) throw new IllegalArgumentException("unknown rule");
+        if (enabledRules.isEmpty()) return List.of();
         // 一次只分析一个逻辑源码文件，避免不同反编译文件的符号表相互污染。
         var lexer = new PseudoCLexer(CharStreams.fromString(file.content()));
         var stream = new CommonTokenStream(lexer);
@@ -63,13 +64,13 @@ final class CAnalyzer {
         String[] sourceLines = file.content().split("\\n", -1);
         Symbols symbols = collectSymbols(tokens);
         List<CallSite> calls = collectCalls(tokens);
-        Emitter emitter = new Emitter(file.path(), sourceLines);
+        Emitter emitter = new Emitter(file.path(), sourceLines, enabledRules);
 
         // 先执行依赖调用点/符号事实的规则，再补充面向整个 token 流的结构规则。
         evaluateCalls(tokens, calls, symbols, emitter);
-        evaluateArrayBounds(tokens, symbols, emitter);
-        evaluateReturns(tokens, symbols, emitter);
-        evaluateZeroDivisors(tokens, emitter);
+        if (emitter.enabled("cwe-787-oob-write") || emitter.enabled("cwe-125-oob-read")) evaluateArrayBounds(tokens, symbols, emitter);
+        if (emitter.enabled("cwe-562-stack-address")) evaluateReturns(tokens, symbols, emitter);
+        if (emitter.enabled("cwe-369-zero-divisor")) evaluateZeroDivisors(tokens, emitter);
 
         emitter.findings.sort(Comparator.comparingInt(Models.Finding::line)
             .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));
@@ -80,14 +81,14 @@ final class CAnalyzer {
                                       Symbols symbols, Emitter emitter) {
         for (CallSite call : calls) {
             String name = normalizeSymbol(call.name().getText());
-            if ("gets".equals(name)) {
+            if (emitter.enabled("cwe-242-gets") && "gets".equals(name)) {
                 emitter.emit(call.name(), "cwe-242-gets", "high", "CWE-242", "Use of gets",
                     "gets cannot bound input and must not be used", Map.of("symbol", call.name().getText()));
             }
-            if (UNSAFE_COPY.contains(name)) {
+            if (emitter.enabled("cwe-120-bounds") && UNSAFE_COPY.contains(name)) {
                 emitter.emit(call.name(), "cwe-120-bounds", "high", "CWE-120", "Unbounded buffer operation",
                     name + " does not enforce a destination bound", Map.of("symbol", call.name().getText()));
-            } else if (SCANF.contains(name)) {
+            } else if (emitter.enabled("cwe-120-bounds") && SCANF.contains(name)) {
                 int formatIndex = scanfFormatIndex(name);
                 if (formatIndex < call.arguments().size()
                     && isStringLiteral(call.arguments().get(formatIndex))
@@ -97,33 +98,33 @@ final class CAnalyzer {
                 }
             }
 
-            int formatIndex = printfFormatIndex(name);
+            int formatIndex = emitter.enabled("cwe-134-format") ? printfFormatIndex(name) : -1;
             if (formatIndex >= 0 && formatIndex < call.arguments().size()
                 && !isStringLiteral(call.arguments().get(formatIndex))) {
                 emitter.emit(call.name(), "cwe-134-format", "high", "CWE-134", "Externally controlled format string",
                     name + " receives a non-literal format string", Map.of("symbol", call.name().getText()));
             }
-            if (("system".equals(name) || "popen".equals(name)) && !call.arguments().isEmpty()
+            if (emitter.enabled("cwe-78-command") && ("system".equals(name) || "popen".equals(name)) && !call.arguments().isEmpty()
                 && !isStringLiteral(call.arguments().getFirst())) {
                 emitter.emit(call.name(), "cwe-78-command", "high", "CWE-78", "Command injection",
                     name + " receives a non-literal command", Map.of("symbol", call.name().getText()));
             }
-            if (TEMP_APIS.contains(name)) {
+            if (emitter.enabled("cwe-377-temp-file") && TEMP_APIS.contains(name)) {
                 emitter.emit(call.name(), "cwe-377-temp-file", "medium", "CWE-377", "Insecure temporary file",
                     name + " uses an insecure temporary-file API", Map.of("symbol", call.name().getText()));
             }
-            String weakCwe = weakCryptoCwe(name);
+            String weakCwe = emitter.enabled("cwe-327-328-weak-crypto") ? weakCryptoCwe(name) : null;
             if (weakCwe != null) {
                 emitter.emit(call.name(), "cwe-327-328-weak-crypto", "medium", weakCwe, "Weak cryptography",
                     name + " selects a weak cryptographic primitive", Map.of("symbol", call.name().getText()));
             }
-            if (CHECKED_RETURN_APIS.contains(name) && isDiscardedCall(tokens, call)) {
+            if (emitter.enabled("cwe-252-unchecked-return") && CHECKED_RETURN_APIS.contains(name) && isDiscardedCall(tokens, call)) {
                 emitter.emit(call.name(), "cwe-252-unchecked-return", "medium", "CWE-252", "Unchecked return value",
                     "return value from " + name + " is ignored", Map.of("symbol", call.name().getText()));
             }
-            evaluateFree(tokens, call, name, symbols, emitter);
-            evaluateAllocationSize(tokens, call, name, symbols, emitter);
-            evaluatePermissions(call, name, emitter);
+            if (emitter.enabled("cwe-761-offset-free") || emitter.enabled("cwe-590-invalid-free")) evaluateFree(tokens, call, name, symbols, emitter);
+            if (emitter.enabled("cwe-131-size-calculation")) evaluateAllocationSize(tokens, call, name, symbols, emitter);
+            if (emitter.enabled("cwe-732-permissions")) evaluatePermissions(call, name, emitter);
         }
     }
 
@@ -139,7 +140,7 @@ final class CAnalyzer {
                 && isIdentifier(argument.get(1)) && text(argument.get(2), "["))
             || state.offset();
         if (explicitOffset) {
-            emitter.emit(call.name(), "cwe-761-offset-free", "high", "CWE-761", "Free of offset pointer",
+            if (emitter.enabled("cwe-761-offset-free")) emitter.emit(call.name(), "cwe-761-offset-free", "high", "CWE-761", "Free of offset pointer",
                 "free is called with an offset pointer", Map.of("symbol", call.name().getText()));
             return;
         }
@@ -149,7 +150,7 @@ final class CAnalyzer {
         boolean knownNonHeap = state.nonHeap();
         boolean scalar = first != null && symbols.locals().contains(first)
             && !symbols.pointers().contains(first) && !symbols.arrays().containsKey(first);
-        if (address || literal || stackArray || knownNonHeap || scalar) {
+        if (emitter.enabled("cwe-590-invalid-free") && (address || literal || stackArray || knownNonHeap || scalar)) {
             emitter.emit(call.name(), "cwe-590-invalid-free", "high", "CWE-590", "Free of non-heap memory",
                 "free is called with storage that was not heap allocated", Map.of("symbol", call.name().getText()));
         }
@@ -196,10 +197,11 @@ final class CAnalyzer {
                 && text(tokens.get(cursor), "["); dimension++) {
                 int close = matching(tokens, cursor, "[", "]");
                 if (close < 0) break;
+                boolean write = isWriteAccess(tokens, close);
+                if (!emitter.enabled(write ? "cwe-787-oob-write" : "cwe-125-oob-read")) { cursor = close + 1; continue; }
                 Optional<BigInteger> value = integer(tokens.subList(cursor + 1, close));
                 if (value.isPresent() && (value.get().signum() < 0
                     || value.get().compareTo(BigInteger.valueOf(dimensions.get(dimension))) >= 0)) {
-                    boolean write = isWriteAccess(tokens, close);
                     emitter.emit(name, write ? "cwe-787-oob-write" : "cwe-125-oob-read", "high",
                         write ? "CWE-787" : "CWE-125", write ? "Out-of-bounds write" : "Out-of-bounds read",
                         "array index " + value.get() + " is outside " + name.getText() + "["
@@ -533,21 +535,30 @@ final class CAnalyzer {
     private static final class Emitter {
         private final String path;
         private final String[] sourceLines;
+        private final Set<String> enabledRules;
         private final Set<String> dedupe = new HashSet<>();
         private final List<Models.Finding> findings = new ArrayList<>();
 
-        private Emitter(String path, String[] sourceLines) {
+        private Emitter(String path, String[] sourceLines, Set<String> enabledRules) {
             this.path = path;
             this.sourceLines = sourceLines;
+            this.enabledRules = Set.copyOf(enabledRules);
         }
+
+        private boolean enabled(String ruleId) { return enabledRules.contains(ruleId); }
 
         private void emit(Token token, String ruleId, String severity, String cwe, String title,
                           String message, Map<String, Object> evidence) {
+            // A disabled rule reaching the emitter is a programming error, not
+            // an opportunity to filter an already-evaluated finding.
+            if (!enabled(ruleId)) throw new IllegalStateException("disabled rule evaluated: " + ruleId);
+            RuleCatalog.Rule definition = RuleCatalog.rule(ruleId);
+            if (!definition.cwes().contains(cwe)) throw new IllegalStateException("rule CWE differs from registry");
             int line = Math.max(1, token.getLine());
             int column = utf16Column(sourceLines, line, token.getCharPositionInLine());
             // 同一规则在同一坐标只输出一次，防止多个启发式分支重复命中后放大漏洞数量。
             if (!dedupe.add(ruleId + ':' + line + ':' + column)) return;
-            findings.add(new Models.Finding(ruleId, severity, cwe, path, line, column,
+            findings.add(new Models.Finding(ruleId, definition.severity(), cwe, path, line, column,
                 title, message, new HashMap<>(evidence)));
         }
     }

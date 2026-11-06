@@ -27,29 +27,32 @@ type App struct {
 }
 
 type Worker struct {
-	WorkRoot         string
-	BlobRoot         string
-	ProjectRoot      string
-	ArtifactRoot     string
-	Lease            time.Duration
-	Heartbeat        time.Duration
-	Poll             time.Duration
-	CCheckerURL      string
-	JavaCheckerURL   string
-	PythonCheckerURL string
-	TrivyPath        string
-	TrivyCacheRoot   string
-	GhidraPath       string
-	GhidraScriptRoot string
-	JavaPath         string
-	VineflowerJar    string
-	CFRJar           string
-	JADXJar          string
-	PYCDCPath        string
-	ToolVersion      string
-	ArchiveMaxBytes  int64
-	ArchiveMaxFiles  int
-	SlotCounts       map[string]int
+	WorkRoot                string
+	BlobRoot                string
+	ProjectRoot             string
+	ArtifactRoot            string
+	Lease                   time.Duration
+	Heartbeat               time.Duration
+	Poll                    time.Duration
+	CCheckerURL             string
+	JavaCheckerURL          string
+	PythonCheckerURL        string
+	TrivyPath               string
+	TrivyCacheRoot          string
+	GhidraPath              string
+	GhidraScriptRoot        string
+	JavaPath                string
+	VineflowerJar           string
+	CFRJar                  string
+	JADXJar                 string
+	PYCDCPath               string
+	ToolVersion             string
+	CapabilityProbeInterval time.Duration
+	CapabilityReportTTL     time.Duration
+	DatabaseStaleDays       int
+	ArchiveMaxBytes         int64
+	ArchiveMaxFiles         int
+	SlotCounts              map[string]int
 }
 
 type Config struct {
@@ -90,28 +93,31 @@ func Load(role string) (Config, error) {
 			UploadMaxBytes:       int64Value("BINARY_UPLOAD_MAX_BYTES", 2<<30),
 		},
 		Worker: Worker{
-			WorkRoot:         valueOr("BINARY_WORK_ROOT", "/data/work"),
-			BlobRoot:         valueOr("BINARY_BLOB_ROOT", "/data/storage/blobs"),
-			ProjectRoot:      valueOr("BINARY_PROJECT_ROOT", "/data/storage/projects"),
-			ArtifactRoot:     valueOr("BINARY_ARTIFACT_ROOT", "/data/storage/artifacts"),
-			Lease:            durationSeconds("BINARY_JOB_LEASE_SECONDS", 60),
-			Heartbeat:        durationSeconds("BINARY_JOB_HEARTBEAT_SECONDS", 15),
-			Poll:             durationMilliseconds("BINARY_JOB_POLL_MILLISECONDS", 1000),
-			CCheckerURL:      strings.TrimSpace(os.Getenv("BINARY_C_CHECKER_URL")),
-			JavaCheckerURL:   strings.TrimSpace(os.Getenv("BINARY_JAVA_CHECKER_URL")),
-			PythonCheckerURL: strings.TrimSpace(os.Getenv("BINARY_PYTHON_CHECKER_URL")),
-			TrivyPath:        valueOr("BINARY_TRIVY_PATH", "/usr/local/bin/trivy"),
-			TrivyCacheRoot:   valueOr("BINARY_TRIVY_CACHE_ROOT", "/opt/trivy-cache"),
-			GhidraPath:       valueOr("BINARY_GHIDRA_PATH", "/opt/ghidra/support/analyzeHeadless"),
-			GhidraScriptRoot: valueOr("BINARY_GHIDRA_SCRIPT_ROOT", "/opt/binaryscan/ghidra"),
-			JavaPath:         valueOr("BINARY_JAVA_PATH", "/opt/java/openjdk/bin/java"),
-			VineflowerJar:    valueOr("BINARY_VINEFLOWER_JAR", "/opt/bytecode-tools/vineflower/vineflower.jar"),
-			CFRJar:           valueOr("BINARY_CFR_JAR", "/opt/bytecode-tools/cfr/cfr.jar"),
-			JADXJar:          valueOr("BINARY_JADX_JAR", "/opt/bytecode-tools/jadx/lib/jadx-all.jar"),
-			PYCDCPath:        valueOr("BINARY_PYCDC_PATH", "/opt/bytecode-tools/pycdc/pycdc"),
-			ToolVersion:      strings.TrimSpace(os.Getenv("BINARY_TOOL_VERSION")),
-			ArchiveMaxBytes:  int64Value("BINARY_ARCHIVE_MAX_EXPANDED_BYTES", 10<<30),
-			ArchiveMaxFiles:  intValue("BINARY_ARCHIVE_MAX_ENTRIES", 20000),
+			WorkRoot:                valueOr("BINARY_WORK_ROOT", "/data/work"),
+			BlobRoot:                valueOr("BINARY_BLOB_ROOT", "/data/storage/blobs"),
+			ProjectRoot:             valueOr("BINARY_PROJECT_ROOT", "/data/storage/projects"),
+			ArtifactRoot:            valueOr("BINARY_ARTIFACT_ROOT", "/data/storage/artifacts"),
+			Lease:                   durationSeconds("BINARY_JOB_LEASE_SECONDS", 60),
+			Heartbeat:               durationSeconds("BINARY_JOB_HEARTBEAT_SECONDS", 15),
+			Poll:                    durationMilliseconds("BINARY_JOB_POLL_MILLISECONDS", 1000),
+			CCheckerURL:             strings.TrimSpace(os.Getenv("BINARY_C_CHECKER_URL")),
+			JavaCheckerURL:          strings.TrimSpace(os.Getenv("BINARY_JAVA_CHECKER_URL")),
+			PythonCheckerURL:        strings.TrimSpace(os.Getenv("BINARY_PYTHON_CHECKER_URL")),
+			TrivyPath:               valueOr("BINARY_TRIVY_PATH", "/usr/local/bin/trivy"),
+			TrivyCacheRoot:          valueOr("BINARY_TRIVY_CACHE_ROOT", "/opt/trivy-cache"),
+			GhidraPath:              valueOr("BINARY_GHIDRA_PATH", "/opt/ghidra/support/analyzeHeadless"),
+			GhidraScriptRoot:        valueOr("BINARY_GHIDRA_SCRIPT_ROOT", "/opt/binaryscan/ghidra"),
+			JavaPath:                valueOr("BINARY_JAVA_PATH", "/opt/java/openjdk/bin/java"),
+			VineflowerJar:           valueOr("BINARY_VINEFLOWER_JAR", "/opt/bytecode-tools/vineflower/vineflower.jar"),
+			CFRJar:                  valueOr("BINARY_CFR_JAR", "/opt/bytecode-tools/cfr/cfr.jar"),
+			JADXJar:                 valueOr("BINARY_JADX_JAR", "/opt/bytecode-tools/jadx/lib/jadx-all.jar"),
+			PYCDCPath:               valueOr("BINARY_PYCDC_PATH", "/opt/bytecode-tools/pycdc/pycdc"),
+			ToolVersion:             strings.TrimSpace(os.Getenv("BINARY_TOOL_VERSION")),
+			CapabilityProbeInterval: durationSeconds("BINARY_CAPABILITY_PROBE_SECONDS", 60),
+			CapabilityReportTTL:     durationSeconds("BINARY_CAPABILITY_REPORT_TTL_SECONDS", 180),
+			DatabaseStaleDays:       intValue("BINARY_TRIVY_DB_STALE_DAYS", 30),
+			ArchiveMaxBytes:         int64Value("BINARY_ARCHIVE_MAX_EXPANDED_BYTES", 10<<30),
+			ArchiveMaxFiles:         intValue("BINARY_ARCHIVE_MAX_ENTRIES", 20000),
 			// 槽位数量写入数据库资源池而不是只存在进程内，使多副本 Worker 也遵守同一并发预算。
 			SlotCounts: map[string]int{
 				"scanner":      intValue("BINARY_SLOT_SCANNER", 1),

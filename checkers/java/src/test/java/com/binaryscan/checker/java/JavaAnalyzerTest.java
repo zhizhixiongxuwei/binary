@@ -71,6 +71,11 @@ final class JavaAnalyzerTest {
 
         assertEquals(Set.of(), Set.copyOf(analysis.diagnostics()));
         assertEquals(JavaAnalyzer.RULE_IDS, actual);
+        for (String id : JavaAnalyzer.RULE_IDS) {
+            var selected = new JavaAnalyzer().analyze(new Models.SourceFile("Rules.java", content), Set.of(id));
+            assertEquals(0, selected.diagnostics().size(), id);
+            assertEquals(Set.of(id), selected.findings().stream().map(Models.Finding::ruleId).collect(Collectors.toSet()), id);
+        }
         assertTrue(analysis.findings().stream().allMatch(finding ->
             finding.line() >= 1 && finding.column() >= 1 && finding.cwe().startsWith("CWE-")));
     }

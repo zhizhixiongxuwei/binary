@@ -13,7 +13,8 @@ final class Models {
     private Models() {}
 
     record SourceFile(String path, String content) {}
-    record CheckRequest(String version, String projectId, String language, List<SourceFile> files) {}
+    record CheckRequest(String version, String projectId, String language, List<SourceFile> files,
+                        List<String> ruleIds, String catalogVersion) {}
     record Finding(
         String ruleId,
         String severity,
@@ -30,6 +31,8 @@ final class Models {
         String projectId,
         String status,
         List<Finding> findings,
-        List<String> diagnostics
+        List<String> diagnostics,
+        String catalogVersion,
+        List<String> appliedRuleIds
     ) {}
 }

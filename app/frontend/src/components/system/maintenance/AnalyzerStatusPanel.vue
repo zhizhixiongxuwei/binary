@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import {
-  ArchiveRestore,
-  DatabaseZap,
-  RefreshCw,
-} from 'lucide-vue-next'
+import { DatabaseZap, RefreshCw } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-import type {
-  DatabaseBundleHealth,
-  SystemStatus,
-} from '@/api/types'
+import type { SystemStatus } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
-import { formatDateTime } from '@/utils/formatters'
+import AnalyzerTechnicalDetails from './AnalyzerTechnicalDetails.vue'
+import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
+import {
+  analyzerProbeHealth,
+  analyzerProbeDescription,
+  databaseBundleHealth,
+} from '@/components/system/maintenance/systemStatusPresentation'
+import { formatBytes, formatDateTime } from '@/utils/formatters'
 
 const props = defineProps<{
   status: SystemStatus | null
@@ -19,35 +19,19 @@ const props = defineProps<{
   errorMessage: string
 }>()
 
-defineEmits<{
-  retry: []
-}>()
+defineEmits<{ retry: [] }>()
 
 const analyzers = computed(() => props.status?.analyzers ?? [])
 const bundle = computed(() => props.status?.trivy_database_bundle ?? null)
-const bundleIsStale = computed(
-  () =>
-    bundle.value?.status === 'stale' ||
-    (bundle.value !== null &&
-      bundle.value.age_days > bundle.value.stale_after_days),
-)
+const databases = computed(() => bundle.value?.databases ?? [])
+const bundleHealth = computed(() => bundle.value
+  ? databaseBundleHealth(bundle.value.status, bundle.value.freshness)
+  : { label: '未收到探测', tone: 'unknown' })
 
-const databaseStatusLabels: Readonly<Record<DatabaseBundleHealth, string>> = {
-  active: '使用中',
-  stale: '已过旧',
-}
-
-type AnalyzerStatus = NonNullable<SystemStatus['analyzers']>[number]
-
-function analyzerStatusLabel(status: 'available' | 'unavailable'): string {
-  return status === 'available' ? '可用' : '不可用'
-}
-
-function workerKindIsReady(
-  analyzer: AnalyzerStatus,
-  kind: 'image' | 'native' | 'trivy',
-): boolean {
-  return analyzer.ready_worker_kinds.includes(kind)
+function databaseName(name: string): string {
+  if (name === 'trivy-db') return '主漏洞库'
+  if (name === 'trivy-java-db') return 'Java 漏洞库'
+  return name
 }
 </script>
 
@@ -62,575 +46,133 @@ function workerKindIsReady(
     @retry="$emit('retry')"
   />
   <div v-else-if="status" class="analyzer-status">
-    <section
-      class="analyzer-section surface-panel"
-      aria-labelledby="live-analyzer-title"
-    >
+    <section class="analyzer-section surface-panel" aria-labelledby="live-analyzer-title">
       <header class="section-heading">
         <div>
-          <span class="section-kicker mono">LIVE / TOOLCHAIN</span>
+          <span class="section-kicker mono">LOCAL / TOOLCHAIN PROBE</span>
           <h2 id="live-analyzer-title">分析器可用性</h2>
-          <p>版本和探测结果由离线节点返回，不会从互联网检查更新。</p>
+          <p>可用状态表示环境就绪检查通过，实际处理结果以任务执行记录为准。</p>
         </div>
         <button type="button" title="刷新分析器状态" @click="$emit('retry')">
-          <RefreshCw :size="15" aria-hidden="true" />
-          <span>刷新</span>
+          <RefreshCw :size="15" aria-hidden="true" /><span>刷新</span>
         </button>
       </header>
-
-      <StatePanel
-        v-if="!analyzers.length"
-        kind="empty"
-        title="服务端未返回分析器状态"
-      />
+      <StatePanel v-if="!analyzers.length" kind="empty" title="尚未收到分析器探测报告" />
       <div v-else class="analyzer-grid">
-        <article
-          v-for="analyzer in analyzers"
-          :key="analyzer.name"
-          class="analyzer-row"
-        >
-          <span class="analyzer-icon" aria-hidden="true">
-            <DatabaseZap :size="17" />
-          </span>
+        <article v-for="analyzer in analyzers" :key="analyzer.name" class="analyzer-row">
+          <span class="analyzer-icon" aria-hidden="true"><DatabaseZap :size="17" /></span>
           <div class="analyzer-identity">
-            <strong>{{ analyzer.name }}</strong>
-            <span>{{ analyzer.scope || analyzer.detail || '未提供检测范围' }}</span>
+            <strong>{{ analysisEngineLabel(analyzer.name) }}</strong>
+            <span>{{ analysisMessage(analyzer.scope) || '本地执行器' }}</span>
           </div>
-          <div class="analyzer-version">
-            <code>{{ analyzer.version || '未探测' }}</code>
-            <small>期望 {{ analyzer.expected_version || '未配置' }}</small>
-          </div>
-          <span
-            class="state-label"
-            :class="`state-label--${analyzer.status}`"
-          >
-            <i aria-hidden="true" />
-            {{ analyzerStatusLabel(analyzer.status) }}
+          <span class="state-label" :class="`state-label--${analyzerProbeHealth(analyzer.status, analyzer.freshness).tone}`">
+            <i aria-hidden="true" />{{ analyzerProbeHealth(analyzer.status, analyzer.freshness).label }}
           </span>
-          <div class="analyzer-readiness">
-            <div class="worker-kinds" aria-label="分析器 Worker 就绪状态">
-              <span
-                v-for="kind in analyzer.required_worker_kinds"
-                :key="kind"
-                :class="{
-                  'worker-kind--ready': workerKindIsReady(analyzer, kind),
-                }"
-              >
-                <i aria-hidden="true" />
-                {{ kind }}
-              </span>
-              <small>{{ analyzer.ready_workers }} READY</small>
-            </div>
-            <code v-if="analyzer.runtime_version" class="runtime-version">
-              {{ analyzer.runtime_name }} / {{ analyzer.runtime_version }}
-            </code>
-            <p>{{ analyzer.detail || '服务端未提供就绪详情。' }}</p>
-            <div class="analyzer-times">
-              <span>
-                探测 {{ formatDateTime(analyzer.last_checked_at ?? undefined) }}
-              </span>
-              <span>
-                最近运行 {{ formatDateTime(analyzer.last_run_at ?? undefined) }}
-              </span>
-            </div>
-          </div>
+          <dl class="analyzer-details">
+            <div><dt>通过探测的 Worker</dt><dd class="mono">{{ analyzer.status === 'unknown' || analyzer.freshness === 'stale' || analyzer.freshness === 'missing' ? '未知' : analyzer.ready_workers }}</dd></div>
+            <div><dt>最近探测</dt><dd class="mono">{{ formatDateTime(analyzer.last_checked_at ?? undefined) }}</dd></div>
+          </dl>
+          <p class="analyzer-detail">{{ analyzerProbeDescription(analyzer) }}</p>
+          <AnalyzerTechnicalDetails class="analyzer-detail" :analyzer="analyzer" />
+          <small v-if="analyzer.last_run_at" class="analyzer-last-run">最近运行 {{ formatDateTime(analyzer.last_run_at) }}</small>
         </article>
       </div>
     </section>
 
-    <section
-      class="database-section surface-panel"
-      aria-labelledby="live-database-title"
-    >
+    <section class="database-section surface-panel" aria-labelledby="live-database-title">
       <header class="section-heading">
         <div>
-          <span class="section-kicker mono">LIVE / FIXED DATABASE BUNDLE</span>
-          <h2 id="live-database-title">Trivy 数据库 Bundle</h2>
-          <p>主漏洞库和 Java 漏洞库随扫描镜像固定交付，运行时不会联网更新。</p>
+          <span class="section-kicker mono">LOCAL / DATABASE PROBE</span>
+          <h2 id="live-database-title">离线漏洞库</h2>
+          <p>展示本地主漏洞库与 Java 漏洞库的检查结果，运行时不会联网更新。</p>
         </div>
-        <span class="database-count mono">{{ bundle ? '1 BUNDLE' : 'NOT READY' }}</span>
+        <span class="state-label" :class="`state-label--${bundleHealth.tone}`"><i aria-hidden="true" />{{ bundleHealth.label }}</span>
       </header>
-
-      <div v-if="bundleIsStale" class="stale-alert" role="alert">
-        <ArchiveRestore :size="17" aria-hidden="true" />
-        <span>
-          <strong>数据库 Bundle 需要更新</strong>
-          <small>请替换包含新双库 Bundle 的 scanner 镜像。</small>
-        </span>
-      </div>
-
       <StatePanel
         v-if="!bundle"
         kind="empty"
-        title="Scanner 尚未登记数据库 Bundle"
-        description="启动 scanner 服务后会登记镜像内的固定双库身份。"
+        title="尚未收到离线数据库探测报告"
+        description="当前无法确认双库状态，请检查漏洞检测服务的就绪报告。"
       />
-      <div v-else class="database-table" role="table" aria-label="Trivy 数据库 Bundle 状态">
-        <div class="database-table__header" role="row">
-          <span role="columnheader">Bundle</span>
-          <span role="columnheader">主库 / Java 库</span>
-          <span role="columnheader">登记时间</span>
-          <span role="columnheader">时效</span>
-          <span role="columnheader">状态</span>
+      <template v-else>
+        <div class="database-summary">
+          <span>最近探测 <code>{{ formatDateTime(bundle.last_checked_at ?? undefined) }}</code></span>
+          <span>报告时间 <code>{{ formatDateTime(bundle.registered_at) }}</code></span>
+          <span v-if="bundle.age_days !== null && bundle.age_days !== undefined">数据年龄 <code>{{ bundle.age_days }} 天</code></span>
+          <span v-if="bundle.stale_after_days !== undefined">过旧阈值 <code>{{ bundle.stale_after_days }} 天</code></span>
         </div>
-        <div class="database-row" role="row">
-          <strong role="cell" data-label="Bundle">{{ bundle.version }}</strong>
-          <code role="cell" data-label="数据库版本">
-            {{ bundle.trivy_db_version }} / {{ bundle.trivy_java_db_version }}
-          </code>
-          <span class="mono" role="cell" data-label="登记时间">
-            {{ formatDateTime(bundle.registered_at) }}
-          </span>
-          <span class="age-cell" role="cell" data-label="时效">
-            <strong class="mono">{{ bundle.age_days }} 天</strong>
-            <small>阈值 {{ bundle.stale_after_days }} 天</small>
-          </span>
-          <span
-            class="database-state"
-            :class="`database-state--${bundle.status}`"
-            role="cell"
-            data-label="状态"
-          >
-            {{ databaseStatusLabels[bundle.status] }}
-          </span>
+        <p v-if="bundle.freshness === 'stale'" class="database-notice" role="status">探测报告已过期，请检查漏洞检测服务心跳；下方信息保留最近一次探测记录。</p>
+        <p v-else-if="bundle.status === 'stale'" class="database-notice" role="status">本地漏洞库数据已过旧，请通过部署流程更新离线漏洞库。</p>
+        <StatePanel
+          v-if="!databases.length"
+          kind="empty"
+          title="尚未收到双库探测详情"
+          description="需要主漏洞库和 Java 漏洞库的本地元数据才能确认状态。"
+        />
+        <div v-else class="database-grid">
+          <article v-for="database in databases" :key="database.name" class="database-card">
+            <header>
+              <div><h3>{{ databaseName(database.name) }}</h3></div>
+              <span class="state-label" :class="`state-label--${analyzerProbeHealth(database.status, bundle.freshness).tone}`">
+                <i aria-hidden="true" />{{ analyzerProbeHealth(database.status, bundle.freshness).label }}
+              </span>
+            </header>
+            <dl class="database-details">
+              <div><dt>数据库版本 / Schema</dt><dd class="mono">{{ database.schema_version === null ? '未知' : `Schema ${database.schema_version}` }}</dd></div>
+              <div><dt>文件大小</dt><dd class="mono">{{ database.size_bytes > 0 ? formatBytes(database.size_bytes) : '未知' }}</dd></div>
+              <div><dt>更新时间</dt><dd class="mono">{{ formatDateTime(database.updated_at ?? undefined) }}</dd></div>
+              <div><dt>下次更新时间</dt><dd class="mono">{{ formatDateTime(database.next_update ?? undefined) }}</dd></div>
+              <div><dt>下载时间</dt><dd class="mono">{{ formatDateTime(database.downloaded_at ?? undefined) }}</dd></div>
+            </dl>
+            <p v-if="database.error" class="database-error" role="status">离线漏洞库检查未通过，请查看技术诊断。</p>
+            <details class="database-path"><summary>技术诊断（原始信息）</summary><dl class="database-details"><div><dt>数据库标识</dt><dd>{{ database.name }}</dd></div><div><dt>容器内路径</dt><dd><code>{{ database.path || '未提供' }}</code></dd></div></dl><p v-if="database.error">{{ database.error }}</p></details>
+          </article>
         </div>
-        <footer class="command-footer">
-          <code>{{ bundle.content_sha256 }}</code>
-        </footer>
-      </div>
+      </template>
     </section>
   </div>
 </template>
 
 <style scoped>
-.analyzer-status {
-  display: grid;
-  min-width: 0;
-  gap: 14px;
-  container: analyzer-live / inline-size;
-}
-
-.analyzer-section,
-.database-section {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.section-heading {
-  display: flex;
-  min-height: 74px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 17px;
-  border-bottom: 1px solid var(--line);
-}
-
-.section-heading > div {
-  min-width: 0;
-}
-
-.section-kicker {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--primary-hover);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.section-heading h2,
-.section-heading p {
-  margin: 0;
-}
-
-.section-heading h2 {
-  color: var(--ink-800);
-  font-size: 14px;
-}
-
-.section-heading p {
-  margin-top: 5px;
-  color: var(--ink-600);
-  font-size: 12px;
-}
-
-.section-heading button {
-  display: inline-flex;
-  min-height: 32px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
-  color: var(--ink-600);
-  background: var(--surface);
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.analyzer-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.analyzer-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 34px minmax(0, 1fr) minmax(100px, auto) auto;
-  align-items: center;
-  gap: 10px;
-  min-height: 112px;
-  padding: 11px 16px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-
-.analyzer-readiness {
-  display: grid;
-  min-width: 0;
-  grid-column: 2 / -1;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 5px 10px;
-}
-
-.worker-kinds {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-}
-
-.worker-kinds > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 5px;
-  border: 1px solid var(--danger-border);
-  border-radius: 6px;
-  color: var(--danger);
-  background: var(--danger-soft);
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-}
-
-.worker-kinds > span i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-.worker-kinds > .worker-kind--ready {
-  border-color: var(--success-border);
-  color: var(--success);
-  background: var(--success-soft);
-}
-
-.worker-kinds > .worker-kind--ready i {
-  background: var(--success);
-}
-
-.worker-kinds small {
-  color: var(--ink-400);
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-}
-
-.runtime-version {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: var(--ink-600);
-  font-size: 11px;
-}
-
-.analyzer-readiness > p {
-  min-width: 0;
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--ink-600);
-  font-size: 11px;
-  line-height: 1.45;
-}
-
-.analyzer-times {
-  display: flex;
-  min-width: 0;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  color: var(--ink-400);
-  font-size: 11px;
-}
-
-.analyzer-row:nth-child(2n) {
-  border-right: 0;
-}
-
-.analyzer-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border: 1px solid var(--primary-border);
-  border-radius: var(--radius-sm);
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.analyzer-identity,
-.analyzer-version {
-  min-width: 0;
-}
-
-.analyzer-identity strong,
-.analyzer-identity span,
-.analyzer-version code,
-.analyzer-version small {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.analyzer-identity strong {
-  color: var(--ink-800);
-  font-size: 12px;
-}
-
-.analyzer-identity span,
-.analyzer-version small {
-  margin-top: 3px;
-  color: var(--ink-400);
-  font-size: 11px;
-}
-
-.analyzer-version code {
-  color: var(--ink-600);
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: 11px;
-}
-
-.state-label {
-  display: inline-flex;
-  min-height: 22px;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border: 1px solid var(--success-border);
-  border-radius: 6px;
-  color: var(--success);
-  background: var(--success-soft);
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.state-label i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--success);
-}
-
-.state-label--unavailable {
-  border-color: var(--danger-border);
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-
-.state-label--unavailable i {
-  background: var(--danger);
-}
-
-.database-count {
-  color: var(--ink-400);
-  font-size: 11px;
-}
-
-.stale-alert {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 17px;
-  border-bottom: 1px solid var(--warning-border);
-  color: var(--warning);
-  background: var(--warning-soft);
-}
-
-.stale-alert span,
-.stale-alert strong,
-.stale-alert small {
-  display: block;
-}
-
-.stale-alert strong {
-  font-size: 12px;
-}
-
-.stale-alert small {
-  margin-top: 2px;
-  color: var(--ink-600);
-  font-size: 11px;
-}
-
-.database-table__header,
-.database-row {
-  display: grid;
-  min-width: 0;
-  grid-template-columns:
-    minmax(120px, 0.65fr) minmax(170px, 1.2fr)
-    minmax(150px, 0.9fr) minmax(90px, 0.45fr) minmax(90px, 0.45fr);
-  align-items: center;
-  gap: 12px;
-  padding: 10px 17px;
-}
-
-.database-table__header {
-  color: var(--ink-600);
-  background: var(--surface-raised);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.database-row {
-  min-height: 58px;
-  border-top: 1px solid var(--line);
-  color: var(--ink-600);
-  font-size: 11px;
-}
-
-.database-row > strong {
-  color: var(--ink-800);
-  font-size: 12px;
-}
-
-.database-row code {
-  font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  overflow-wrap: anywhere;
-}
-
-.age-cell strong,
-.age-cell small {
-  display: block;
-}
-
-.age-cell small {
-  margin-top: 2px;
-  color: var(--ink-400);
-  font-size: 11px;
-}
-
-.database-state {
-  justify-self: start;
-  padding: 2px 6px;
-  border: 1px solid var(--success-border);
-  border-radius: 6px;
-  color: var(--success);
-  background: var(--success-soft);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.database-state--stale {
-  border-color: var(--warning-border);
-  color: var(--warning);
-  background: var(--warning-soft);
-}
-
-.command-footer {
-  display: flex;
-  min-height: 52px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 17px;
-  border-top: 1px solid var(--line);
-  color: var(--ink-400);
-  background: var(--surface-raised);
-  font-size: 11px;
-}
-
-.command-buttons {
-  display: flex;
-  gap: 7px;
-}
-
-.command-buttons button {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  color: var(--ink-400);
-  background: var(--surface-muted);
-  cursor: not-allowed;
-  font-size: 11px;
-}
-
-@container analyzer-live (max-width: 800px) {
-  .analyzer-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .analyzer-row {
-    border-right: 0;
-  }
-
-  .database-table__header {
-    display: none;
-  }
-
-  .database-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .database-row > [role="cell"]::before {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--ink-400);
-    content: attr(data-label);
-    font-size: 11px;
-  }
-}
-
-@container analyzer-live (max-width: 520px) {
-  .section-heading,
-  .command-footer {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .analyzer-row {
-    grid-template-columns: 32px minmax(0, 1fr) auto;
-  }
-
-  .analyzer-version {
-    grid-column: 2 / -1;
-  }
-
-  .analyzer-readiness {
-    grid-column: 1 / -1;
-    grid-template-columns: 1fr;
-  }
-
-  .runtime-version {
-    grid-row: auto;
-  }
-
-  .database-row {
-    grid-template-columns: 1fr;
-    padding: 13px;
-  }
-
-  .command-buttons {
-    width: 100%;
-  }
-
-  .command-buttons button {
-    flex: 1;
-    justify-content: center;
-  }
-}
+.analyzer-status { display: grid; min-width: 0; gap: 14px; container: analyzer-live / inline-size; }
+.analyzer-section, .database-section { min-width: 0; overflow: hidden; }
+.section-heading { display: flex; min-height: 74px; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 17px; border-bottom: 1px solid var(--line); }
+.section-heading > div { min-width: 0; }
+.section-kicker { display: block; margin-bottom: 5px; color: var(--primary-hover); font-size: 11px; font-weight: 700; }
+.section-heading h2, .section-heading p { margin: 0; }
+.section-heading h2 { color: var(--ink-800); font-size: 14px; }
+.section-heading p { margin-top: 5px; color: var(--ink-600); font-size: 12px; line-height: 1.6; }
+.section-heading button { display: inline-flex; min-height: 32px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--ink-600); background: var(--surface); cursor: pointer; font-size: 12px; }
+.section-heading button:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.analyzer-grid, .database-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.analyzer-row { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px 16px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.analyzer-row:nth-child(2n), .database-card:nth-child(2n) { border-right: 0; }
+.analyzer-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--primary-border); border-radius: var(--radius-sm); color: var(--primary); background: var(--primary-soft); }
+.analyzer-identity { min-width: 0; }
+.analyzer-identity strong, .analyzer-identity span { display: block; overflow-wrap: anywhere; }
+.analyzer-identity strong { color: var(--ink-800); font-size: 12px; }
+.analyzer-identity span { margin-top: 3px; color: var(--ink-500); font-size: 11px; }
+.analyzer-details { grid-column: 2 / -1; }
+.analyzer-details, .database-details { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; padding: 0; margin: 3px 0 0; }
+.analyzer-details div, .database-details div { min-width: 0; }
+.analyzer-details dt, .database-details dt { color: var(--ink-500); font-size: 11px; }
+.analyzer-details dd, .database-details dd { margin: 4px 0 0; color: var(--ink-700); font-size: 12px; overflow-wrap: anywhere; }
+.analyzer-detail, .analyzer-last-run { grid-column: 2 / -1; margin: 0; color: var(--ink-600); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.analyzer-last-run { color: var(--ink-500); }
+.state-label { display: inline-flex; min-height: 22px; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--ink-600); background: var(--surface-raised); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.state-label i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.state-label--available { border-color: var(--success-border); color: var(--success); background: var(--success-soft); }
+.state-label--unavailable { border-color: var(--danger-border); color: var(--danger); background: var(--danger-soft); }
+.state-label--stale { border-color: var(--warning-border); color: var(--warning); background: var(--warning-soft); }
+.database-summary { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 12px 17px; border-bottom: 1px solid var(--line); color: var(--ink-500); font-size: 11px; line-height: 1.6; }
+.database-summary code { margin-left: 5px; color: var(--ink-700); }
+.database-notice { margin: 0; padding: 10px 17px; border-bottom: 1px solid var(--warning-border); color: var(--warning); background: var(--warning-soft); font-size: 12px; line-height: 1.6; }
+.database-card { min-width: 0; padding: 15px 17px; border-right: 1px solid var(--line); }
+.database-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
+.database-card h3 { margin: 0 0 4px; color: var(--ink-800); font-size: 13px; }
+.database-card header code { color: var(--ink-500); font-size: 11px; }
+.database-path { grid-column: 1 / -1; }
+.database-error { margin: 14px 0 0; padding: 8px 10px; border-radius: 5px; color: var(--danger); background: var(--danger-soft); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+@container analyzer-live (max-width: 800px) { .analyzer-grid, .database-grid { grid-template-columns: 1fr; } .analyzer-row, .database-card { border-right: 0; border-bottom: 1px solid var(--line); } .database-card:last-child { border-bottom: 0; } }
+@container analyzer-live (max-width: 520px) { .section-heading { align-items: flex-start; flex-direction: column; } .analyzer-row { grid-template-columns: 32px minmax(0, 1fr); } .analyzer-row > .state-label { grid-column: 2; justify-self: start; } .analyzer-details, .analyzer-detail, .analyzer-last-run { grid-column: 1 / -1; } .analyzer-details, .database-details { grid-template-columns: 1fr; } }
 </style>

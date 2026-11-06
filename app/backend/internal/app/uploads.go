@@ -202,6 +202,7 @@ func (s *taskService) createUpload(c *gin.Context) {
 	record := uploadRecord{ID: uploadID, CreatedBy: user.ID, OriginalName: name, ContentType: contentType,
 		DeclaredSize: request.Size, Status: "open",
 		ValidationStatus: "pending", ExpiresAt: expiresAt, CreatedAt: time.Now().UTC()}
+	c.Set("auditObjectID", record.ID)
 	s.writeUploadSession(c, record, http.StatusCreated)
 }
 

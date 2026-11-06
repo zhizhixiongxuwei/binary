@@ -72,7 +72,7 @@ const commandTitle = computed(() => {
       </span>
       <span>
         <strong :id="titleId">
-          {{ rootImage ? 'Trivy 镜像检测' : '单独检测嵌套镜像' }}
+          {{ rootImage ? '镜像漏洞检测' : '单独检测嵌套镜像' }}
         </strong>
         <small :id="reasonId">{{ commandTitle }}</small>
       </span>
@@ -94,7 +94,7 @@ const commandTitle = computed(() => {
             : rootImage
               ? taskActive
                 ? '等待任务就绪'
-                : '开始 Trivy 检测'
+                : '开始镜像漏洞检测'
               : '单独检测'
       }}
     </el-button>
@@ -106,7 +106,7 @@ const commandTitle = computed(() => {
       aria-live="polite"
     >
       <strong>{{ imageScan.feedbackMessage.value }}</strong>
-      <span>仅表示请求已排队，尚未完成 Trivy 检测。</span>
+      <span>仅表示请求已排队，尚未完成镜像漏洞检测。</span>
       <dl>
         <div>
           <dt>Job</dt>

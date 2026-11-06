@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"binaryscan.local/backend/internal/capability"
+	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/config"
 	"binaryscan.local/backend/internal/database"
 	"binaryscan.local/backend/internal/job"
@@ -42,7 +44,9 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 		if err != nil {
 			return err
 		}
-		return db.Close()
+		defer db.Close()
+		hostname, _ := os.Hostname()
+		return capability.Ready(ctx, cfg, db, role+":"+hostname)
 	}
 	cfg, err := config.Load(role)
 	if err != nil {
@@ -75,6 +79,7 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 	workerID := role + ":" + hostname
 	logger := slog.Default().With("role", role, "worker_id", workerID)
 	logger.Info("worker started", "job_kinds", kinds)
+	go capability.ReportLoop(ctx, cfg, db, workerID)
 
 	reaperTicker := time.NewTicker(15 * time.Second)
 	defer reaperTicker.Stop()
@@ -238,6 +243,12 @@ func sleepContext(ctx context.Context, delay time.Duration) {
 }
 
 func errorCode(err error) string {
+	if errors.Is(err, checkrules.ErrVersion) {
+		return "rule_catalog_version_mismatch"
+	}
+	if errors.Is(err, checkrules.ErrSelection) {
+		return "rule_selection_invalid"
+	}
 	if errors.Is(err, job.ErrFenceLost) {
 		return "fence_lost"
 	}

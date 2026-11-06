@@ -283,6 +283,7 @@ func (s *llmService) explain(c *gin.Context) {
 	record.Text = text.String()
 	record.Status = "completed"
 	if streamErr != nil {
+		c.Set("auditOutcome", "failure")
 		record.Status = "failed"
 		if errors.Is(streamErr, context.Canceled) || errors.Is(c.Request.Context().Err(), context.Canceled) {
 			record.Status = "cancelled"
@@ -294,6 +295,7 @@ func (s *llmService) explain(c *gin.Context) {
 	saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer saveCancel()
 	if err := s.repository.Finish(saveCtx, record); err != nil {
+		c.Set("auditOutcome", "failure")
 		_ = sendExplanationEvent(c, "error", gin.H{"code": "llm_history_save_failed", "message": "解释记录未能保存，请刷新确认。"})
 		return
 	}

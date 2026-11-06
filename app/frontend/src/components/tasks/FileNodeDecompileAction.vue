@@ -173,7 +173,7 @@ watch(
       <strong>{{ decompile.feedbackMessage.value }}</strong>
       <span v-if="activeRequest">状态将自动刷新，完成后会打开反编译结果。</span>
       <span v-else-if="decompile.request.value.status === 'succeeded'">
-        Ghidra 已完成处理，反编译结果现在可以阅读。
+        二进制反编译已完成，反编译结果现在可以阅读。
       </span>
       <span v-else>该请求已结束，可以重新发起反编译。</span>
       <dl>

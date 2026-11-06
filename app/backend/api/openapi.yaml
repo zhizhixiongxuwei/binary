@@ -16,6 +16,51 @@ paths:
     get:
       responses:
         "200": { description: Product name and version }
+  /api/v1/admin/system:
+    get:
+      summary: Real worker capability reports and system counters
+      description: >-
+        Administrator-only. Uses local worker probes and database counters, without a Docker socket.
+        Probe and heartbeat freshness are checked independently. Missing or expired reports are unknown,
+        failed probes are unavailable. A successful probe is not an end-to-end sample analysis.
+        Repository capacity is null when unmeasured. Offline database metadata is not a content-integrity check.
+      security: [{ sessionCookie: [] }]
+      responses:
+        "200":
+          description: Latest observed probes, offline database metadata and global counters
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, service_status, active_tasks, queued_tasks, analyzers, collected_at]
+                properties:
+                  version: { type: string }
+                  service_status: { type: string, enum: [healthy, degraded, unavailable] }
+                  active_tasks: { type: integer, minimum: 0 }
+                  queued_tasks: { type: integer, minimum: 0 }
+                  repository_used_bytes: { type: [integer, "null"] }
+                  repository_total_bytes: { type: [integer, "null"] }
+                  analyzers:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, status, freshness, verification, version, ready_workers, last_checked_at]
+                      properties:
+                        name: { type: string }
+                        status: { type: string, enum: [available, unavailable, unknown] }
+                        freshness: { type: string, enum: [fresh, stale, missing] }
+                        verification: { type: string, const: probe }
+                        version: { type: string, description: Observed tool version; empty when unverified }
+                        expected_version: { type: string }
+                        ready_workers: { type: integer, minimum: 0 }
+                        last_checked_at: { type: [string, "null"], format: date-time }
+                  trivy_database_bundle:
+                    type: [object, "null"]
+                    description: Latest scanner double-database metadata, or null if no report exists
+                  collected_at: { type: string, format: date-time }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "500": { description: System counters or reports could not be queried }
   /api/v1/overview:
     get:
       summary: Detection overview aggregated across all visible tasks
@@ -202,6 +247,22 @@ paths:
       security: [{ sessionCookie: [] }]
       parameters:
         - in: query
+          name: action
+          schema: { type: string, maxLength: 96 }
+        - in: query
+          name: outcome
+          schema: { type: string, enum: [success, denied, failure] }
+        - in: query
+          name: actor
+          description: Literal username substring or exact public user ID.
+          schema: { type: string, maxLength: 64 }
+        - in: query
+          name: created_from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: created_to
+          schema: { type: string, format: date-time }
+        - in: query
           name: limit
           schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
         - in: query
@@ -221,10 +282,42 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/AuditEntry" }
                   nextBeforeId:
-                    type: [integer, "null"]
-                    format: int64
-        "400": { description: Invalid pagination }
+                    type: [string, "null"]
+                    pattern: "^[0-9]+$"
+        "400": { description: Invalid pagination or filters }
         "403": { description: Administrator access required }
+  /api/v1/admin/audit/export:
+    get:
+      description: Administrator-only UTF-8 BOM CSV of all matching events in a repeatable-read snapshot. Applies action/outcome/actor/created_from/created_to filters before export. Pagination parameters do not limit export. At most 100000 events and 32 MiB; exceeding either limit fails explicitly without sending a truncated file. Spreadsheet formula cells are neutralized.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - in: query
+          name: action
+          schema: { type: string, maxLength: 96 }
+        - in: query
+          name: outcome
+          schema: { type: string, enum: [success, denied, failure] }
+        - in: query
+          name: actor
+          schema: { type: string, maxLength: 64 }
+        - in: query
+          name: created_from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: created_to
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Complete matching snapshot; X-Audit-Export-Rows and X-Audit-Snapshot-ID describe its bounds.
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        "400": { description: Invalid filters }
+        "401": { description: Authentication required }
+        "403": { description: Administrator access required }
+        "413": { description: Export exceeds row or byte limit; narrow the time range }
+        "429": { description: Two exports are already running; retry later }
+        "500": { description: Export failed; no partial CSV is returned }
   /api/v1/uploads:
     get:
       description: Lists resumable uploads and completed assets so mode selection survives a page refresh.
@@ -484,19 +577,57 @@ paths:
         "201": { description: Decompile run queued }
         "200": { description: Existing idempotent run returned }
         "422": { description: File format cannot be decompiled }
+  /api/v1/tasks/{taskID}/projects/{projectID}/check-rules:
+    get:
+      description: >-
+        Authenticated read-only rule catalog for this source project's language.
+        App reads Scanner capability reports, without contacting Checker services directly.
+        Missing, stale or conflicting catalogs have available=false and cannot be submitted.
+      security: [{ sessionCookie: [] }]
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+        - $ref: "#/components/parameters/ProjectID"
+      responses:
+        "200":
+          description: Observed current-language catalog and freshness
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectCheckRuleCatalog" }
+        "404": { description: Source project not found }
   /api/v1/tasks/{taskID}/projects/{projectID}/check:
     post:
-      description: Manually queues the language checker through scanner orchestration.
+      description: >-
+        Operator/admin only. Queues an immutable rule-selection snapshot through Scanner.
+        No request body or an empty JSON object selects all rules in the current fresh catalog. A nonempty body must
+        contain nonempty ruleIds and catalogVersion. IDs are sorted and deduplicated.
+        Reusing an idempotency key for different rule IDs or catalogVersion returns 409.
+        Worker validates the live catalog and applied rules against the snapshot on every retry.
+        Run history and report-v4 snapshots expose selection; legacy runs have selection=null
+        (not recorded). Disabled rules are outside detection coverage, never implicit passes.
       security: [{ sessionCookie: [] }]
       parameters:
         - $ref: "#/components/parameters/TaskID"
         - $ref: "#/components/parameters/ProjectID"
         - $ref: "#/components/parameters/CSRFToken"
         - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ruleIds, catalogVersion]
+              properties:
+                ruleIds: { type: array, minItems: 1, maxItems: 1000, items: { type: string } }
+                catalogVersion: { type: string }
       responses:
         "201": { description: Checker run queued }
         "200": { description: Existing idempotent run returned }
         "422": { description: Source project cannot be checked }
+        "400": { description: invalid_rule_selection (empty, null, unknown or malformed IDs) }
+        "409": { description: rule_catalog_stale, rule_catalog_conflict, rule_catalog_version_mismatch or run_idempotency_conflict }
+        "503": { description: rule_catalog_unavailable }
   /api/v1/tasks/{taskID}/projects/{projectID}/files:
     get:
       description: Lists immutable decompiled source files and their stable file identifiers.
@@ -840,6 +971,46 @@ components:
       required: true
       schema: { type: string, format: uuid }
   schemas:
+    CheckerRuleSelection:
+      type: [object, "null"]
+      description: Immutable run selection; null means legacy selection was not recorded
+      properties:
+        catalog_version: { type: string }
+        enabled_rule_ids: { type: array, items: { type: string } }
+        enabled_count: { type: integer, minimum: 1 }
+        total_rules: { type: integer, minimum: 1 }
+        mode: { type: string, enum: [all, custom] }
+        engine: { type: string }
+        language: { type: string, enum: [c, java, python] }
+    ProjectCheckRuleCatalog:
+      type: object
+      required: [language, engine, catalogVersion, rules, freshness, available, last_checked_at, detail]
+      properties:
+        language: { type: string, enum: [c, java, python] }
+        engine:
+          type: object
+          properties:
+            name: { type: string }
+            version: { type: string, description: Empty when no tool version is reported }
+        catalogVersion: { type: string }
+        freshness: { type: string, enum: [fresh, stale, missing, conflict] }
+        available: { type: boolean }
+        last_checked_at: { type: [string, "null"], format: date-time }
+        detail: { type: string }
+        rules:
+          type: array
+          items:
+            type: object
+            required: [id, name, description, cwes, severity, language, default_enabled, limitations]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              description: { type: string }
+              cwes: { type: array, items: { type: string } }
+              severity: { type: string }
+              language: { type: string }
+              default_enabled: { type: boolean }
+              limitations: { type: array, items: { type: string } }
     OverviewBucket:
       type: object
       required: [value, count]
@@ -932,7 +1103,10 @@ components:
           items: { $ref: "#/components/schemas/TaskFileNode" }
         runs:
           type: array
-          items: { type: object }
+          items:
+            type: object
+            properties:
+              selection: { $ref: "#/components/schemas/CheckerRuleSelection" }
         projects:
           type: array
           items: { type: object }

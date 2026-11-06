@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { RiskLevel, TaskStatus } from '@/api/types'
+import type { RiskLevel, TaskExecutionStatus, TaskStatus } from '@/api/types'
+import { taskExecutionStatusLabels } from '@/components/tasks/taskExecutionPresentation'
 
 const props = defineProps<{
-  value: TaskStatus | RiskLevel
+  value: TaskStatus | TaskExecutionStatus | RiskLevel
   kind: 'status' | 'risk'
 }>()
 
@@ -42,7 +43,7 @@ const normalizedValue = computed(() => props.value.toLowerCase())
 const label = computed(
   () =>
     (props.kind === 'status'
-      ? statusLabels[normalizedValue.value]
+      ? taskExecutionStatusLabels[props.value as TaskExecutionStatus] ?? statusLabels[normalizedValue.value]
       : riskLabels[normalizedValue.value]) ?? props.value,
 )
 const accessibleLabel = computed(
@@ -51,6 +52,11 @@ const accessibleLabel = computed(
 
 const tone = computed(() => {
   const value = normalizedValue.value
+  if (['preparing', 'decompiling'].includes(value)) return 'running'
+  if (['decompile_queued', 'scan_queued'].includes(value)) return 'queued'
+  if (['decompiled', 'scan_completed'].includes(value)) return 'succeeded'
+  if (['decompile_partial', 'scan_partial', 'unsupported'].includes(value)) return 'partial'
+  if (['decompile_failed', 'scan_failed'].includes(value)) return 'failed'
   if (
     [
       'uploading',
