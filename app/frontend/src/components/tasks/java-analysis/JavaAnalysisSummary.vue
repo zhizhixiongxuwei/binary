@@ -93,7 +93,7 @@ const coveragePercent = computed(() =>
   >
     <FileWarning :size="16" aria-hidden="true" />
     <span>
-      检测结果不完整：{{ run.coverage.failed_files }} 个文件未成功解析<span v-if="run.findings_truncated">，发现数量达到上限</span><span v-if="run.diagnostics_truncated">，诊断数量达到上限</span>。
+      检测结果不完整<span v-if="run.coverage.failed_files > 0">，{{ run.coverage.failed_files }} 个文件未成功解析</span><span v-if="run.findings_truncated">，发现数量达到上限</span><span v-if="run.diagnostics_truncated">，诊断数量达到上限</span>。
     </span>
   </div>
 

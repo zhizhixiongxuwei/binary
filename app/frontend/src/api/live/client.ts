@@ -523,9 +523,12 @@ async function mapJavaAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise
   const project = mapProject(rawProject, detail)
   const findings = await loadFindings(detail.task.id, run.id)
   const count = findings.length
+  const status = run.kind === 'java_check' && run.status === 'complete' && run.resultQuality === 'partial_source'
+    ? 'partial'
+    : runStatus(run.status)
   return {
     id: run.id, task_id: detail.task.id, source_project_id: project.id, source_project: projectSummary(project),
-    job_id: run.id, status: runStatus(run.status), ...mapLiveAnalysisRunMetadata(run, 'java-checker'),
+    job_id: run.id, status, ...mapLiveAnalysisRunMetadata(run, 'java-checker'),
     source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
     source_size_bytes: project.source_size_bytes, source_file_count: project.source_file_count,
     finding_count: count, diagnostic_count: 0,
@@ -597,10 +600,10 @@ function mapSourceFinding(
   }
 }
 
-function mapJavaFinding(
+function mapJavaSourceFinding(
   value: LiveFinding,
   fallbackProjectId = '',
-): Model.JavaAnalysisFinding {
+): Model.JavaAnalysisFinding & { location: Model.JavaAnalysisLocation } {
   const projectId = sourceProjectId(value, fallbackProjectId)
   const location = findingLocation(value)
   const snippet = findingSnippet(value)
@@ -619,11 +622,53 @@ function mapJavaFinding(
   }
 }
 
+function javaBytecodeEvidence(evidence: Record<string, unknown>) {
+  const evidenceText = (key: string): string => typeof evidence[key] === 'string' ? evidence[key] : ''
+  const originalLine = evidence.originalLine
+  const offset = evidence.bytecodeOffset
+  return {
+    callable: {
+      kind: '', type_name: evidenceText('className'), name: evidenceText('methodName'),
+      signature: evidenceText('methodDescriptor'),
+    },
+    bytecode: {
+      pattern: evidenceText('pattern'),
+      tool_version: evidenceText('toolVersion'),
+      ...(typeof originalLine === 'number' && Number.isInteger(originalLine) && originalLine > 0 ? { original_line: originalLine } : {}),
+      ...(typeof offset === 'number' && Number.isInteger(offset) && offset >= 0 ? { bytecode_offset: offset } : {}),
+    },
+  }
+}
+
+function mapJavaFinding(value: LiveFinding, fallbackProjectId: string): Model.JavaAnalysisFinding {
+  const evidence = value.evidence
+  if (evidence?.locationKind === 'bytecode') {
+    const mapped = evidence.decompiledLocation as { path?: unknown; line?: unknown } | undefined
+    const decompiledLocation = typeof mapped?.path === 'string' && mapped.path &&
+      typeof mapped.line === 'number' && Number.isInteger(mapped.line) && mapped.line > 0
+      ? { path: mapped.path, line: mapped.line }
+      : undefined
+    const path = decompiledLocation?.path ?? value.path ?? ''
+    return {
+      id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
+      file: { result_id: sourceProjectId(value, fallbackProjectId), logical_path: path, binary_name: '' },
+      location: null, ...javaBytecodeEvidence(evidence),
+      ...(decompiledLocation ? { decompiled_location: decompiledLocation } : {}),
+      message: value.message, created_at: value.createdAt,
+    }
+  }
+  const source = mapJavaSourceFinding(value, fallbackProjectId)
+  const spotbugs = evidence?.spotbugs
+  return typeof spotbugs === 'object' && spotbugs !== null && !Array.isArray(spotbugs)
+    ? { ...source, ...javaBytecodeEvidence(spotbugs as Record<string, unknown>) }
+    : source
+}
+
 function mapPythonFinding(
   value: LiveFinding,
   fallbackProjectId = '',
 ): Model.PythonAnalysisFinding {
-  return mapJavaFinding(value, fallbackProjectId)
+  return mapJavaSourceFinding(value, fallbackProjectId)
 }
 
 async function findingsWithProject(

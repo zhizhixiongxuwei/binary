@@ -153,9 +153,13 @@ func writeHTMLFinding(output *strings.Builder, number int, finding map[string]an
 	output.WriteString(`<span class="badge severity-` + severity + `">` + html.EscapeString(strings.ToUpper(severity)) + `</span></div>`)
 	output.WriteString(`<div class="finding-meta"><span>规则：<code>` + html.EscapeString(ruleID) + `</code></span><span>类型：` + html.EscapeString(reportDisplayText(finding["type"])) + `</span><span>语言：` + html.EscapeString(reportDisplayText(finding["language"])) + `</span><span>CWE：` + html.EscapeString(reportDisplayText(finding["cwe"])) + `</span></div>`)
 	output.WriteString(`<p>` + html.EscapeString(reportDisplayText(finding["message"])) + `</p>`)
-	if location := reportSourceLocation(finding); location != "" {
+	label, location := reportFindingLocation(finding)
+	if location != "" {
 		// 离线报告只保留稳定的位置文本，不输出会解析成 file:///tasks/... 的站内链接。
-		output.WriteString(`<p class="location"><strong>源码位置：</strong><code>` + html.EscapeString(location) + `</code></p>`)
+		output.WriteString(`<p class="location"><strong>` + html.EscapeString(label) + `：</strong><code>` + html.EscapeString(location) + `</code></p>`)
+	}
+	if label, related := reportRelatedLocation(finding); related != "" {
+		output.WriteString(`<p class="location"><strong>` + html.EscapeString(label) + `：</strong><code>` + html.EscapeString(related) + `</code></p>`)
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {
 		output.WriteString(`<pre><code>` + html.EscapeString(snippet) + `</code></pre>`)
@@ -272,8 +276,12 @@ func docxFindingXML(number int, finding map[string]any) string {
 	}))
 	body.WriteString(docxParagraph("问题说明", "Heading3"))
 	body.WriteString(docxParagraph(reportDisplayText(finding["message"]), "BodyText"))
-	if location := reportSourceLocation(finding); location != "" {
-		body.WriteString(docxParagraph("源码位置："+location, "Location"))
+	label, location := reportFindingLocation(finding)
+	if location != "" {
+		body.WriteString(docxParagraph(label+"："+location, "Location"))
+	}
+	if label, related := reportRelatedLocation(finding); related != "" {
+		body.WriteString(docxParagraph(label+"："+related, "Location"))
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {
 		body.WriteString(docxParagraph("相关代码", "Heading3"))
@@ -445,6 +453,44 @@ func reportSourceLocation(finding map[string]any) string {
 		return path + ":" + line
 	}
 	return path + ":" + line + ":" + column
+}
+
+func reportFindingLocation(finding map[string]any) (string, string) {
+	evidence, _ := finding["evidence"].(map[string]any)
+	if reportText(evidence["locationKind"]) != "bytecode" {
+		return "源码位置", reportSourceLocation(finding)
+	}
+	return "SpotBugs 字节码位置", reportBytecodeLocation(evidence)
+}
+
+func reportRelatedLocation(finding map[string]any) (string, string) {
+	evidence, _ := finding["evidence"].(map[string]any)
+	if reportText(evidence["locationKind"]) == "bytecode" {
+		mapped, _ := evidence["decompiledLocation"].(map[string]any)
+		path, line := reportText(mapped["path"]), reportText(mapped["line"])
+		if path != "" && line != "" {
+			return "反编译位置", path + ":" + line
+		}
+		return "", ""
+	}
+	spotbugs, _ := evidence["spotbugs"].(map[string]any)
+	return "SpotBugs 字节码位置", reportBytecodeLocation(spotbugs)
+}
+
+func reportBytecodeLocation(evidence map[string]any) string {
+	className := reportText(evidence["className"])
+	method := reportText(evidence["methodName"])
+	if method != "" {
+		className += "#" + method + reportText(evidence["methodDescriptor"])
+	}
+	parts := []string{className}
+	if offset := reportText(evidence["bytecodeOffset"]); offset != "" {
+		parts = append(parts, "字节码偏移 "+offset)
+	}
+	if line := reportText(evidence["originalLine"]); line != "" {
+		parts = append(parts, "原始源码第 "+line+" 行")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func reportJSONText(value any) string {

@@ -52,6 +52,7 @@ final class JavaAnalyzer {
     private static final Rule DYNAMIC_CODE = RuleCatalog.rule("java-dynamic-code-execution");
     private static final Rule BROAD_PERMISSION = RuleCatalog.rule("java-overly-permissive-file");
     private static final Rule INSECURE_COOKIE = RuleCatalog.rule("java-insecure-cookie");
+    private static final Rule NULL_DEREFERENCE = RuleCatalog.rule("java-null-dereference");
 
     static final Set<String> RULE_IDS = RuleCatalog.IDS;
 
@@ -97,6 +98,11 @@ final class JavaAnalyzer {
             }
             if (emitter.enabled(TRUST_HOSTNAME)) evaluateHostnameImplementations(unit, emitter);
             if (emitter.enabled(TRUST_X509)) evaluateTrustManagers(unit, emitter);
+            if (emitter.enabled(NULL_DEREFERENCE)) {
+                NullDereferenceAnalyzer.analyze(unit, finding -> emitter.emit(NULL_DEREFERENCE, finding.node(), finding.message(),
+                    Map.of("ruleFamily", NULL_DEREFERENCE.id(), "dereferenceKind", finding.kind(),
+                        "dereferenceMember", finding.member(), "uniqueDereferenceOnLine", finding.uniqueOnLine())));
+            }
             findings.sort(Comparator.comparingInt(Models.Finding::line)
                 .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));
         } catch (RuntimeException exception) {
@@ -366,12 +372,16 @@ final class JavaAnalyzer {
         private boolean enabled(Rule rule) { return enabledRules.contains(rule.id()); }
 
         private void emit(Rule rule, Node node, String message) {
+            emit(rule, node, message, Map.of("ruleFamily", rule.id()));
+        }
+
+        private void emit(Rule rule, Node node, String message, Map<String, Object> evidence) {
             if (!enabled(rule)) throw new IllegalStateException("disabled rule evaluated: " + rule.id());
             int line = node.getBegin().map(position -> position.line).orElse(1);
             int column = node.getBegin().map(position -> position.column).orElse(1);
             if (!dedupe.add(rule.id() + ':' + line + ':' + column)) return;
             findings.add(new Models.Finding(rule.id(), rule.severity(), rule.cwe(), path, line, column,
-                rule.title(), message, Map.of("ruleFamily", rule.id())));
+                rule.title(), message, evidence));
         }
     }
 

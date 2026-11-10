@@ -17,19 +17,20 @@ import (
 
 // Manifest 是已发布源码项目的自描述索引，绑定输入 Blob、生成工具和每个源码文件的摘要。
 type Manifest struct {
-	Version     string         `json:"version"`
-	ProjectID   string         `json:"projectId"`
-	RunID       string         `json:"runId"`
-	InputBlobID string         `json:"inputBlobId"`
-	InputSHA256 string         `json:"inputSha256"`
-	InputPath   string         `json:"inputPath"`
-	Kind        string         `json:"kind"`
-	Language    string         `json:"language"`
-	Quality     string         `json:"quality"`
-	ToolName    string         `json:"toolName"`
-	ToolVersion string         `json:"toolVersion"`
-	Files       []ManifestFile `json:"files"`
-	PublishedAt time.Time      `json:"publishedAt"`
+	Version      string           `json:"version"`
+	ProjectID    string           `json:"projectId"`
+	RunID        string           `json:"runId"`
+	InputBlobID  string           `json:"inputBlobId"`
+	InputSHA256  string           `json:"inputSha256"`
+	InputPath    string           `json:"inputPath"`
+	Kind         string           `json:"kind"`
+	Language     string           `json:"language"`
+	Quality      string           `json:"quality"`
+	ToolName     string           `json:"toolName"`
+	ToolVersion  string           `json:"toolVersion"`
+	Files        []ManifestFile   `json:"files"`
+	JVMSourceMap *ManifestSidecar `json:"jvmSourceMap,omitempty"`
+	PublishedAt  time.Time        `json:"publishedAt"`
 }
 
 type ManifestFile struct {
@@ -50,11 +51,12 @@ type Publication struct {
 
 // Workspace 是单次反编译运行的私有暂存区；所有输出先完成路径、大小和编码校验，再整体发布。
 type Workspace struct {
-	root     string
-	runID    string
-	files    map[string]ManifestFile
-	maxBytes int64
-	written  int64
+	root         string
+	runID        string
+	files        map[string]ManifestFile
+	maxBytes     int64
+	written      int64
+	jvmSourceMap *ManifestSidecar
 }
 
 func (w *Workspace) Stats() (int, int64) {
@@ -88,15 +90,15 @@ func NewWorkspace(workRoot, runID string, maxBytes int64) (*Workspace, error) {
 	return &Workspace{root: root, runID: runID, files: make(map[string]ManifestFile), maxBytes: maxBytes}, nil
 }
 
-// WriteFile 只接受规范化相对路径和 UTF-8 文本，拒绝重复路径及保留的 project.json。
+// WriteFile 只接受规范化相对路径和 UTF-8 文本，拒绝重复路径和项目元数据的保留路径。
 // SHA-256、大小和行数在写入时生成，累计上限阻止工具输出膨胀占满制品盘。
 func (w *Workspace) WriteFile(relativePath, language string, source io.Reader) error {
 	cleaned, err := CleanRelativePath(relativePath)
 	if err != nil {
 		return err
 	}
-	if cleaned == "project.json" {
-		return fmt.Errorf("project.json is reserved for the publication manifest")
+	if cleaned == "project.json" || cleaned == JVMSourceMapPath {
+		return fmt.Errorf("workspace path %q is reserved for project metadata", cleaned)
 	}
 	if _, exists := w.files[cleaned]; exists {
 		return fmt.Errorf("duplicate workspace path %q", cleaned)
@@ -160,6 +162,7 @@ func (w *Workspace) PublishProject(finalRoot, projectID string, manifest Manifes
 	manifest.Version = "project-v2"
 	manifest.ProjectID = projectID
 	manifest.PublishedAt = time.Now().UTC()
+	manifest.JVMSourceMap = w.jvmSourceMap
 	manifest.Files = make([]ManifestFile, 0, len(w.files))
 	for _, file := range w.files {
 		manifest.Files = append(manifest.Files, file)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,10 +58,11 @@ type subject struct {
 }
 
 type toolResult struct {
-	outputRoot string
-	toolName   string
-	quality    string
-	extension  string
+	outputRoot       string
+	toolName         string
+	quality          string
+	extension        string
+	jvmSourceMapPath string
 }
 
 func Native(cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, error) {
@@ -131,6 +133,11 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	fileCount, sizeBytes := workspace.Stats()
 	if fileCount == 0 {
 		return fmt.Errorf("%s produced no supported source files", result.toolName)
+	}
+	if result.jvmSourceMapPath != "" {
+		if err := stageJVMSourceMap(workspace, result.jvmSourceMapPath); err != nil {
+			slog.Warn("could not attach JVM source map", "run_id", claim.RunID, "error", err)
+		}
 	}
 	projectID, err := identity.UUID()
 	if err != nil {
@@ -258,6 +265,28 @@ func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format strin
 		}
 		return toolResult{outputRoot: outputRoot, toolName: "jadx", quality: "source", extension: ".java"}, nil
 	}
+	adapter := filepath.Join(filepath.Dir(e.cfg.Worker.VineflowerJar), "binaryscan-mapping.jar")
+	if format == "jar" || format == "class" || format == "java-class" {
+		if info, err := os.Stat(adapter); err == nil && info.Mode().IsRegular() {
+			outputRoot := filepath.Join(workRoot, "vineflower-mapped")
+			if err := os.MkdirAll(outputRoot, 0o700); err != nil {
+				return toolResult{}, err
+			}
+			mapPath := filepath.Join(workRoot, storage.JVMSourceMapPath)
+			err := runCommand(ctx, 45*time.Minute, workRoot, e.cfg.Worker.JavaPath,
+				"-Xms128m", "-Xmx3g", "-XX:+ExitOnOutOfMemoryError", "-cp",
+				e.cfg.Worker.VineflowerJar+string(os.PathListSeparator)+adapter,
+				"ExportVineflowerSource", inputPath, outputRoot, mapPath)
+			if err == nil {
+				return toolResult{outputRoot: outputRoot, toolName: "vineflower", quality: "source",
+					extension: ".java", jvmSourceMapPath: mapPath}, nil
+			}
+			if ctx.Err() != nil {
+				return toolResult{}, ctx.Err()
+			}
+			slog.Warn("mapped Vineflower run failed, retrying with the standard decompiler", "error", err)
+		}
+	}
 	vineflowerOutput := filepath.Join(workRoot, "vineflower")
 	if err := os.MkdirAll(vineflowerOutput, 0o700); err != nil {
 		return toolResult{}, err
@@ -278,6 +307,22 @@ func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format strin
 		return toolResult{}, fmt.Errorf("vineflower failed (%v); CFR failed (%v)", err, cfrErr)
 	}
 	return toolResult{outputRoot: cfrOutput, toolName: "cfr", quality: "partial_source", extension: ".java"}, nil
+}
+
+func stageJVMSourceMap(workspace *storage.Workspace, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("JVM source map is not a regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return workspace.WriteJVMSourceMap(file)
 }
 
 func jvmInputExtension(format string) string {

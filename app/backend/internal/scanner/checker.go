@@ -38,6 +38,7 @@ type checkerProject struct {
 	storageKey     string
 	manifestSHA256 []byte
 	selection      *checkrules.Selection
+	input          spotBugsInput
 }
 
 type checkerSource struct {
@@ -242,10 +243,47 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		})
 	}
 
-	artifactBody, err := json.MarshalIndent(map[string]any{
+	artifact := map[string]any{
 		"schema": "checker-evidence-v1", "projectId": project.id, "language": project.language,
-		"responses": responses, "diagnostics": diagnostics, "validatedFindingCount": len(validated),
-	}, "", "  ")
+		"responses": responses,
+	}
+	metadata := map[string]any{
+		"projectId": project.id, "language": project.language, "batchCount": len(responses),
+	}
+	var bytecode spotBugsResponse
+	var bytecodeSources spotBugsSourceCorrelation
+	if format := project.spotBugsFormat(); format != "" {
+		bytecode = e.checkSpotBugs(ctx, client, url, project.input, manifest, format, checkerFindingLimit-len(validated))
+		partial = partial || bytecode.Status == "partial"
+		diagnostics = append(diagnostics, bytecode.Diagnostics...)
+		artifact["bytecodeResponse"] = bytecode
+		metadata["bytecodeStatus"] = bytecode.Status
+		metadata["bytecodeFindingCount"] = len(bytecode.Findings)
+		if bytecode.ToolVersion != "" {
+			metadata["spotbugsVersion"] = bytecode.ToolVersion
+		}
+		if len(bytecode.Findings) != 0 {
+			locations, mapErr := storage.ReadJVMSourceMap(projectRoot, manifest)
+			if mapErr != nil {
+				diagnostics = append(diagnostics, "Java: bytecode-to-source mapping could not be verified")
+			} else {
+				bytecodeSources = correlateSpotBugsFindings(validated, bytecode, locations)
+			}
+		}
+		artifact["mergedFindingCount"] = bytecodeSources.mergedCount
+		metadata["mergedFindingCount"] = bytecodeSources.mergedCount
+		metadata["sourceFindingCount"] = len(validated)
+	}
+	validatedCount := len(validated) + len(bytecode.Findings)
+	findingCount := validatedCount - bytecodeSources.mergedCount
+	artifact["diagnostics"] = diagnostics
+	artifact["validatedFindingCount"] = validatedCount
+	if bytecode.Status != "" {
+		artifact["publishedFindingCount"] = findingCount
+	}
+	metadata["diagnosticCount"] = len(diagnostics)
+	metadata["findingCount"] = findingCount
+	artifactBody, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode checker evidence: %w", err)
 	}
@@ -271,10 +309,7 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		return err
 	}
 	artifactSHA := sha256.Sum256(artifactBody)
-	artifactMetadata, _ := json.Marshal(map[string]any{
-		"projectId": project.id, "language": project.language, "batchCount": len(responses),
-		"diagnosticCount": len(diagnostics), "findingCount": len(validated),
-	})
+	artifactMetadata, _ := json.Marshal(metadata)
 
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
 		artifactKey, artifactSize, err := publishArtifact(
@@ -297,6 +332,12 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		}
 		defer statement.Close()
 		for _, finding := range validated {
+			if project.language == "java" {
+				if finding.finding.Evidence == nil {
+					finding.finding.Evidence = make(map[string]any)
+				}
+				finding.finding.Evidence["engine"] = "java-checker"
+			}
 			evidence, _ := json.Marshal(finding.finding.Evidence)
 			if _, err := statement.ExecContext(ctx, project.taskID, claim.RunID, project.id, finding.source.file.ID,
 				project.language, normalizeSeverity(finding.finding.Severity), truncate(finding.finding.RuleID, 128),
@@ -305,6 +346,19 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 				truncate(finding.finding.Title, 512), truncate(finding.finding.Message, 8192),
 				finding.snippet, finding.snippetStartLine, evidence); err != nil {
 				return fmt.Errorf("insert checker finding: %w", err)
+			}
+		}
+		for index, finding := range bytecode.Findings {
+			if bytecodeSources.merged != nil && bytecodeSources.merged[index] {
+				continue
+			}
+			details := finding.evidence(bytecode.ToolVersion)
+			bytecodeSources.addDecompiledLocation(details, index, sources)
+			evidence, _ := json.Marshal(details)
+			if _, err := statement.ExecContext(ctx, project.taskID, claim.RunID, project.id, nil,
+				"java", "medium", javaNullDereferenceRuleID, "CWE-476", finding.ClassName,
+				nil, nil, nil, nil, "空指针解引用", finding.Message, nil, nil, evidence); err != nil {
+				return fmt.Errorf("insert SpotBugs finding: %w", err)
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_artifacts
@@ -331,7 +385,10 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			quality, project.language+"-checker", rulesetVersion, claim.RunID); err != nil {
 			return fmt.Errorf("record checker runtime: %w", err)
 		}
-		message := fmt.Sprintf("%s 源码检查完成，发现 %d 条问题", strings.ToUpper(project.language), len(validated))
+		message := fmt.Sprintf("%s 源码检查完成，发现 %d 条问题", strings.ToUpper(project.language), findingCount)
+		if bytecode.Status != "" {
+			message = fmt.Sprintf("Java 源码与字节码检查完成，发现 %d 条问题", findingCount)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
             (task_id, event_type, message) VALUES (?, 'check.complete', ?)`, project.taskID, message); err != nil {
 			return fmt.Errorf("record checker completion: %w", err)
@@ -359,11 +416,16 @@ func (e *Executor) loadCheckerProject(ctx context.Context, runID string) (checke
 	var project checkerProject
 	var request []byte
 	err := e.db.QueryRowContext(ctx, `SELECT p.id, p.task_id, p.run_id, p.source_kind,
-		p.language, p.result_quality, p.root_storage_key, p.manifest_sha256,r.request
+		p.language, p.result_quality, p.root_storage_key, p.manifest_sha256, r.request,
+		p.input_blob_id, f.detected_format, f.logical_path, b.storage_key, b.size_bytes, b.sha256
 		FROM runs r JOIN source_projects p ON p.id = r.subject_id AND p.task_id = r.task_id
+		LEFT JOIN file_nodes f ON f.id = p.file_node_id AND f.task_id = p.task_id AND f.node_kind = 'file'
+		LEFT JOIN blobs b ON b.id = p.input_blob_id AND b.id = f.blob_id AND b.state = 'ready'
 		WHERE r.id = ? AND r.subject_type = 'source_project' AND p.state = 'ready'`, runID).Scan(
 		&project.id, &project.taskID, &project.decompileRunID, &project.sourceKind,
-		&project.language, &project.quality, &project.storageKey, &project.manifestSHA256, &request)
+		&project.language, &project.quality, &project.storageKey, &project.manifestSHA256, &request,
+		&project.input.blobID, &project.input.detectedFormat, &project.input.logicalPath, &project.input.storageKey,
+		&project.input.sizeBytes, &project.input.sha256)
 	if err != nil {
 		return checkerProject{}, fmt.Errorf("load checker source project: %w", err)
 	}

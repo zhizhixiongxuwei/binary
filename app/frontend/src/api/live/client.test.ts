@@ -1,12 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { buildLiveTaskListQuery, createLiveApiClient } from '@/api/live/client'
+import { javaFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
 
 const taskId = '11111111-1111-4111-8111-111111111111'
 const creatorId = '22222222-2222-4222-8222-222222222222'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+it('navigates only to verified Java locations and preserves SpotBugs evidence', async () => {
+  const base = {
+    runId: 'java-run', ruleId: 'java-null-dereference', cwe: 'CWE-476',
+    language: 'java', severity: 'medium', message: 'Null receiver', createdAt: '2026-08-27T01:00:00Z',
+  }
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ findings: [
+      { ...base, id: 1, path: 'Sample.java', sourceFileId: 'source-1', startLine: 24, startColumn: 14 },
+      { ...base, id: 2, path: 'Sample', evidence: {
+        locationKind: 'bytecode', className: 'Sample', methodName: 'length',
+        methodDescriptor: '()I', pattern: 'NP_ALWAYS_NULL', originalLine: 23, bytecodeOffset: 0,
+      } },
+      { ...base, id: 3, path: 'Sample.java', sourceFileId: 'source-1', startLine: 24, startColumn: 14, evidence: {
+        engines: ['java-checker', 'spotbugs'],
+        spotbugs: { className: 'Sample', methodName: 'length', methodDescriptor: '()I',
+          pattern: 'NP_ALWAYS_NULL', originalLine: 23, bytecodeOffset: 3 },
+      } },
+      { ...base, id: 4, path: 'Sample', evidence: {
+        locationKind: 'bytecode', className: 'Sample', originalLine: 23, bytecodeOffset: 3,
+        decompiledLocation: { path: 'Sample.java', line: 24 },
+      } },
+    ] })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ runs: [{ id: 'java-run', subjectId: 'project-1' }] }))))
+
+  const page = await createLiveApiClient().listJavaAnalysisFindings(taskId, 'java-run')
+  const [source, bytecode, merged, mapped] = page.items
+  expect(source).toBeDefined()
+  expect(bytecode).toBeDefined()
+  expect(javaFindingSourceTarget(source!)).toMatchObject({ sourceFileId: 'source-1', startLine: 24 })
+  expect(bytecode).toMatchObject({
+    location: null,
+    callable: { type_name: 'Sample', name: 'length', signature: '()I' },
+    bytecode: { pattern: 'NP_ALWAYS_NULL', original_line: 23, bytecode_offset: 0 },
+  })
+  expect(javaFindingSourceTarget(bytecode!)).toBeUndefined()
+  expect(merged?.bytecode).toMatchObject({ original_line: 23, bytecode_offset: 3 })
+  expect(javaFindingSourceTarget(merged!)).toMatchObject({ sourceFileId: 'source-1', startLine: 24 })
+  expect(mapped).toMatchObject({ location: null, bytecode: { original_line: 23, bytecode_offset: 3 } })
+  expect(javaFindingSourceTarget(mapped!)).toMatchObject({ projectId: 'project-1', path: 'Sample.java', startLine: 24 })
 })
 
 describe('live task pagination adapter', () => {

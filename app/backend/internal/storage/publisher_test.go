@@ -75,6 +75,45 @@ func TestWorkspaceRejectsNonUTF8Source(t *testing.T) {
 	}
 }
 
+func TestJVMSourceMapIsBoundToPublishedJavaFilesAndDigest(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := NewWorkspace(filepath.Join(root, "work"), "run-3", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workspace.Cleanup() })
+	if err := workspace.WriteFile("sample/Probe.java", "java", strings.NewReader("class Probe {\n}\n")); err != nil {
+		t.Fatal(err)
+	}
+	row := "sample/Probe.java\tsample/Probe\tlength\t()I\t3\t2\tarray-length\t\n"
+	if err := workspace.WriteJVMSourceMap(strings.NewReader(jvmSourceMapHeader + "\n" + row + row)); err == nil {
+		t.Fatal("duplicate instruction must be rejected")
+	}
+	if err := workspace.WriteJVMSourceMap(strings.NewReader(jvmSourceMapHeader + "\n" + row)); err != nil {
+		t.Fatal(err)
+	}
+	publication, err := workspace.PublishProject(filepath.Join(root, "projects"), "project-3", Manifest{
+		RunID: "run-3", Kind: "jvm", Language: "java", ToolName: "vineflower",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(publication.Root, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(publication.Root, "sample"), 0o700) })
+	if len(publication.Manifest.Files) != 1 || publication.Manifest.JVMSourceMap == nil {
+		t.Fatalf("sidecar must be published separately: %+v", publication.Manifest)
+	}
+	locations, err := ReadJVMSourceMap(publication.Root, publication.Manifest)
+	if err != nil || len(locations) != 1 || locations[0].BytecodeOffset != 3 ||
+		locations[0].Line != 2 || locations[0].DereferenceKind != "array-length" {
+		t.Fatalf("unexpected mapping: %+v, %v", locations, err)
+	}
+	publication.Manifest.JVMSourceMap.SHA256 = strings.Repeat("0", 64)
+	if _, err := ReadJVMSourceMap(publication.Root, publication.Manifest); err == nil {
+		t.Fatal("incorrect sidecar digest must be rejected")
+	}
+}
+
 func TestBlobStoreHashesOnlyAtIngestAndReusesContentIdentity(t *testing.T) {
 	store, err := NewBlobStore(filepath.Join(t.TempDir(), "blobs"))
 	if err != nil {

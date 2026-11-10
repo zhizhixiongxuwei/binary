@@ -295,7 +295,7 @@ services:
     mem_limit: ${JAVA_CHECKER_MEMORY_LIMIT:?required}
     environment:
       SERVER_PORT: "8080"
-      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=50 -XX:+ExitOnOutOfMemoryError -Djava.io.tmpdir=/tmp
     healthcheck:
       test:
         - CMD-SHELL

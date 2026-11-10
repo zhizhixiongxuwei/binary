@@ -68,6 +68,23 @@ func TestReportSummaryCountsSeverityFilesRulesAndRuns(t *testing.T) {
 	}
 }
 
+func TestReportKeepsSpotBugsLocationSeparateFromDecompiledSource(t *testing.T) {
+	finding := map[string]any{
+		"evidence": map[string]any{
+			"locationKind": "bytecode", "className": "sample.Probe", "methodName": "length",
+			"methodDescriptor": "()I", "originalLine": float64(23), "bytecodeOffset": float64(0),
+			"decompiledLocation": map[string]any{"path": "sample/Probe.java", "line": float64(24)},
+		},
+	}
+	label, location := reportFindingLocation(finding)
+	if label != "SpotBugs 字节码位置" || location != "sample.Probe#length()I · 字节码偏移 0 · 原始源码第 23 行" {
+		t.Fatalf("unexpected report location %q: %q", label, location)
+	}
+	if label, location := reportRelatedLocation(finding); label != "反编译位置" || location != "sample/Probe.java:24" {
+		t.Fatalf("unexpected decompiled location %q: %q", label, location)
+	}
+}
+
 func TestDOCXReportContainsStructuredSections(t *testing.T) {
 	findings := []map[string]any{{
 		"severity": "high", "ruleId": "C001", "title": "unsafe <copy>", "message": "buffer copy",

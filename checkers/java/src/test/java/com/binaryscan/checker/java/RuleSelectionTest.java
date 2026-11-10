@@ -23,7 +23,8 @@ final class RuleSelectionTest {
     void publishesTheActualRegistryWithACompleteMetadataFingerprint() {
         var catalog = mapper.valueToTree(controller.rules());
         assertEquals("checker-v1", catalog.get("version").asText());
-        assertEquals("java", catalog.get("language").asText()); assertEquals(13, catalog.get("rules").size());
+        assertEquals("java", catalog.get("language").asText()); assertEquals(14, catalog.get("rules").size());
+        assertEquals(List.of("CWE-476"), RuleCatalog.rule("java-null-dereference").cwes());
         assertTrue(RuleCatalog.VERSION.matches("sha256:[0-9a-f]{64}")); assertEquals(RuleCatalog.IDS, JavaAnalyzer.RULE_IDS);
         for (var rule : RuleCatalog.RULES) {
             assertTrue(rule.default_enabled()); assertFalse(rule.name().isBlank()); assertFalse(rule.description().isBlank());
@@ -38,15 +39,25 @@ final class RuleSelectionTest {
 
     @Test
     void legacyRequestsRunAllRulesAndSelectionsAreCanonicalAndReturned() throws Exception {
-        String source = "class Test { void run(String input) { Runtime.getRuntime().exec(input); new ProcessBuilder(input); } }";
-        var legacy = controller.check(new Models.CheckRequest("checker-v1", "project", "java", List.of(new Models.SourceFile("Test.java", source)), null, null));
-        assertEquals(13, legacy.appliedRuleIds().size()); assertEquals(RuleCatalog.VERSION, legacy.catalogVersion());
-        var selected = controller.check(new Models.CheckRequest("checker-v1", "project", "java", List.of(new Models.SourceFile("Test.java", source)),
+        String source = """
+            class Test {
+                void run(String input) { Runtime.getRuntime().exec(input); new ProcessBuilder(input); }
+                int size() { String text = null; return text.length(); }
+            }
+            """;
+        var files = List.of(new Models.SourceFile("Test.java", source));
+        var legacy = controller.check(new Models.CheckRequest("checker-v1", "project", "java", files, null, null));
+        assertEquals(14, legacy.appliedRuleIds().size()); assertEquals(RuleCatalog.VERSION, legacy.catalogVersion());
+        var selected = controller.check(new Models.CheckRequest("checker-v1", "project", "java", files,
             List.of("java-command-injection", "java-command-injection"), RuleCatalog.VERSION));
         assertEquals(List.of("java-command-injection"), selected.appliedRuleIds()); assertFalse(selected.findings().isEmpty());
         assertTrue(selected.findings().stream().allMatch(f -> f.ruleId().equals("java-command-injection")));
+        var nullOnly = controller.check(new Models.CheckRequest("checker-v1", "project", "java", files,
+            List.of("java-null-dereference"), RuleCatalog.VERSION));
+        assertEquals(List.of("java-null-dereference"), nullOnly.appliedRuleIds());
+        assertEquals(List.of("java-null-dereference"), nullOnly.findings().stream().map(Models.Finding::ruleId).toList());
         var omitted = mapper.readTree("{\"version\":\"checker-v1\",\"projectId\":\"p\",\"language\":\"java\",\"files\":[]}");
-        assertEquals(13, controller.checkHttp(omitted).appliedRuleIds().size());
+        assertEquals(14, controller.checkHttp(omitted).appliedRuleIds().size());
     }
 
     @Test

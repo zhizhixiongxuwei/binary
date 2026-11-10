@@ -666,6 +666,13 @@ export interface JavaAnalysisLocation {
   end_column: number
 }
 
+export interface JavaBytecodeLocation {
+  pattern: string
+  tool_version: string
+  original_line?: number
+  bytecode_offset?: number
+}
+
 export interface JavaAnalysisFinding {
   id: string
   cwe: string
@@ -676,7 +683,9 @@ export interface JavaAnalysisFinding {
   source_file_id?: string
   source_path?: string
   callable: JavaAnalysisCallableIdentity
-  location: JavaAnalysisLocation
+  location: JavaAnalysisLocation | null
+  bytecode?: JavaBytecodeLocation
+  decompiled_location?: { path: string; line: number }
   message: string
   snippet?: string
   snippet_start_line?: number

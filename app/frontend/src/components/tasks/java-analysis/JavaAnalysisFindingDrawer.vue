@@ -2,8 +2,8 @@
 import { Code2, ExternalLink, FileCode2, MapPin, ShieldAlert } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
 
-import type { JavaAnalysisFinding, SourceNavigationTarget } from '@/api/types'
-import { fileFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
+import type { JavaAnalysisFinding, JavaBytecodeLocation, SourceNavigationTarget } from '@/api/types'
+import { javaFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
 import { javaFindingMessage } from '@/utils/analyzerMessages'
 
 const props = defineProps<{
@@ -43,7 +43,15 @@ function handleVisibility(visible: boolean): void {
 
 function locationLabel(finding: JavaAnalysisFinding): string {
   const value = finding.location
-  return `${value.start_line}:${value.start_column} - ${value.end_line}:${value.end_column}`
+  return value ? `${value.start_line}:${value.start_column} - ${value.end_line}:${value.end_column}` : '—'
+}
+
+function bytecodeLocationLabel(location: JavaBytecodeLocation): string {
+  const { original_line, bytecode_offset } = location
+  const parts = []
+  if (original_line !== undefined) parts.push(`原始源码第 ${original_line} 行`)
+  if (bytecode_offset !== undefined) parts.push(`字节码偏移 ${bytecode_offset}`)
+  return parts.join(' · ') || '以类和方法定位'
 }
 
 interface SnippetLine {
@@ -56,7 +64,8 @@ interface SnippetLine {
 
 const snippetLines = computed<readonly SnippetLine[]>(() => {
   const finding = props.finding
-  if (!finding?.snippet) return []
+  const location = finding?.location
+  if (!finding?.snippet || !location) return []
 
   const snippetStartLine = finding.snippet_start_line
   if (!snippetStartLine) return []
@@ -69,13 +78,13 @@ const snippetLines = computed<readonly SnippetLine[]>(() => {
       labelTitle: `源码第 ${sourceLine} 行`,
       text,
       hit:
-        sourceLine >= finding.location.start_line &&
-        sourceLine <= finding.location.end_line,
+        sourceLine >= location.start_line &&
+        sourceLine <= location.end_line,
     }
   })
 })
 const sourceTarget = computed(() =>
-  props.finding ? fileFindingSourceTarget(props.finding) : undefined,
+  props.finding ? javaFindingSourceTarget(props.finding) : undefined,
 )
 
 function openSource(): void {
@@ -86,7 +95,7 @@ function openSource(): void {
 <template>
   <el-drawer
     :model-value="finding !== undefined"
-    title="Java 源码检测详情"
+    :title="finding?.location ? 'Java 源码检测详情' : 'Java 字节码检测详情'"
     :size="drawerSize"
     append-to-body
     @update:model-value="handleVisibility"
@@ -98,6 +107,9 @@ function openSource(): void {
         </span>
         <code>{{ finding.cwe }}</code>
         <code>{{ finding.rule_id }}</code>
+        <code v-if="finding.location && finding.bytecode">双引擎命中</code>
+        <code v-if="finding.bytecode">SpotBugs {{ finding.bytecode.tool_version }}</code>
+        <code v-if="finding.bytecode">{{ finding.bytecode.pattern }}</code>
       </header>
 
       <section>
@@ -121,13 +133,21 @@ function openSource(): void {
             <code v-if="finding.callable.signature">{{ finding.callable.signature }}</code>
           </dd>
         </div>
-        <div>
+        <div v-if="finding.location">
           <dt><MapPin :size="13" aria-hidden="true" />源码位置</dt>
           <dd><code>{{ locationLabel(finding) }}</code></dd>
         </div>
+        <div v-else-if="finding.decompiled_location">
+          <dt><MapPin :size="13" aria-hidden="true" />反编译位置</dt>
+          <dd><code>{{ finding.decompiled_location.path }}:{{ finding.decompiled_location.line }}</code></dd>
+        </div>
+        <div v-if="finding.bytecode">
+          <dt><MapPin :size="13" aria-hidden="true" />字节码位置</dt>
+          <dd><code>{{ bytecodeLocationLabel(finding.bytecode) }}</code></dd>
+        </div>
       </dl>
 
-      <section class="snippet-section">
+      <section v-if="finding.location" class="snippet-section">
         <div class="snippet-heading">
           <h3><Code2 :size="15" aria-hidden="true" />检测片段</h3>
           <span class="snippet-hit-location">
@@ -157,6 +177,7 @@ function openSource(): void {
       </section>
 
       <el-button
+        v-if="finding.location || finding.decompiled_location"
         type="primary"
         plain
         :disabled="!sourceTarget"

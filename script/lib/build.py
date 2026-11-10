@@ -34,7 +34,7 @@ BUILDS = (
     ("APP_IMAGE", "app/Dockerfile", ".", ("GO_BUILD_IMAGE", "NODE_BUILD_IMAGE", "APP_RUNTIME_IMAGE", "BINARY_VERSION")),
     ("SCANNER_IMAGE", "deploy/docker/scanner.Dockerfile", ".", ("GO_BUILD_IMAGE", "TRIVY_RUNTIME_DB_IMAGE", "SCANNER_RUNTIME_IMAGE", "BINARY_VERSION")),
     ("NATIVE_DECOMPILER_IMAGE", "deploy/docker/native-decompiler.Dockerfile", ".", ("GO_BUILD_IMAGE", "GHIDRA_RUNTIME_IMAGE", "BINARY_VERSION")),
-    ("JVM_DECOMPILER_IMAGE", "deploy/docker/jvm-decompiler.Dockerfile", ".", ("GO_BUILD_IMAGE", "JVM_TOOLS_IMAGE", "BINARY_VERSION")),
+    ("JVM_DECOMPILER_IMAGE", "deploy/docker/jvm-decompiler.Dockerfile", ".", ("GO_BUILD_IMAGE", "JAVA_BUILD_IMAGE", "JVM_TOOLS_IMAGE", "BINARY_VERSION")),
     ("PYC_DECOMPILER_IMAGE", "deploy/docker/pyc-decompiler.Dockerfile", ".", ("GO_BUILD_IMAGE", "PYCDC_TOOLS_IMAGE", "BINARY_VERSION")),
     ("C_CHECKER_IMAGE", "checkers/c/Dockerfile", "checkers/c", ("JAVA_BUILD_IMAGE", "JAVA_RUNTIME_IMAGE")),
     ("JAVA_CHECKER_IMAGE", "checkers/java/Dockerfile", "checkers/java", ("JAVA_BUILD_IMAGE", "JAVA_RUNTIME_IMAGE")),

@@ -70,6 +70,7 @@ build_native_decompiler() {
 build_jvm_decompiler() {
   docker build --platform "$BINARY_PLATFORM" -f "$repo_dir/deploy/docker/jvm-decompiler.Dockerfile" -t "$JVM_DECOMPILER_IMAGE" \
     --build-arg "GO_BUILD_IMAGE=$GO_BUILD_IMAGE" \
+    --build-arg "JAVA_BUILD_IMAGE=$JAVA_BUILD_IMAGE" \
     --build-arg "JVM_TOOLS_IMAGE=$JVM_TOOLS_IMAGE" \
     --build-arg "BINARY_VERSION=$BINARY_VERSION" "$repo_dir"
 }

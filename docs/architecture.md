@@ -180,9 +180,13 @@ Trivy 的离线能力依赖镜像里已经包含漏洞数据库。当前运行�
 
 ## 8. 源码检测规则选择
 
-C/C++ 伪源码、Java、Python 检测启动前，通过 `GET /api/v1/tasks/:taskID/projects/:projectID/check-rules` 读取 Scanner 最近探测到的真实规则目录。界面默认全选，支持按中文名称、规则 ID 和 CWE 筛选与勾选；目录缺失、过期或 Scanner 之间目录冲突时禁止启动。当前目录分别包含 15、13、5 条规则，规则名称、说明和适用限制均由对应 Checker 提供。
+C/C++ 伪源码、Java、Python 检测启动前，通过 `GET /api/v1/tasks/:taskID/projects/:projectID/check-rules` 读取 Scanner 最近探测到的真实规则目录。界面默认全选，支持按中文名称、规则 ID 和 CWE 筛选与勾选；目录缺失、过期或 Scanner 之间目录冲突时禁止启动。当前目录分别包含 15、14、5 条规则，规则名称、说明和适用限制均由对应 Checker 提供。
 
 启动请求携带 `ruleIds` 和 `catalogVersion`，App 将规则集合与版本冻结到本次运行，幂等重试必须保持同一集合。Scanner 在提交源码前重新核对 Checker 目录版本，Checker 只执行启用规则，并返回实际应用的规则集合供 Scanner 核验。兼容不带选择参数的旧调用时，也会冻结当时目录的全部规则。
+
+Java 源码检测选中「空指针解引用」时，Java Checker 分析反编译源码，Scanner 也会将对应的原始 JAR 或 CLASS 交给同一 Checker 镜像中的 SpotBugs。SpotBugs 仅运行空指针探测器及其依赖，输出按解引用规则白名单筛选。两套发现归入同一次运行和报告。SpotBugs 的类、方法、字节码偏移和可用的原始行号单独保存，反编译源码的位置由源码引擎提供。APK、DEX 继续由源码引擎检测。取消勾选「空指针解引用」时，两套空指针分析均跳过。
+
+Vineflower 对可映射的 JAR 和 CLASS 生成独立的 `jvm-source-map.tsv`。项目清单绑定该制品的大小和 SHA-256，映射记录 JVM 类、方法描述符、字节码偏移、解引用操作及反编译位置。Scanner 仅将能唯一对应到同一处解引用的双引擎发现计为一条，结果页和报告保留源码位置和 SpotBugs 字节码证据。SpotBugs 单独发现也可通过精确映射定位到反编译源码行。原始检查制品保留各引擎发现。缺少映射、位置有歧义或旧项目仍分别计数。
 
 历史检测与 JSON、HTML、DOCX 报告记录启用规则数、目录总数、规则 ID 和目录版本。只选部分规则时，其余规则明确标为本次未检测；旧历史没有规则快照时显示覆盖范围未记录。此链路沿用现有运行请求与 Worker 探测数据，无需额外数据库迁移；启用前需更新 App、Scanner、前端和三个 Checker。
 

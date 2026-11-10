@@ -18,7 +18,11 @@ const emit = defineEmits<{
 
 function locationLabel(finding: JavaAnalysisFinding): string {
   const location = finding.location
-  return `${location.start_line}:${location.start_column}`
+  if (location) return `${location.start_line}:${location.start_column}`
+  if (finding.decompiled_location) return `反编译行 ${finding.decompiled_location.line}`
+  if (finding.bytecode?.bytecode_offset !== undefined) return `BCI ${finding.bytecode.bytecode_offset}`
+  if (finding.bytecode?.original_line !== undefined) return `原始行 ${finding.bytecode.original_line}`
+  return '—'
 }
 </script>
 
@@ -34,7 +38,7 @@ function locationLabel(finding: JavaAnalysisFinding): string {
   <template v-else>
     <div class="finding-table-scroll" tabindex="0" aria-label="Java 源码检测结果表格滚动区域">
       <table class="finding-table">
-        <caption class="sr-only">选择一条检测发现查看源码片段</caption>
+        <caption class="sr-only">选择一条检测发现查看证据</caption>
         <thead>
           <tr>
             <th scope="col">严重度</th>
@@ -63,7 +67,10 @@ function locationLabel(finding: JavaAnalysisFinding): string {
               </span>
             </td>
             <td><code>{{ finding.cwe }}</code></td>
-            <td><code class="rule">{{ finding.rule_id }}</code></td>
+            <td>
+              <code class="rule">{{ finding.rule_id }}</code>
+              <small v-if="finding.bytecode">{{ finding.location ? '双引擎命中' : 'SpotBugs' }}</small>
+            </td>
             <td>
               <strong class="file-path" :title="finding.file.logical_path">
                 {{ finding.file.logical_path }}
@@ -93,8 +100,8 @@ function locationLabel(finding: JavaAnalysisFinding): string {
             <td class="finding-actions">
               <button
                 type="button"
-                title="查看代码片段"
-                :aria-label="`查看 ${finding.callable.name} 的代码片段`"
+                title="查看检测详情"
+                :aria-label="`查看 ${finding.callable.name} 的检测详情`"
                 @click.stop="emit('select', finding)"
               >
                 <Code2 :size="14" aria-hidden="true" />
