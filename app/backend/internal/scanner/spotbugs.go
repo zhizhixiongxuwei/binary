@@ -29,7 +29,10 @@ const (
 	spotBugsDiagnosticLimit   = 100
 )
 
-var errSpotBugsBusy = errors.New("bytecode checker returned HTTP 429")
+var (
+	errSpotBugsBusy     = errors.New("bytecode checker returned HTTP 429")
+	errSpotBugsLargeJAR = errors.New("JAR exceeds the 64 MiB bytecode analysis limit")
+)
 
 type spotBugsInput struct {
 	blobID         sql.NullString
@@ -57,6 +60,7 @@ type spotBugsResponse struct {
 	Version     string            `json:"version"`
 	Format      string            `json:"format,omitempty"`
 	Status      string            `json:"status"`
+	SkipReason  string            `json:"skipReason,omitempty"`
 	ToolVersion string            `json:"toolVersion,omitempty"`
 	Findings    []spotBugsFinding `json:"findings"`
 	Diagnostics []string          `json:"diagnostics"`
@@ -85,6 +89,12 @@ func (e *Executor) checkSpotBugs(ctx context.Context, client *http.Client, url s
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	body, err := e.readSpotBugsInput(input, manifest, format)
+	if err == errSpotBugsLargeJAR {
+		return spotBugsResponse{
+			Version: spotBugsProtocol, Format: format, Status: "skipped", SkipReason: "input_too_large",
+			Findings: []spotBugsFinding{}, Diagnostics: []string{"SpotBugs skipped: " + err.Error()},
+		}
+	}
 	for err == nil {
 		result, callErr := callSpotBugs(ctx, client, url, format, body)
 		if callErr == nil {
@@ -116,7 +126,7 @@ func (e *Executor) readSpotBugsInput(input spotBugsInput, manifest storage.Manif
 		!strings.EqualFold(hex.EncodeToString(input.sha256), manifest.InputSHA256) {
 		return nil, fmt.Errorf("original binary identity is unavailable or does not match the source project")
 	}
-	if input.sizeBytes.Int64 <= 0 || input.sizeBytes.Int64 > spotBugsInputLimit {
+	if input.sizeBytes.Int64 <= 0 || (format != "jar" && input.sizeBytes.Int64 > spotBugsInputLimit) {
 		return nil, fmt.Errorf("original binary exceeds the supported size or is empty")
 	}
 	filename, err := e.blobPath(input.storageKey.String)
@@ -128,6 +138,14 @@ func (e *Executor) readSpotBugsInput(input spotBugsInput, manifest storage.Manif
 		return nil, fmt.Errorf("cannot open the original binary")
 	}
 	defer file.Close()
+	if input.sizeBytes.Int64 > spotBugsInputLimit {
+		// Confirm this is a valid size-based skip without buffering the JAR.
+		info, err := file.Stat()
+		if err != nil || info.Size() != input.sizeBytes.Int64 {
+			return nil, fmt.Errorf("original binary size does not match its blob record")
+		}
+		return nil, errSpotBugsLargeJAR
+	}
 	body, err := io.ReadAll(io.LimitReader(file, input.sizeBytes.Int64+1))
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the original binary")
@@ -173,7 +191,7 @@ func callSpotBugs(ctx context.Context, client *http.Client, url, format string, 
 	var result spotBugsResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil || result.Version != spotBugsProtocol ||
 		result.ToolVersion != spotBugsVersion || (result.Status != "complete" && result.Status != "partial") ||
-		result.Findings == nil || len(result.Findings) > checkerFindingLimit ||
+		result.SkipReason != "" || result.Findings == nil || len(result.Findings) > checkerFindingLimit ||
 		result.Diagnostics == nil || len(result.Diagnostics) > spotBugsDiagnosticLimit {
 		return spotBugsResponse{}, fmt.Errorf("bytecode response violates %s", spotBugsProtocol)
 	}

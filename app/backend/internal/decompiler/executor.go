@@ -24,10 +24,10 @@ import (
 )
 
 const (
-	maxProjectBytes = 256 << 20
-	maxSourceBytes  = 4 << 20
-	maxSourceFiles  = 5000
-	maxToolLogBytes = 1 << 20
+	maxProjectBytes    = 256 << 20
+	maxJVMProjectBytes = 512 << 20
+	maxSourceBytes     = 4 << 20
+	maxToolLogBytes    = 1 << 20
 )
 
 // Mode 表示三条相互隔离的反编译工具链；它同时决定支持格式、输出语言和资源池。
@@ -118,12 +118,16 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 		return err
 	}
 
-	workspace, err := storage.NewWorkspace(filepath.Join(e.cfg.Worker.ProjectRoot, ".staging"), claim.RunID, maxProjectBytes)
+	maxFiles, maxBytes := storage.MaxSourceFiles, int64(maxProjectBytes)
+	if e.mode == ModeJVM {
+		maxFiles, maxBytes = storage.MaxJVMSourceFiles, maxJVMProjectBytes
+	}
+	workspace, err := storage.NewWorkspace(filepath.Join(e.cfg.Worker.ProjectRoot, ".staging"), claim.RunID, maxBytes)
 	if err != nil {
 		return err
 	}
 	defer workspace.Cleanup()
-	partial, err := collectSources(workspace, result.outputRoot, result.extension, e.language())
+	partial, err := collectSources(workspace, result.outputRoot, result.extension, e.language(), maxFiles)
 	if err != nil {
 		return err
 	}
@@ -233,7 +237,7 @@ func (e *Executor) runGhidra(ctx context.Context, workRoot, inputPath string) (t
 	}
 	args := []string{projectRoot, "binaryscan", "-import", inputPath,
 		"-scriptPath", e.cfg.Worker.GhidraScriptRoot, "-postScript", "ExportPseudoC.java",
-		outputRoot, strconvI(maxSourceFiles), strconvI64(maxProjectBytes), "-deleteProject"}
+		outputRoot, strconvI(storage.MaxSourceFiles), strconvI64(maxProjectBytes), "-deleteProject"}
 	if err := runCommand(ctx, 90*time.Minute, workRoot, e.cfg.Worker.GhidraPath, args...); err != nil {
 		return toolResult{}, err
 	}
@@ -433,7 +437,7 @@ func (e *Executor) language() string {
 
 // collectSources 把外部工具输出视为不可信目录树：拒绝符号链接和非普通文件，只接收目标扩展名，
 // 并以文件数、单文件大小及 Workspace 总大小三层上限约束资源消耗。被上限略过时返回 partial。
-func collectSources(workspace *storage.Workspace, root, extension, language string) (bool, error) {
+func collectSources(workspace *storage.Workspace, root, extension, language string, maxFiles int) (bool, error) {
 	partial := false
 	count := 0
 	err := filepath.WalkDir(root, func(filename string, entry os.DirEntry, walkErr error) error {
@@ -446,7 +450,7 @@ func collectSources(workspace *storage.Workspace, root, extension, language stri
 		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != extension {
 			return nil
 		}
-		if count >= maxSourceFiles {
+		if count >= maxFiles {
 			partial = true
 			return nil
 		}

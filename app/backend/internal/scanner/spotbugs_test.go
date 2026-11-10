@@ -49,6 +49,52 @@ func TestSpotBugsOnlyRunsForSelectedJVMBinaries(t *testing.T) {
 	}
 }
 
+func TestSpotBugsSkipsLargeJarWithoutCallingChecker(t *testing.T) {
+	root := t.TempDir()
+	key := "blob.jar"
+	filename := filepath.Join(root, key)
+	if err := os.WriteFile(filename, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(filename, spotBugsInputLimit+1); err != nil {
+		t.Fatal(err)
+	}
+	executor := Executor{cfg: config.Config{Worker: config.Worker{BlobRoot: root}}}
+	digest := sha256.Sum256([]byte("identity from the original project"))
+	input := spotBugsInput{
+		blobID:      sql.NullString{String: "blob-id", Valid: true},
+		logicalPath: sql.NullString{String: "Probe.jar", Valid: true},
+		storageKey:  sql.NullString{String: key, Valid: true},
+		sizeBytes:   sql.NullInt64{Int64: spotBugsInputLimit + 1, Valid: true},
+		sha256:      digest[:],
+	}
+	manifest := storage.Manifest{InputBlobID: input.blobID.String, InputSHA256: hex.EncodeToString(digest[:])}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("SpotBugs endpoint called for skipped or invalid input")
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	result := executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
+	if result.Status != "skipped" || result.SkipReason != "input_too_large" || len(result.Findings) != 0 || len(result.Diagnostics) != 1 {
+		t.Fatalf("large JAR did not report the size-based skip: %+v", result)
+	}
+	result = executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "class", checkerFindingLimit)
+	if result.Status != "partial" || result.SkipReason != "" {
+		t.Fatalf("oversized class did not retain invalid-input semantics: %+v", result)
+	}
+	input.sizeBytes.Int64++
+	result = executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
+	if result.Status != "partial" || result.SkipReason != "" || !strings.Contains(strings.Join(result.Diagnostics, " "), "size does not match") {
+		t.Fatalf("invalid blob size was mistaken for a valid skip: %+v", result)
+	}
+	manifest.InputBlobID = "different-id"
+	result = executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
+	if result.Status != "partial" || result.SkipReason != "" || !strings.Contains(strings.Join(result.Diagnostics, " "), "identity") {
+		t.Fatalf("invalid blob identity was mistaken for a valid skip: %+v", result)
+	}
+}
+
 func TestSpotBugsRetriesBusyEngineAndPreservesBytecodeCoordinates(t *testing.T) {
 	root := t.TempDir()
 	body := []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 65}

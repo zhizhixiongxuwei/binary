@@ -3,6 +3,7 @@ package app
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"errors"
@@ -47,14 +48,7 @@ func (s *taskService) downloadProject(c *gin.Context) {
 		sourceProjectError(c, err)
 		return
 	}
-	body, err := s.zipProjects([]sourceProjectPath{project}, false)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_export_failed"})
-		return
-	}
-	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"binaryscan-project-%s.zip\"", project.id))
-	c.Data(http.StatusOK, "application/zip", body)
+	s.sendSourceArchive(c, []sourceProjectPath{project}, false, "binaryscan-project-"+project.id+".zip")
 }
 
 func (s *taskService) downloadSources(c *gin.Context) {
@@ -67,14 +61,34 @@ func (s *taskService) downloadSources(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "source_project_not_found"})
 		return
 	}
-	body, err := s.zipProjects(projects, c.Query("combined") == "1")
+	s.sendSourceArchive(c, projects, c.Query("combined") == "1", "binaryscan-sources-"+c.Param("taskID")+".zip")
+}
+
+func (s *taskService) sendSourceArchive(c *gin.Context, projects []sourceProjectPath, combined bool, name string) {
+	// Keep the completed ZIP on the storage volume so construction errors can still be
+	// returned as JSON without buffering the project in App memory or its /tmp tmpfs.
+	file, err := os.CreateTemp(filepath.Join(s.reportRoot, ".staging"), "source-export-*.zip")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_export_failed"})
 		return
 	}
-	c.Header("Content-Type", "application/zip")
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"binaryscan-sources-%s.zip\"", c.Param("taskID")))
-	c.Data(http.StatusOK, "application/zip", body)
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if err := s.writeSourceArchive(c.Request.Context(), file, projects, combined); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_export_failed"})
+		return
+	}
+	info, err := file.Stat()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_export_failed"})
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_export_failed"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", name))
+	c.DataFromReader(http.StatusOK, info.Size(), "application/zip", file, nil)
 }
 
 func (s *taskService) sourcePreview(c *gin.Context) {
@@ -110,13 +124,26 @@ func (s *taskService) sourcePreview(c *gin.Context) {
 }
 
 func (s *taskService) listProjectSourceFiles(c *gin.Context) {
+	project, err := s.loadSourceProject(c, c.Param("taskID"), c.Param("projectID"))
+	if errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "source_project_not_found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
+		return
+	}
+	limit := storage.MaxSourceFiles
+	if project.sourceKind == "jvm" {
+		limit = storage.MaxJVMSourceFiles
+	}
 	rows, err := s.db.QueryContext(c, `SELECT sf.id, sf.source_project_id, sf.logical_path,
 		sf.language, sf.media_type, HEX(sf.sha256), sf.size_bytes, sf.line_count
 		FROM source_files sf
 		JOIN source_projects p ON p.id = sf.source_project_id AND p.state = 'ready'
 		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
 		WHERE p.id = ? AND p.task_id = ? AND sf.state = 'ready'
-		ORDER BY sf.logical_path, sf.id LIMIT 5000`, c.Param("projectID"), c.Param("taskID"))
+		ORDER BY sf.logical_path, sf.id LIMIT ?`, project.id, c.Param("taskID"), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
 		return
@@ -136,20 +163,6 @@ func (s *taskService) listProjectSourceFiles(c *gin.Context) {
 	if err := rows.Err(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
 		return
-	}
-	if len(files) == 0 {
-		var exists int
-		if err := s.db.QueryRowContext(c, `SELECT 1 FROM source_projects p
-			JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
-			WHERE p.id = ? AND p.task_id = ? AND p.state = 'ready'`,
-			c.Param("projectID"), c.Param("taskID")).Scan(&exists); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "source_project_not_found"})
-			} else {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
-			}
-			return
-		}
 	}
 	c.JSON(http.StatusOK, gin.H{"files": files})
 }
@@ -339,55 +352,86 @@ func concatenateSourceFiles(root string, limit int64) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func (s *taskService) zipProjects(projects []sourceProjectPath, combined bool) ([]byte, error) {
-	var body bytes.Buffer
-	archive := zip.NewWriter(&body)
-	var combinedC bytes.Buffer
+func (s *taskService) writeSourceArchive(ctx context.Context, target io.Writer, projects []sourceProjectPath, combined bool) (err error) {
+	archive := zip.NewWriter(target)
+	defer func() {
+		err = errors.Join(err, archive.Close())
+	}()
+	type archiveEntry struct {
+		name     string
+		filename string
+	}
+	var combinedC []archiveEntry
 	for _, project := range projects {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		root, err := s.sourceProjectRoot(project)
 		if err != nil {
-			archive.Close()
-			return nil, err
+			return err
 		}
 		files, err := sourceFiles(root)
 		if err != nil {
-			archive.Close()
-			return nil, err
+			return err
 		}
 		for _, relative := range files {
-			content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
-			if err != nil {
-				archive.Close()
-				return nil, err
+			entry := archiveEntry{
+				name:     project.id + "/" + relative,
+				filename: filepath.Join(root, filepath.FromSlash(relative)),
 			}
-			writer, err := archive.Create(filepath.ToSlash(filepath.Join(project.id, relative)))
+			writer, err := archive.Create(entry.name)
 			if err != nil {
-				archive.Close()
-				return nil, err
+				return err
 			}
-			if _, err := writer.Write(content); err != nil {
-				archive.Close()
-				return nil, err
+			if err := copyArchiveSource(ctx, writer, entry.filename); err != nil {
+				return err
 			}
 			if combined && strings.HasSuffix(strings.ToLower(relative), ".c") {
-				fmt.Fprintf(&combinedC, "\n\n/* ===== %s/%s ===== */\n", project.id, relative)
-				combinedC.Write(content)
+				combinedC = append(combinedC, entry)
 			}
 		}
 	}
-	if combined && combinedC.Len() > 0 {
+	if len(combinedC) > 0 {
 		writer, err := archive.Create("all-functions.c")
 		if err != nil {
-			archive.Close()
-			return nil, err
+			return err
 		}
-		if _, err := writer.Write(combinedC.Bytes()); err != nil {
-			archive.Close()
-			return nil, err
+		for _, entry := range combinedC {
+			if _, err := fmt.Fprintf(writer, "\n\n/* ===== %s ===== */\n", entry.name); err != nil {
+				return err
+			}
+			if err := copyArchiveSource(ctx, writer, entry.filename); err != nil {
+				return err
+			}
 		}
 	}
-	if err := archive.Close(); err != nil {
-		return nil, err
+	return ctx.Err()
+}
+
+func copyArchiveSource(ctx context.Context, target io.Writer, filename string) error {
+	info, err := os.Lstat(filename)
+	if err != nil {
+		return err
 	}
-	return body.Bytes(), nil
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("source export input is not a regular file")
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(target, sourceArchiveReader{ctx, file})
+	return errors.Join(copyErr, file.Close())
+}
+
+type sourceArchiveReader struct {
+	ctx  context.Context
+	file *os.File
+}
+
+func (r sourceArchiveReader) Read(data []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.file.Read(data)
 }

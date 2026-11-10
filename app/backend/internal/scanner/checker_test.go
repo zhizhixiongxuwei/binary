@@ -1,6 +1,62 @@
 package scanner
 
-import "testing"
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"binaryscan.local/backend/internal/config"
+	"binaryscan.local/backend/internal/storage"
+)
+
+func TestCheckerSourceProjectFileLimit(t *testing.T) {
+	for _, test := range []struct {
+		kind     string
+		language string
+		limit    int
+	}{
+		{kind: "jvm", language: "java", limit: storage.MaxJVMSourceFiles},
+		{kind: "native", language: "c", limit: storage.MaxSourceFiles},
+		{kind: "pyc", language: "python", limit: storage.MaxSourceFiles},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			root := t.TempDir()
+			executor := Executor{cfg: config.Config{Worker: config.Worker{ProjectRoot: root}}}
+			project := checkerProject{
+				id: "project", decompileRunID: "run", sourceKind: test.kind, language: test.language,
+				storageKey: "project",
+			}
+			projectRoot := filepath.Join(root, project.sourceKind, project.storageKey)
+			if err := os.MkdirAll(projectRoot, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for _, count := range []int{test.limit, test.limit + 1} {
+				manifest := storage.Manifest{
+					Version: "project-v2", ProjectID: project.id, RunID: project.decompileRunID,
+					Language: project.language, Files: make([]storage.ManifestFile, count),
+				}
+				body, err := json.Marshal(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(projectRoot, "project.json"), body, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				digest := sha256.Sum256(body)
+				project.manifestSHA256 = digest[:]
+				_, loaded, err := executor.openProject(project)
+				if count == test.limit && (err != nil || len(loaded.Files) != count) {
+					t.Fatalf("project with %d files was not accepted: %v", count, err)
+				}
+				if count > test.limit && err == nil {
+					t.Fatalf("project with %d files was accepted above the limit of %d", count, test.limit)
+				}
+			}
+		})
+	}
+}
 
 func TestSourceSnippetKeepsOriginalLineNumbers(t *testing.T) {
 	lines := []string{"one", "two", "danger()", "four", "five", "six"}

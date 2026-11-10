@@ -259,6 +259,9 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		artifact["bytecodeResponse"] = bytecode
 		metadata["bytecodeStatus"] = bytecode.Status
 		metadata["bytecodeFindingCount"] = len(bytecode.Findings)
+		if bytecode.SkipReason != "" {
+			metadata["bytecodeSkipReason"] = bytecode.SkipReason
+		}
 		if bytecode.ToolVersion != "" {
 			metadata["spotbugsVersion"] = bytecode.ToolVersion
 		}
@@ -386,7 +389,10 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			return fmt.Errorf("record checker runtime: %w", err)
 		}
 		message := fmt.Sprintf("%s 源码检查完成，发现 %d 条问题", strings.ToUpper(project.language), findingCount)
-		if bytecode.Status != "" {
+		switch bytecode.Status {
+		case "skipped":
+			message = fmt.Sprintf("Java 源码检查完成，发现 %d 条问题。JAR 超过输入上限，已跳过 SpotBugs", findingCount)
+		case "complete", "partial":
 			message = fmt.Sprintf("Java 源码与字节码检查完成，发现 %d 条问题", findingCount)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
@@ -483,9 +489,13 @@ func (e *Executor) openProject(project checkerProject) (string, storage.Manifest
 	if len(project.manifestSHA256) != len(digest) || !bytes.Equal(project.manifestSHA256, digest[:]) {
 		return "", storage.Manifest{}, fmt.Errorf("source project manifest digest does not match database record")
 	}
+	maxSourceFiles := storage.MaxSourceFiles
+	if project.sourceKind == "jvm" {
+		maxSourceFiles = storage.MaxJVMSourceFiles
+	}
 	if manifest.Version != "project-v2" || manifest.ProjectID != project.id ||
 		manifest.RunID != project.decompileRunID || manifest.Language != project.language ||
-		len(manifest.Files) > 5000 {
+		len(manifest.Files) > maxSourceFiles {
 		return "", storage.Manifest{}, fmt.Errorf("source project manifest does not match database record")
 	}
 	return root, manifest, nil

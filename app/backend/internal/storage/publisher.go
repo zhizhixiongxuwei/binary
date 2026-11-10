@@ -15,6 +15,11 @@ import (
 	"binaryscan.local/backend/internal/identity"
 )
 
+const (
+	MaxSourceFiles    = 5000
+	MaxJVMSourceFiles = 20000
+)
+
 // Manifest 是已发布源码项目的自描述索引，绑定输入 Blob、生成工具和每个源码文件的摘要。
 type Manifest struct {
 	Version      string           `json:"version"`
