@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"binaryscan.local/backend/internal/identity"
+	"binaryscan.local/backend/internal/jvmarchive"
 )
 
 const (
@@ -22,20 +23,21 @@ const (
 
 // Manifest 是已发布源码项目的自描述索引，绑定输入 Blob、生成工具和每个源码文件的摘要。
 type Manifest struct {
-	Version      string           `json:"version"`
-	ProjectID    string           `json:"projectId"`
-	RunID        string           `json:"runId"`
-	InputBlobID  string           `json:"inputBlobId"`
-	InputSHA256  string           `json:"inputSha256"`
-	InputPath    string           `json:"inputPath"`
-	Kind         string           `json:"kind"`
-	Language     string           `json:"language"`
-	Quality      string           `json:"quality"`
-	ToolName     string           `json:"toolName"`
-	ToolVersion  string           `json:"toolVersion"`
-	Files        []ManifestFile   `json:"files"`
-	JVMSourceMap *ManifestSidecar `json:"jvmSourceMap,omitempty"`
-	PublishedAt  time.Time        `json:"publishedAt"`
+	Version      string            `json:"version"`
+	ProjectID    string            `json:"projectId"`
+	RunID        string            `json:"runId"`
+	InputBlobID  string            `json:"inputBlobId"`
+	InputSHA256  string            `json:"inputSha256"`
+	InputPath    string            `json:"inputPath"`
+	Kind         string            `json:"kind"`
+	Language     string            `json:"language"`
+	Quality      string            `json:"quality"`
+	ToolName     string            `json:"toolName"`
+	ToolVersion  string            `json:"toolVersion"`
+	Files        []ManifestFile    `json:"files"`
+	JVMSourceMap *ManifestSidecar  `json:"jvmSourceMap,omitempty"`
+	JVMArchive   *jvmarchive.Scope `json:"jvmArchive,omitempty"`
+	PublishedAt  time.Time         `json:"publishedAt"`
 }
 
 type ManifestFile struct {

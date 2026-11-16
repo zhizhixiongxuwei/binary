@@ -58,13 +58,13 @@ const analysisStatusLabels: Readonly<Record<CAnalysisRun['status'], string>> = {
   cancelled: '已取消',
 }
 
-type SourceAnalysisRun = Pick<CAnalysisRun, 'status' | 'finding_count' | 'diagnostic_count'>
+type SourceAnalysisRun = Pick<CAnalysisRun, 'status' | 'finding_count'> & { diagnostic_count: number | null }
 
 function analysisStatusLabel(run: SourceAnalysisRun | undefined): string {
   if (!run) return '未执行'
   const status = analysisStatusLabels[run.status]
   if (run.status === 'succeeded' || run.status === 'partial') {
-    const diagnostics = run.diagnostic_count > 0 ? ` · ${run.diagnostic_count} 条诊断` : ''
+    const diagnostics = run.diagnostic_count === null ? ' · 诊断数未知' : run.diagnostic_count > 0 ? ` · ${run.diagnostic_count} 条诊断` : ''
     return `${status} · ${run.finding_count} 条发现${diagnostics}`
   }
   return status

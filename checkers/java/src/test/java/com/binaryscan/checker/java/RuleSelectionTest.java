@@ -86,4 +86,27 @@ final class RuleSelectionTest {
             }
         }
     }
+
+    @Test
+    void boundsProjectBodiesBeforeDeserializingIncludingChunkedJson() throws Exception {
+        try (var context = new SpringApplicationBuilder(JavaCheckerApplication.class)
+            .properties("server.port=0", "spring.main.banner-mode=off", "logging.level.root=ERROR").run()) {
+            int port = ((WebServerApplicationContext) context).getWebServer().getPort();
+            try (var socket = new java.net.Socket("127.0.0.1", port)) {
+                socket.setSoTimeout(5000);
+                socket.getOutputStream().write(("POST /v2/java/projects HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: "
+                    +(ProjectRequestLimitFilter.BODY_LIMIT+1)+"\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                socket.getOutputStream().flush();
+                String status = new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream())).readLine();
+                assertTrue(status.contains("413"), status);
+            }
+            var client = HttpClient.newHttpClient();
+            // Unknown publisher length uses chunked transfer rather than Content-Length.
+            byte[] nested = ("[".repeat(40)+"0"+"]".repeat(40)).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            var response = client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/v2/java/projects"))
+                .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofInputStream(() -> new java.io.ByteArrayInputStream(nested))).build(),
+                HttpResponse.BodyHandlers.ofString());
+            assertEquals(413, response.statusCode(), response.body());
+        }
+    }
 }

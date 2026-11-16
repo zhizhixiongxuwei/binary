@@ -600,15 +600,52 @@ export interface JavaAnalysisProjectSummary {
   engine_version: string
 }
 
+export interface JavaAnalysisDiagnostic {
+  code: string
+  path?: string
+  line?: number
+  column?: number
+  message: string
+}
+
+export interface JavaAnalysisSummary {
+  version: 'java-analysis-summary-v1'
+  coverage: {
+    totalFiles: number | null
+    parsedFiles: number | null
+    failedFiles: number | null
+    analyzedFiles: number | null
+    totalMethods: number | null
+    analyzedMethods: number | null
+    unresolvedCalls: number | null
+  }
+  diagnosticCount: number | null
+  diagnostics: readonly JavaAnalysisDiagnostic[]
+  diagnosticsTruncated: boolean
+  findingsTruncated: boolean
+  engines: Readonly<Record<'source' | 'bytecode', { status: string; reason?: string; name?: string }>>
+  scope?: JsonValue
+  historical?: boolean
+}
+
+export interface JavaNullnessTraceStep {
+  kind: string
+  path: string
+  line: number
+  column: number
+  message: string
+}
+
 export interface JavaAnalysisCoverage {
   total_files: number
-  analyzed_files: number
-  parsed_files: number
-  recovered_files: number
-  failed_files: number
+  analyzed_files: number | null
+  parsed_files: number | null
+  recovered_files: number | null
+  failed_files: number | null
 }
 
 export interface JavaAnalysisRun {
+  analysis_summary?: JavaAnalysisSummary
   selection?: AnalysisRuleSelection | null
   id: string
   task_id: string
@@ -625,7 +662,7 @@ export interface JavaAnalysisRun {
   source_size_bytes: number
   source_file_count: number
   finding_count: number
-  diagnostic_count: number
+  diagnostic_count: number | null
   coverage: JavaAnalysisCoverage
   severity_counts: JavaAnalysisSeverityCounts
   findings_truncated: boolean
@@ -686,6 +723,10 @@ export interface JavaAnalysisFinding {
   location: JavaAnalysisLocation | null
   bytecode?: JavaBytecodeLocation
   decompiled_location?: { path: string; line: number }
+  nullness_trace?: readonly JavaNullnessTraceStep[]
+  nullness_trace_incomplete?: boolean
+  nullness_certainty?: 'definite' | 'possible'
+  nullness_model_version?: string
   message: string
   snippet?: string
   snippet_start_line?: number

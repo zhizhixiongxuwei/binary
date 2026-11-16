@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -18,6 +19,7 @@ import (
 
 	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/config"
+	"binaryscan.local/backend/internal/jvmarchive"
 	"binaryscan.local/backend/internal/storage"
 )
 
@@ -53,22 +55,55 @@ func TestSpotBugsSkipsLargeJarWithoutCallingChecker(t *testing.T) {
 	root := t.TempDir()
 	key := "blob.jar"
 	filename := filepath.Join(root, key)
-	if err := os.WriteFile(filename, nil, 0o600); err != nil {
+	file, err := os.Create(filename)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Truncate(filename, spotBugsInputLimit+1); err != nil {
+	archive := zip.NewWriter(file)
+	classEntry, err := archive.Create("sample/Probe.class")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := classEntry.Write([]byte{0xca, 0xfe, 0xba, 0xbe}); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := archive.CreateHeader(&zip.FileHeader{Name: "padding.dat", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(entry, &zeroReader{}, spotBugsInputLimit+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filename)
+	if err != nil {
 		t.Fatal(err)
 	}
 	executor := Executor{cfg: config.Config{Worker: config.Worker{BlobRoot: root}}}
-	digest := sha256.Sum256([]byte("identity from the original project"))
+	verified, err := os.Open(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.New()
+	_, err = io.Copy(hash, verified)
+	_ = verified.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := hash.Sum(nil)
 	input := spotBugsInput{
 		blobID:      sql.NullString{String: "blob-id", Valid: true},
 		logicalPath: sql.NullString{String: "Probe.jar", Valid: true},
 		storageKey:  sql.NullString{String: key, Valid: true},
-		sizeBytes:   sql.NullInt64{Int64: spotBugsInputLimit + 1, Valid: true},
-		sha256:      digest[:],
+		sizeBytes:   sql.NullInt64{Int64: info.Size(), Valid: true},
+		sha256:      digest,
 	}
-	manifest := storage.Manifest{InputBlobID: input.blobID.String, InputSHA256: hex.EncodeToString(digest[:])}
+	manifest := storage.Manifest{InputBlobID: input.blobID.String, InputSHA256: hex.EncodeToString(digest)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("SpotBugs endpoint called for skipped or invalid input")
 		w.WriteHeader(http.StatusBadRequest)
@@ -92,6 +127,76 @@ func TestSpotBugsSkipsLargeJarWithoutCallingChecker(t *testing.T) {
 	result = executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
 	if result.Status != "partial" || result.SkipReason != "" || !strings.Contains(strings.Join(result.Diagnostics, " "), "identity") {
 		t.Fatalf("invalid blob identity was mistaken for a valid skip: %+v", result)
+	}
+}
+
+type zeroReader struct{}
+
+func (*zeroReader) Read(buffer []byte) (int, error) { clear(buffer); return len(buffer), nil }
+
+func TestSpotBugsBootBundleBindsOriginalAndFrozenModules(t *testing.T) {
+	makeJar := func(entries map[string][]byte) []byte {
+		var body bytes.Buffer
+		writer := zip.NewWriter(&body)
+		for name, content := range entries {
+			destination, err := writer.Create(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := destination.Write(content); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return body.Bytes()
+	}
+	magic := []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 61}
+	body := makeJar(map[string][]byte{
+		"META-INF/maven/sample/main/pom.properties": []byte("groupId=sample\n"),
+		"BOOT-INF/classes/sample/Main.class":        magic,
+		"BOOT-INF/lib/business.jar":                 makeJar(map[string][]byte{"META-INF/maven/sample/business/pom.properties": []byte("groupId=sample\n"), "sample/Business.class": magic}),
+		"BOOT-INF/lib/vendor.jar":                   makeJar(map[string][]byte{"vendor/Library.class": magic}),
+	})
+	root := t.TempDir()
+	filename := filepath.Join(root, "input.jar")
+	if err := os.WriteFile(filename, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(body)
+	prepared, err := jvmarchive.Prepare(context.Background(), filename, t.TempDir(), jvmarchive.Options{ExpectedSHA256: hex.EncodeToString(digest[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := storage.Manifest{InputBlobID: "original-blob", InputSHA256: hex.EncodeToString(digest[:]), JVMArchive: &prepared.Scope}
+	input := spotBugsInput{blobID: sql.NullString{String: "original-blob", Valid: true}, logicalPath: sql.NullString{String: "app.jar", Valid: true}, storageKey: sql.NullString{String: "input.jar", Valid: true}, sizeBytes: sql.NullInt64{Int64: int64(len(body)), Valid: true}, sha256: digest[:]}
+	executor := Executor{cfg: config.Config{Worker: config.Worker{BlobRoot: root, WorkRoot: t.TempDir()}}}
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		calls++
+		if request.URL.Query().Get("format") != "bundle" {
+			t.Error("Boot input was not separated into a bundle")
+		}
+		payload, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle, err := zip.NewReader(bytes.NewReader(payload), int64(len(payload)))
+		if err != nil || len(bundle.File) != 3 {
+			t.Errorf("bad bundle: %v, %v", bundle, err)
+		}
+		_ = json.NewEncoder(w).Encode(spotBugsResponse{Version: spotBugsProtocol, Status: "complete", ToolVersion: spotBugsVersion, Findings: []spotBugsFinding{}, Diagnostics: []string{}})
+	}))
+	defer server.Close()
+	result := executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
+	if result.Status != "complete" || result.Scope == nil || len(result.Scope.Modules) != 3 || calls != 1 {
+		t.Fatalf("Boot scope missing: %+v calls=%d", result, calls)
+	}
+	manifest.JVMArchive.Modules[1].SHA256 = strings.Repeat("0", 64)
+	result = executor.checkSpotBugs(context.Background(), server.Client(), server.URL, input, manifest, "jar", checkerFindingLimit)
+	if result.Status != "partial" || calls != 1 || !strings.Contains(strings.Join(result.Diagnostics, " "), "do not match") {
+		t.Fatalf("changed scope accepted: %+v calls=%d", result, calls)
 	}
 }
 

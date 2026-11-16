@@ -741,7 +741,22 @@ func (s *taskService) queryRuns(ctx *gin.Context, taskID string) ([]gin.H, error
 		}
 		result = append(result, run)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	summaries, err := s.javaAnalysisSummaries(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range result {
+		if summary, ok := summaries[run["id"].(string)]; ok {
+			run["analysisSummary"] = summary
+		}
+	}
+	return result, nil
 }
 
 func scanTaskRun(row taskRunRowScanner) (gin.H, error) {

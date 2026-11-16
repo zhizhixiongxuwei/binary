@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -56,6 +57,47 @@ final class SpotBugsReportTest {
             """);
         assertEquals("partial", result.status());
         assertTrue(result.findings().isEmpty());
+    }
+
+    @Test
+    void explainsAnalysisErrorsAndMissingClassesWithoutPublishingStackTraces() throws IOException {
+        var result = parse("""
+            <BugCollection version="4.10.4">
+              <Errors errors="1" missingClasses="1">
+                <Error>
+                  <ErrorMessage><![CDATA[Cannot analyze app.Service#run()
+            at hidden.SourceLine42()]]></ErrorMessage>
+                  <Exception><![CDATA[java.lang.IllegalStateException: unsupported opcode
+            at hidden.ExceptionFrame()]]></Exception>
+                  <StackTrace><Frame>hidden.StackFrame()</Frame></StackTrace>
+                </Error>
+                <MissingClass>vendor.RequiredType</MissingClass>
+              </Errors>
+            </BugCollection>
+            """);
+        assertEquals("partial", result.status());
+        assertEquals("SpotBugs reported 1 analysis errors", result.diagnostics().getFirst());
+        assertTrue(result.diagnostics().contains("SpotBugs analysis error: Cannot analyze app.Service#run(); java.lang.IllegalStateException: unsupported opcode"));
+        assertTrue(result.diagnostics().contains("SpotBugs missing class: vendor.RequiredType"));
+        assertTrue(result.diagnostics().stream().noneMatch(d -> d.contains("hidden.")));
+    }
+
+    @Test
+    void boundsErrorAndMissingDetailsIncludingUtf8Names() throws IOException {
+        var errors = new StringBuilder();
+        for (int index = 0; index < 25; index++) {
+            errors.append("<Error><ErrorMessage>").append("类名".repeat(500)).append(index).append("</ErrorMessage>")
+                .append("<Exception>java.lang.RuntimeException</Exception></Error>");
+            errors.append("<MissingClass>vendor.Type").append(index).append("</MissingClass>");
+        }
+        var result = parse("<BugCollection version=\"4.10.4\"><Errors errors=\"25\" missingClasses=\"25\">" + errors + "</Errors></BugCollection>");
+        assertEquals(20, result.diagnostics().stream().filter(d -> d.startsWith("SpotBugs analysis error:")).count());
+        assertEquals(20, result.diagnostics().stream().filter(d -> d.startsWith("SpotBugs missing class:")).count());
+        assertTrue(result.diagnostics().contains("SpotBugs analysis error details truncated at 20 entries"));
+        assertTrue(result.diagnostics().contains("SpotBugs missing class details truncated at 20 entries"));
+        assertTrue(result.diagnostics().size() <= 100);
+        assertTrue(result.diagnostics().stream().allMatch(d -> d.getBytes(StandardCharsets.UTF_8).length <= 900));
+        assertTrue(result.diagnostics().stream().noneMatch(d -> d.indexOf('\0') >= 0 || d.contains("\n")));
     }
 
     private SpotBugsReport.Result parse(String report) throws IOException {

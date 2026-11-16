@@ -39,7 +39,12 @@ func taskExecutionStatusSQL(taskAlias string) string {
 	  WHEN execution_run.status = 'cancelled' THEN 90
 	  WHEN execution_run.status = 'unsupported' THEN 80
 	  WHEN execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check')
-	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND execution_run.result_quality IN ('partial_source', 'bytecode_only'))) THEN 70
+	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND (execution_run.result_quality IN ('partial_source', 'bytecode_only')
+	     OR (execution_run.kind='java_check' AND EXISTS (SELECT 1 FROM run_artifacts execution_evidence
+	       WHERE execution_evidence.run_id=execution_run.id AND execution_evidence.task_id=execution_run.task_id
+	       AND execution_evidence.artifact_kind='checker-response-json' AND execution_evidence.state='ready'
+	       AND execution_evidence.deleted_at IS NULL
+	       AND JSON_UNQUOTE(JSON_EXTRACT(execution_evidence.metadata, '$.bytecodeStatus')) IN ('partial','skipped')))))) THEN 70
 	  WHEN execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile')
 	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND COALESCE(execution_run.result_quality, '') <> 'source')) THEN 60
 	  WHEN execution_run.status = 'complete' AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check') THEN 50

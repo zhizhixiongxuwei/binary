@@ -73,12 +73,19 @@ final class JavaAnalyzer {
     }
 
     Analysis analyze(Models.SourceFile file, Set<String> enabledRules) {
+        return analyze(file, enabledRules, null);
+    }
+
+    Analysis analyze(Models.SourceFile file, Set<String> enabledRules, ProjectContext project) {
         if (!RULE_IDS.containsAll(enabledRules)) throw new IllegalArgumentException("unknown rule");
         if (enabledRules.isEmpty()) return new Analysis(List.of(), List.of());
         var findings = new ArrayList<Models.Finding>();
         var diagnostics = new ArrayList<String>();
+        var details = new ArrayList<Models.Diagnostic>();
+        int methods = 0;
         try {
-            CompilationUnit unit = StaticJavaParser.parse(file.content());
+            CompilationUnit unit = SourceParsing.parse(file.content());
+            methods = (int) unit.findAll(MethodDeclaration.class).stream().filter(m -> m.getBody().isPresent()).count();
             Emitter emitter = new Emitter(file.path(), findings, enabledRules);
             // 固定遍历顺序和最终排序，使相同源码在不同运行中生成稳定、可复核的 Finding。
             for (MethodCallExpr call : sorted(unit.findAll(MethodCallExpr.class))) {
@@ -101,15 +108,18 @@ final class JavaAnalyzer {
             if (emitter.enabled(NULL_DEREFERENCE)) {
                 NullDereferenceAnalyzer.analyze(unit, finding -> emitter.emit(NULL_DEREFERENCE, finding.node(), finding.message(),
                     Map.of("ruleFamily", NULL_DEREFERENCE.id(), "dereferenceKind", finding.kind(),
-                        "dereferenceMember", finding.member(), "uniqueDereferenceOnLine", finding.uniqueOnLine())));
+                        "dereferenceMember", finding.member(), "uniqueDereferenceOnLine", finding.uniqueOnLine(),
+                        "nullnessTrace", finding.trace(), "nullnessCertainty", finding.certainty(),
+                        "nullnessModelVersion", "java-nullness-v2", "nullnessTraceTruncated", finding.trace().size() >= ProjectContext.TRACE_LIMIT)), project, file.path());
             }
             findings.sort(Comparator.comparingInt(Models.Finding::line)
                 .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));
-        } catch (RuntimeException exception) {
-            // 单个反编译文件可能因缺失语句或反编译器占位符无法解析，不应拖垮整个项目。
-            diagnostics.add(file.path() + ": parser rejected decompiled source");
+        } catch (com.github.javaparser.ParseProblemException exception) {
+            var diagnostic = SourceParsing.diagnostic(file.path(), exception); details.add(diagnostic);
+            diagnostics.add(file.path() + ":" + diagnostic.line() + ":" + diagnostic.column() + ": " + diagnostic.message());
+            return new Analysis(findings, diagnostics, details, false, 0);
         }
-        return new Analysis(findings, diagnostics);
+        return new Analysis(findings, diagnostics, details, true, methods);
     }
 
     private static void evaluateCrypto(CompilationUnit unit, MethodCallExpr call, Emitter emitter) {
@@ -380,10 +390,14 @@ final class JavaAnalyzer {
             int line = node.getBegin().map(position -> position.line).orElse(1);
             int column = node.getBegin().map(position -> position.column).orElse(1);
             if (!dedupe.add(rule.id() + ':' + line + ':' + column)) return;
+            if (findings.size() >= 10_001) return;
             findings.add(new Models.Finding(rule.id(), rule.severity(), rule.cwe(), path, line, column,
                 rule.title(), message, evidence));
         }
     }
 
-    record Analysis(List<Models.Finding> findings, List<String> diagnostics) {}
+    record Analysis(List<Models.Finding> findings, List<String> diagnostics, List<Models.Diagnostic> diagnosticDetails,
+                    boolean parsed, int methods) {
+        Analysis(List<Models.Finding> findings, List<String> diagnostics) { this(findings, diagnostics, List.of(), true, 0); }
+    }
 }

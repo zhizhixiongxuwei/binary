@@ -289,7 +289,7 @@ def source_state(repo: Path, skip_build: bool) -> dict:
 
 
 def runtime_config(config: dict[str, str], keys: set[str], mode: str) -> dict[str, str]:
-    result = {key: value for key, value in config.items() if key in keys}
+    result = {key: value for key, value in config.items() if key in keys or key == "JAVA_APPLICATION_GROUPS"}
     result.update(COMPOSE_PROJECT_NAME=f"binary-{mode}", BINARY_DATA_ROOT="./data",
                   INITIAL_ADMIN_USERNAME="admin", INITIAL_ADMIN_PASSWORD="admin123")
     for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"):

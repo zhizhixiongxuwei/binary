@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Java Checker 的 HTTP 契约边界，负责校验、批处理、诊断合并与结果截断。
@@ -40,25 +41,40 @@ final class CheckController {
 
     Models.CheckResponse check(Models.CheckRequest request) {
         validate(request);
+        if (!AnalysisSlot.HEAVY.tryAcquire()) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Java analyzer is busy");
+        try { return checkBounded(request); }
+        finally { AnalysisSlot.HEAVY.release(); }
+    }
+
+    private Models.CheckResponse checkBounded(Models.CheckRequest request) {
         final List<String> applied;
         try { applied = RuleCatalog.selection(request.ruleIds(), request.catalogVersion()); }
         catch (IllegalArgumentException failure) { throw new InvalidRequest(); }
         var findings = new ArrayList<Models.Finding>();
         var diagnostics = new ArrayList<String>();
+        var details = new ArrayList<Models.Diagnostic>();
+        int parsed = 0, methods = 0;
         for (Models.SourceFile file : request.files()) {
             validatePath(file.path());
             JavaAnalyzer.Analysis result = analyzer.analyze(file, Set.copyOf(applied));
             findings.addAll(result.findings());
             diagnostics.addAll(result.diagnostics());
+            details.addAll(result.diagnosticDetails());
+            if (result.parsed()) { parsed++; methods += result.methods(); }
         }
         String status = diagnostics.isEmpty() ? "complete" : "partial";
-        if (findings.size() > 10_000) {
+        boolean findingsTruncated = findings.size() > 10_000;
+        if (findingsTruncated) {
             // 对外契约明确标记 partial，调用方不会把“被截断”误解为完整无遗漏结果。
             findings = new ArrayList<>(findings.subList(0, 10_000));
             diagnostics.add("finding limit reached");
             status = "partial";
         }
-        return new Models.CheckResponse("checker-v1", request.projectId(), status, findings, diagnostics, RuleCatalog.VERSION, applied);
+        boolean diagnosticsTruncated = diagnostics.size() > 1000 || details.size() > 1000;
+        return new Models.CheckResponse("checker-v1", request.projectId(), status, findings,
+            List.copyOf(diagnostics.subList(0, Math.min(1000, diagnostics.size()))), RuleCatalog.VERSION, applied,
+            new Models.Coverage(request.files().size(), parsed, request.files().size() - parsed, parsed, methods, methods, 0),
+            List.copyOf(details.subList(0, Math.min(1000, details.size()))), findingsTruncated, diagnosticsTruncated);
     }
 
     @GetMapping("/v1/rules")
@@ -69,15 +85,16 @@ final class CheckController {
             || request.projectId() == null || request.files() == null || request.files().size() > 3000) {
             throw new InvalidRequest();
         }
-        long bytes = request.files().stream().mapToLong(file -> file.content() == null ? 0 : file.content().length()).sum();
-        if (bytes > 128L * 1024 * 1024 || request.files().stream().anyMatch(file -> file.content() == null)) {
+        if (request.files().stream().anyMatch(file -> file == null || file.content() == null)) throw new InvalidRequest();
+        long bytes = request.files().stream().mapToLong(file -> file.content().getBytes(StandardCharsets.UTF_8).length).sum();
+        if (bytes > 128L * 1024 * 1024 || request.files().stream().anyMatch(file -> file.content().getBytes(StandardCharsets.UTF_8).length > 4L << 20)) {
             throw new InvalidRequest();
         }
     }
 
     private static void validatePath(String path) {
         // 仅允许项目内相对路径，保证 Finding 可以安全定位到已经登记的源码制品。
-        if (path == null || path.isBlank() || path.startsWith("/") || path.contains("..") || path.contains("\\")) {
+        if (!ProjectCheckController.safePath(path)) {
             throw new InvalidRequest();
         }
     }

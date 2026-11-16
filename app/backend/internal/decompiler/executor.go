@@ -18,6 +18,7 @@ import (
 	"binaryscan.local/backend/internal/config"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
+	"binaryscan.local/backend/internal/jvmarchive"
 	"binaryscan.local/backend/internal/sourceindex"
 	"binaryscan.local/backend/internal/storage"
 	"binaryscan.local/backend/internal/worker"
@@ -63,6 +64,7 @@ type toolResult struct {
 	quality          string
 	extension        string
 	jvmSourceMapPath string
+	jvmArchive       *jvmarchive.Scope
 }
 
 func Native(cfg config.Config, db *sql.DB, jobs *job.Repository) (worker.Executor, error) {
@@ -154,6 +156,7 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 			RunID: claim.RunID, InputBlobID: subject.blobID, InputSHA256: subject.blobSHA256,
 			InputPath: subject.logicalPath, Kind: string(e.mode), Language: e.language(), Quality: result.quality,
 			ToolName: result.toolName, ToolVersion: e.cfg.Worker.ToolVersion,
+			JVMArchive: result.jvmArchive,
 		})
 		if err != nil {
 			return err
@@ -221,7 +224,7 @@ func (e *Executor) runTool(ctx context.Context, workRoot, inputPath string, subj
 	case ModeNative:
 		return e.runGhidra(ctx, workRoot, inputPath)
 	case ModeJVM:
-		return e.runJVM(ctx, workRoot, inputPath, subject.detectedFormat)
+		return e.runJVMArchive(ctx, workRoot, inputPath, subject.detectedFormat, subject.blobSHA256)
 	case ModePYC:
 		return e.runPYC(ctx, workRoot, inputPath)
 	default:

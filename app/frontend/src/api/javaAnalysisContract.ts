@@ -1,3 +1,4 @@
+import { parseJavaAnalysisSummary, parseJavaNullnessTrace } from '@/api/javaAnalysisSummary'
 import { parseAnalysisRuleSelection } from '@/api/analysisRulesContract'
 import type {
   JavaAnalysisFinding,
@@ -175,7 +176,7 @@ function runValue(value: unknown, field: string): JavaAnalysisRun {
       'created_at',
       'updated_at',
     ],
-    ['selection'],
+    ['selection', 'analysis_summary'],
     field,
   )
 
@@ -211,39 +212,39 @@ function runValue(value: unknown, field: string): JavaAnalysisRun {
   const sourceFileCount = positiveInteger(
     run.source_file_count,
     `${field}.source_file_count`,
-    3_000,
+    20_000,
   )
   const totalFiles = positiveInteger(
     coverage.total_files,
     `${field}.coverage.total_files`,
-    3_000,
+    20_000,
   )
   if (totalFiles !== sourceFileCount) {
     throw new JavaAnalysisContractError(`${field}.coverage.total_files`)
   }
-  const parsedFiles = integer(
+  const parsedFiles = coverage.parsed_files === null ? null : integer(
     coverage.parsed_files,
     `${field}.coverage.parsed_files`,
     totalFiles,
   )
-  const analyzedFiles = integer(
+  const analyzedFiles = coverage.analyzed_files === null ? null : integer(
     coverage.analyzed_files,
     `${field}.coverage.analyzed_files`,
-    parsedFiles,
+    parsedFiles ?? totalFiles,
   )
-  const recoveredFiles = integer(
+  const recoveredFiles = coverage.recovered_files === null ? null : integer(
     coverage.recovered_files,
     `${field}.coverage.recovered_files`,
-    parsedFiles,
+    parsedFiles ?? totalFiles,
   )
-  const failedFiles = integer(
+  const failedFiles = coverage.failed_files === null ? null : integer(
     coverage.failed_files,
     `${field}.coverage.failed_files`,
     totalFiles,
   )
   if (
-    ['succeeded', 'partial'].includes(status) &&
-    parsedFiles + failedFiles !== totalFiles
+    parsedFiles !== null && failedFiles !== null &&
+    (parsedFiles + failedFiles > totalFiles || (status === 'succeeded' && parsedFiles + failedFiles !== totalFiles))
   ) {
     throw new JavaAnalysisContractError(`${field}.coverage`)
   }
@@ -279,6 +280,11 @@ function runValue(value: unknown, field: string): JavaAnalysisRun {
   }
 
   return {
+    ...(run.analysis_summary === undefined ? {} : { analysis_summary: (() => {
+      const summary = parseJavaAnalysisSummary(run.analysis_summary)
+      if (!summary) throw new JavaAnalysisContractError(`${field}.analysis_summary`)
+      return summary
+    })() }),
     id: uuid(run.id, `${field}.id`),
     task_id: uuid(run.task_id, `${field}.task_id`),
     ...(run.selection === undefined ? {} : { selection: (() => {
@@ -340,10 +346,10 @@ function runValue(value: unknown, field: string): JavaAnalysisRun {
     ),
     source_file_count: sourceFileCount,
     finding_count: findingCount,
-    diagnostic_count: integer(
+    diagnostic_count: run.diagnostic_count === null ? null : integer(
       run.diagnostic_count,
       `${field}.diagnostic_count`,
-      1_000,
+      1_000_000,
     ),
     coverage: {
       total_files: totalFiles,
@@ -388,7 +394,7 @@ function findingValue(value: unknown, field: string): JavaAnalysisFinding {
       'location',
       'message',
     ],
-    ['snippet', 'snippet_start_line', 'created_at'],
+    ['snippet', 'snippet_start_line', 'created_at', 'nullness_trace', 'nullness_trace_incomplete', 'nullness_certainty', 'nullness_model_version'],
     field,
   )
   const file = record(finding.file, `${field}.file`)
@@ -504,6 +510,14 @@ function findingValue(value: unknown, field: string): JavaAnalysisFinding {
       0xffff_ffff,
     )
   }
+  if (finding.nullness_trace !== undefined) {
+    const trace = parseJavaNullnessTrace(finding.nullness_trace)
+    if (!trace || trace.length !== (finding.nullness_trace as unknown[]).length) throw new JavaAnalysisContractError(`${field}.nullness_trace`)
+    parsed.nullness_trace = trace
+  }
+  if (finding.nullness_trace_incomplete !== undefined) parsed.nullness_trace_incomplete = booleanValue(finding.nullness_trace_incomplete, `${field}.nullness_trace_incomplete`)
+  if (finding.nullness_certainty !== undefined) parsed.nullness_certainty = enumValue(finding.nullness_certainty, new Set(['definite', 'possible'] as const), `${field}.nullness_certainty`)
+  if (finding.nullness_model_version !== undefined) parsed.nullness_model_version = textValue(finding.nullness_model_version, `${field}.nullness_model_version`, 128)
   if (finding.created_at !== undefined) {
     parsed.created_at = timestamp(finding.created_at, `${field}.created_at`)
   }

@@ -13,13 +13,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.FileSystemException;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.jar.Attributes;
@@ -31,6 +33,7 @@ import java.util.zip.ZipFile;
 @Component
 final class SpotBugsAnalyzer {
     static final long INPUT_LIMIT = 64L << 20;
+    static final long BUNDLE_LIMIT = 112L << 20;
     private static final long EXPANDED_LIMIT = 256L << 20;
     private static final long REPORT_LIMIT = 8L << 20;
     private static final int MANIFEST_LIMIT = 1 << 20;
@@ -39,7 +42,6 @@ final class SpotBugsAnalyzer {
     private static final Logger LOG = LoggerFactory.getLogger(SpotBugsAnalyzer.class);
 
     // The Checker shares a fixed memory and tmpfs budget with its source endpoint.
-    private final Semaphore slot = new Semaphore(1);
     private final Path toolJar;
 
     SpotBugsAnalyzer(@Value("${binaryscan.spotbugs.jar:/opt/spotbugs/lib/spotbugs.jar}") String toolJar) {
@@ -47,7 +49,7 @@ final class SpotBugsAnalyzer {
     }
 
     SpotBugsReport.Result analyze(String format, InputStream body) {
-        if (!slot.tryAcquire()) {
+        if (!AnalysisSlot.HEAVY.tryAcquire()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "bytecode analyzer is busy");
         }
         Path work = null;
@@ -55,15 +57,19 @@ final class SpotBugsAnalyzer {
             work = Files.createTempDirectory("bytecode-check-");
             Path input = work.resolve("input." + format);
             try (OutputStream output = Files.newOutputStream(input)) {
-                transferWithinLimit(body, output, INPUT_LIMIT);
+                transferWithinLimit(body, output, inputLimit(format));
             }
-            validate(format, input);
+            PreparedInput prepared;
+            if ("bundle".equals(format)) prepared = prepareBundle(input, work);
+            else { validate(format, input); prepared = new PreparedInput(List.of(input), List.of()); }
             Path filter = work.resolve("null-dereferences.xml");
             Files.writeString(filter, SpotBugsReport.filter());
             Path report = work.resolve("report.xml");
-            return run(work, input, filter, report);
+            return run(work, prepared, filter, report);
         } catch (LimitExceeded limit) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "bytecode input exceeds analysis limits");
+        } catch (FileSystemException failure) {
+            return SpotBugsReport.partial("bytecode temporary storage is unavailable or full");
         } catch (IOException failure) {
             return SpotBugsReport.partial("bytecode analyzer could not process the input");
         } catch (InterruptedException interrupted) {
@@ -73,21 +79,26 @@ final class SpotBugsAnalyzer {
             try {
                 if (work != null) deleteWork(work);
             } finally {
-                slot.release();
+                AnalysisSlot.HEAVY.release();
             }
         }
     }
 
-    private SpotBugsReport.Result run(Path work, Path input, Path filter, Path report)
+    static long inputLimit(String format) { return "bundle".equals(format) ? BUNDLE_LIMIT : INPUT_LIMIT; }
+
+    private SpotBugsReport.Result run(Path work, PreparedInput input, Path filter, Path report)
         throws IOException, InterruptedException {
         Path java = Path.of(System.getProperty("java.home"), "bin", "java");
         Path lib = toolJar.getParent();
         String annotations = lib.resolve("spotbugs-annotations.jar") + File.pathSeparator + lib.resolve("jsr305-3.0.2.jar");
-        Process process = new ProcessBuilder(java.toString(), "-Xmx512m", "-XX:ActiveProcessorCount=2",
+        for (Path dependency : input.dependencies()) annotations += File.pathSeparator + dependency;
+        var command = new ArrayList<>(List.of(java.toString(), "-Xmx512m", "-XX:ActiveProcessorCount=2",
             "-Djava.io.tmpdir=" + work, "-Duser.home=" + work,
             "-jar", toolJar.toString(), "-textui", "-effort:max", "-low", "-nested:false", "-dontCombineWarnings",
             "-visitors", "FindNullDeref,FindNullDerefsInvolvingNonShortCircuitEvaluation",
-            "-auxclasspath", annotations, "-include", filter.toString(), "-xml:withMessages", input.toString())
+            "-auxclasspath", annotations, "-include", filter.toString(), "-xml:withMessages"));
+        for (Path target : input.targets()) command.add(target.toString());
+        Process process = new ProcessBuilder(command)
             .directory(work.toFile()).redirectError(ProcessBuilder.Redirect.DISCARD).start();
         var capture = new FutureTask<Void>(() -> {
             try (InputStream stream = process.getInputStream(); OutputStream output = Files.newOutputStream(report)) {
@@ -119,6 +130,66 @@ final class SpotBugsAnalyzer {
                 process.waitFor(5, TimeUnit.SECONDS);
             }
             capture.cancel(true);
+        }
+    }
+
+    record PreparedInput(List<Path> targets, List<Path> dependencies) {}
+
+    // The outer request contains only normalized class JARs, separated into
+    // analysis targets and auxiliary dependencies. All budgets are cumulative;
+    // reading one archive never resets the expansion or class-count budget.
+    static PreparedInput prepareBundle(Path input, Path work) throws IOException {
+        var targets = new ArrayList<Path>();
+        var dependencies = new ArrayList<Path>();
+        long remaining = BUNDLE_LIMIT;
+        long targetRemaining = 32L << 20;
+        long[] classBudget = {512L << 20, 100_000};
+        var names = new HashSet<String>();
+        try (var bundle = new ZipFile(input.toFile())) {
+            if (bundle.size() > 513) throw new LimitExceeded();
+            var entries = bundle.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                String name = entry.getName();
+                if (!name.matches("(?:targets|deps)/[0-9]{4}\\.jar") || !names.add(name)
+                    || entry.getSize() < 0 || entry.isDirectory()) throw malformed("invalid analysis bundle entry");
+                if (entry.getSize() > remaining || (name.startsWith("targets/") && entry.getSize() > targetRemaining)) throw new LimitExceeded();
+                Path output = work.resolve(name);
+                Files.createDirectories(output.getParent());
+                long written;
+                try (var source = bundle.getInputStream(entry); var destination = Files.newOutputStream(output)) {
+                    written = transferWithinLimit(source, destination, remaining);
+                }
+                if (written != entry.getSize()) throw malformed("invalid analysis bundle entry size");
+                remaining -= written;
+                if (name.startsWith("targets/")) { targetRemaining -= written; targets.add(output); }
+                else dependencies.add(output);
+                validateNormalizedJar(output, classBudget);
+            }
+        } catch (ZipException invalid) { throw malformed("invalid analysis bundle"); }
+        if (targets.isEmpty()) throw malformed("analysis bundle has no application targets");
+        targets.sort(Comparator.comparing(Path::toString));
+        dependencies.sort(Comparator.comparing(Path::toString));
+        return new PreparedInput(List.copyOf(targets), List.copyOf(dependencies));
+    }
+
+    private static void validateNormalizedJar(Path input, long[] budget) throws IOException {
+        try (var jar = new ZipFile(input.toFile())) {
+            var names = new HashSet<String>();
+            var entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                String name = entry.getName();
+                if (!safeEntry(name) || !name.endsWith(".class") || name.startsWith("META-INF/") || !names.add(name)
+                    || entry.isDirectory() || entry.getSize() < CLASS_MAGIC.length) throw malformed("bundle JAR must contain only unambiguous JVM classes");
+                if (--budget[1] < 0 || entry.getSize() > (4L << 20) || entry.getSize() > budget[0]) throw new LimitExceeded();
+                try (var source = jar.getInputStream(entry)) {
+                    if (!isClass(source)) throw malformed("invalid JVM class in analysis bundle");
+                    long size = CLASS_MAGIC.length + transferWithinLimit(source, OutputStream.nullOutputStream(), budget[0] - CLASS_MAGIC.length);
+                    if (size != entry.getSize()) throw malformed("invalid JVM class size");
+                    budget[0] -= size;
+                }
+            }
         }
     }
 

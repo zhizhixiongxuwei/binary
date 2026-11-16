@@ -13,5 +13,23 @@ final class Models {
                    String title, String message, Map<String, Object> evidence) {}
     record CheckResponse(String version, String projectId, String status,
                          List<Finding> findings, List<String> diagnostics,
-                         String catalogVersion, List<String> appliedRuleIds) {}
+                         String catalogVersion, List<String> appliedRuleIds,
+                         Coverage coverage, List<Diagnostic> diagnosticDetails,
+                         boolean findingsTruncated, boolean diagnosticsTruncated) {
+        CheckResponse(String version, String projectId, String status, List<Finding> findings,
+                      List<String> diagnostics, String catalogVersion, List<String> appliedRuleIds) {
+            this(version, projectId, status, findings, diagnostics, catalogVersion, appliedRuleIds,
+                new Coverage(0, 0, 0, 0, 0, 0, 0), List.of(), false, false);
+        }
+    }
+    // Methods means explicit ordinary method bodies, excluding abstract signatures,
+    // constructors and initializer blocks. Constructors/initializers are still locally visited.
+    record Coverage(int totalFiles, int parsedFiles, int failedFiles, int analyzedFiles,
+                    int totalMethods, int analyzedMethods, int unresolvedCalls) {}
+    record Diagnostic(String code, String path, int line, int column, String message) {}
+    record ProjectFile(String path, String sha256, long sizeBytes) {}
+    record ProjectRequest(String version, String projectId, String runId, String manifestSha256,
+                          String catalogVersion, List<String> ruleIds, List<ProjectFile> files) {}
+    record ProjectSession(String version, String sessionId) {}
+    record ProjectUpload(List<SourceFile> files) {}
 }

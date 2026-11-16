@@ -18,6 +18,11 @@ import java.util.List;
 final class SpotBugsReport {
     private static final String TOOL_VERSION = "4.10.4";
     private static final int FINDING_LIMIT = 10_000;
+    private static final int DETAIL_LIMIT = 20;
+    private static final int DIAGNOSTIC_LIMIT = 100;
+    // Scanner validates UTF-8 byte lengths, so a character limit alone would
+    // reject diagnostics containing non-ASCII class or method names.
+    private static final int DIAGNOSTIC_BYTES = 900;
     private static final List<String> PATTERNS = List.of(
         "NP_ALWAYS_NULL", "NP_ALWAYS_NULL_EXCEPTION", "NP_NULL_ON_SOME_PATH",
         "NP_NULL_ON_SOME_PATH_EXCEPTION", "NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE",
@@ -62,6 +67,7 @@ final class SpotBugsReport {
         if (errorCount == null || missingCount == null) return partial("invalid SpotBugs report diagnostics");
         if (errorCount > 0) diagnostics.add("SpotBugs reported " + errorCount + " analysis errors");
         if (missingCount > 0) diagnostics.add("SpotBugs reported " + missingCount + " missing classes");
+        errorDetails(errors, diagnostics);
 
         boolean invalidFinding = false;
         for (Node node = root.getFirstChild(); node != null; node = node.getNextSibling()) {
@@ -78,6 +84,68 @@ final class SpotBugsReport {
         }
         if (invalidFinding) diagnostics.add("SpotBugs report contains findings without valid JVM method identity");
         return result(findings, diagnostics);
+    }
+
+    private static void errorDetails(Element errors, List<String> diagnostics) {
+        int errorDetails = 0, missingDetails = 0;
+        boolean errorsTruncated = false, missingTruncated = false;
+        for (Node node = errors.getFirstChild(); node != null; node = node.getNextSibling()) {
+            if (!(node instanceof Element element)) continue;
+            switch (element.getTagName()) {
+                case "Error", "ErrorMessage", "Exception" -> {
+                    if (errorDetails++ >= DETAIL_LIMIT) { errorsTruncated = true; continue; }
+                    String message;
+                    if ("Error".equals(element.getTagName())) {
+                        String detail = firstLine(child(element, "ErrorMessage", "", ""));
+                        String exception = firstLine(child(element, "Exception", "", ""));
+                        message = detail.isEmpty() ? exception : exception.isEmpty() || detail.equals(exception) ? detail : detail + "; " + exception;
+                        if (message.isEmpty()) message = firstLine(element);
+                    } else message = firstLine(element);
+                    if (message.isEmpty()) message = "details unavailable";
+                    diagnostics.add(boundedDiagnostic("SpotBugs analysis error: " + message));
+                }
+                case "MissingClass" -> {
+                    if (missingDetails++ >= DETAIL_LIMIT) { missingTruncated = true; continue; }
+                    String name = firstLine(element);
+                    diagnostics.add(boundedDiagnostic("SpotBugs missing class: " + (name.isEmpty() ? "identity unavailable" : name)));
+                }
+                default -> { /* Never include StackTrace, Frame or source blocks. */ }
+            }
+        }
+        if (errorsTruncated) diagnostics.add("SpotBugs analysis error details truncated at 20 entries");
+        if (missingTruncated) diagnostics.add("SpotBugs missing class details truncated at 20 entries");
+    }
+
+    // Read only direct text/CDATA and its first nonempty line. getTextContent()
+    // on Error would also expose an entire nested stack trace or source block.
+    private static String firstLine(Element element) {
+        if (element == null) return "";
+        for (Node node = element.getFirstChild(); node != null; node = node.getNextSibling()) {
+            if (node.getNodeType() != Node.TEXT_NODE && node.getNodeType() != Node.CDATA_SECTION_NODE) continue;
+            String text = node.getNodeValue();
+            int offset = 0;
+            while (offset < text.length()) {
+                int end = offset;
+                while (end < text.length() && text.charAt(end) != '\n' && text.charAt(end) != '\r') end++;
+                String line = text.substring(offset, end).strip();
+                if (!line.isEmpty()) return boundedDiagnostic(line);
+                offset = end + 1;
+            }
+        }
+        return "";
+    }
+
+    private static String boundedDiagnostic(String value) {
+        var text = new StringBuilder();
+        int bytes = 0;
+        for (int index = 0; index < value.length();) {
+            int point = value.codePointAt(index); index += Character.charCount(point);
+            if (Character.isISOControl(point)) { if (Character.isWhitespace(point)) point = ' '; else continue; }
+            int width = point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+            if (bytes + width > DIAGNOSTIC_BYTES - 3) { text.append("..."); break; }
+            text.appendCodePoint(point); bytes += width;
+        }
+        return text.toString();
     }
 
     private static Finding finding(Element bug, String pattern) {
@@ -136,8 +204,16 @@ final class SpotBugsReport {
     }
 
     private static Result result(List<Finding> findings, List<String> diagnostics) {
+        var bounded = new ArrayList<String>();
+        for (String diagnostic : diagnostics) {
+            if (bounded.size() == DIAGNOSTIC_LIMIT - 1 && diagnostics.size() > DIAGNOSTIC_LIMIT) {
+                bounded.add("SpotBugs diagnostics truncated at 100 entries"); break;
+            }
+            if (bounded.size() == DIAGNOSTIC_LIMIT) break;
+            bounded.add(boundedDiagnostic(diagnostic));
+        }
         return new Result("spotbugs-v1", diagnostics.isEmpty() ? "complete" : "partial", TOOL_VERSION,
-            List.copyOf(findings), List.copyOf(diagnostics));
+            List.copyOf(findings), List.copyOf(bounded));
     }
 
     record Result(String version, String status, String toolVersion, List<Finding> findings, List<String> diagnostics) {}

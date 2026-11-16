@@ -131,6 +131,7 @@ services:
       BINARY_ARTIFACT_ROOT: /data/storage/artifacts
       BINARY_C_CHECKER_URL: http://c-checker:8080
       BINARY_JAVA_CHECKER_URL: http://java-checker:8080
+      BINARY_JAVA_APPLICATION_GROUPS: ${JAVA_APPLICATION_GROUPS:-}
       BINARY_PYTHON_CHECKER_URL: http://python-checker:8080
       BINARY_TRIVY_PATH: /usr/local/bin/trivy
       BINARY_TRIVY_CACHE_ROOT: /opt/trivy-cache
@@ -209,6 +210,7 @@ services:
       <<: *db-client
       BINARY_VERSION: ${BINARY_VERSION:?required}
       BINARY_ROLE: jvm-decompiler
+      BINARY_JAVA_APPLICATION_GROUPS: ${JAVA_APPLICATION_GROUPS:-}
       BINARY_WORK_ROOT: /data/work
       BINARY_BLOB_ROOT: /data/storage/blobs
       BINARY_PROJECT_ROOT: /data/storage/projects/jvm

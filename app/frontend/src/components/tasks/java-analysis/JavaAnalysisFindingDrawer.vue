@@ -2,7 +2,7 @@
 import { Code2, ExternalLink, FileCode2, MapPin, ShieldAlert } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, shallowRef } from 'vue'
 
-import type { JavaAnalysisFinding, JavaBytecodeLocation, SourceNavigationTarget } from '@/api/types'
+import type { JavaAnalysisFinding, JavaBytecodeLocation, JavaNullnessTraceStep, SourceNavigationTarget } from '@/api/types'
 import { javaFindingSourceTarget } from '@/components/tasks/results/sourceNavigation'
 import { javaFindingMessage } from '@/utils/analyzerMessages'
 
@@ -87,6 +87,12 @@ const sourceTarget = computed(() =>
   props.finding ? javaFindingSourceTarget(props.finding) : undefined,
 )
 
+const traceLabels: Record<string, string> = { 'nullable-source': '可空来源', 'return-source': '返回值来源', return: '返回传递', argument: '参数传递', branch: '分支条件', sink: '解引用' }
+function openTrace(step: JavaNullnessTraceStep): void {
+  const projectId = props.finding?.source_project_id || props.finding?.file.result_id
+  if (!projectId) return
+  emit('openSource', { projectId, path: step.path, startLine: step.line, endLine: step.line, startColumn: step.column, endColumn: step.column })
+}
 function openSource(): void {
   if (sourceTarget.value) emit('openSource', sourceTarget.value)
 }
@@ -147,6 +153,18 @@ function openSource(): void {
         </div>
       </dl>
 
+      <p v-if="finding.nullness_trace_incomplete" class="trace-warning" role="status">空值传播路径不完整：部分位置无法验证，已省略；请结合本次运行诊断复核。</p>
+      <section v-if="finding.nullness_trace?.length" class="nullness-trace">
+        <h3>空值传播路径 · {{ finding.nullness_certainty === 'definite' ? '确定为空' : '条件性风险' }}</h3>
+        <ol>
+          <li v-for="(step, index) in finding.nullness_trace" :key="index">
+            <strong>{{ traceLabels[step.kind] ?? step.kind }}</strong>：{{ step.message }}
+            <button type="button" @click="openTrace(step)">{{ step.path }}:{{ step.line }}:{{ step.column }}</button>
+          </li>
+        </ol>
+        <small v-if="finding.nullness_model_version">模型 {{ finding.nullness_model_version }} · 位置为反编译源码位置</small>
+      </section>
+
       <section v-if="finding.location" class="snippet-section">
         <div class="snippet-heading">
           <h3><Code2 :size="15" aria-hidden="true" />检测片段</h3>
@@ -191,6 +209,11 @@ function openSource(): void {
 </template>
 
 <style scoped>
+.trace-warning { color: var(--warning); background: var(--warning-soft); padding: 10px; border-radius: 6px; }
+.nullness-trace ol { padding-left: 22px; }
+.nullness-trace li { margin-bottom: 12px; overflow-wrap: anywhere; }
+.nullness-trace button { display: block; border: 0; padding: 4px 0; color: var(--primary); background: transparent; cursor: pointer; text-align: left; }
+
 .finding-detail { display: grid; gap: 18px; color: var(--ink-600); }
 .finding-detail__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .finding-detail__header code { color: var(--ink-800); font-size: 12px; }

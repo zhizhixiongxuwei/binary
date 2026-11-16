@@ -25,7 +25,7 @@ final class RuleCatalog {
 
     private static Rule rule(String id, String name, String description, String cwe, String severity, String limit) {
         return new Rule(id, name, description, List.of(cwe), severity, "java", true,
-            List.of("面向反编译 Java 的单文件 AST 与局部表达式检查，不提供完整类路径或跨过程污点分析。", limit));
+            List.of("面向反编译 Java 的 AST 检查；项目空值引擎使用有界类型索引与跨方法摘要，不提供完整类路径、堆别名或反射语义。", limit));
     }
 
     static final List<Rule> RULES = List.of(
@@ -42,7 +42,7 @@ final class RuleCatalog {
         rule("java-dynamic-code-execution", "动态脚本或表达式执行", "检测脚本引擎或表达式接口执行动态文本。", "CWE-94", "high", "仅覆盖可识别的脚本和表达式 API 形态。"),
         rule("java-overly-permissive-file", "宽松的文件访问权限", "检测 File 或 POSIX 权限接口授予所有用户宽泛权限。", "CWE-732", "medium", "限于局部类型和常量参数，不读取实际文件系统权限。"),
         rule("java-insecure-cookie", "关闭 Cookie Secure 属性", "检测 Cookie.setSecure(false) 的显式配置。", "CWE-614", "medium", "不检查实际 HTTP 传输、全局 Cookie 策略或其他 Cookie 属性。"),
-        rule("java-null-dereference", "空指针解引用", "检测反编译源码中有显式 null 或空值分支证据的解引用。对于可用的原始 JAR 和 CLASS，Scanner 同时执行 SpotBugs 字节码检测。", "CWE-476", "medium", "源码分析跟踪顺序语句和常见条件分支中的局部变量，实例成员须可从当前文件或内置 JDK 类型确认。字节码分析限于指定的空指针解引用模式，结果受类路径和字节码信息影响。")
+        rule("java-null-dereference", "空指针解引用", "检测显式空值、项目内参数与返回值传播，以及已确认 MyBatis 单条查询、Map.get 和可空注解来源的解引用。可用的原始字节码同时由 SpotBugs 检测。", "CWE-476", "medium", "项目摘要最多 16 轮、20000 方法、100000 调用边和 3 分钟；未知外部调用单独统计，不证明其返回非空。模型与可能为空的证据需要结合业务前提复核，不保证不存在空指针。")
     ).stream().sorted(Comparator.comparing(Rule::id)).toList();
 
     static final Set<String> IDS = RULES.stream().map(Rule::id).collect(Collectors.toUnmodifiableSet());

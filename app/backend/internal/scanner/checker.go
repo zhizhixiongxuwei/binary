@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,13 +69,17 @@ type checkerFinding struct {
 }
 
 type checkerResponse struct {
-	Version        string           `json:"version"`
-	ProjectID      string           `json:"projectId"`
-	Status         string           `json:"status"`
-	Findings       []checkerFinding `json:"findings"`
-	Diagnostics    []string         `json:"diagnostics"`
-	CatalogVersion string           `json:"catalogVersion"`
-	AppliedRuleIDs []string         `json:"appliedRuleIds"`
+	Version              string              `json:"version"`
+	ProjectID            string              `json:"projectId"`
+	Status               string              `json:"status"`
+	Findings             []checkerFinding    `json:"findings"`
+	Diagnostics          []string            `json:"diagnostics"`
+	CatalogVersion       string              `json:"catalogVersion"`
+	AppliedRuleIDs       []string            `json:"appliedRuleIds"`
+	Coverage             *checkerCoverage    `json:"coverage,omitempty"`
+	DiagnosticDetails    []checkerDiagnostic `json:"diagnosticDetails,omitempty"`
+	FindingsTruncated    bool                `json:"findingsTruncated,omitempty"`
+	DiagnosticsTruncated bool                `json:"diagnosticsTruncated,omitempty"`
 }
 
 type checkerSourceEvidence struct {
@@ -122,12 +127,33 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	responses := make([]checkerResponse, 0)
 	diagnostics := make([]string, 0)
 	sources := make(map[string]checkerSourceEvidence, len(manifest.Files))
-	partial := false
+	partial := project.quality != "source"
+	var javaSession *javaProjectSession
+	if project.language == "java" {
+		javaSession, err = createJavaProject(ctx, client, url, project, manifest, claim.RunID)
+		if errors.Is(err, errJavaProjectLimit) {
+			partial = true
+			diagnostics = append(diagnostics, "Java project input limit reached; cross-method analysis was skipped; only bounded per-file checks were performed")
+		} else if err != nil {
+			return err
+		}
+		if javaSession != nil {
+			defer javaSession.close()
+		}
+	}
 	batch := make([]checkerSource, 0, checkerBatchFiles)
 	batchBytes := 0
 	// 文件数与请求字节数共同控制批次，避免大型源码项目形成无界请求；总 finding 数另设全局上限。
 	flush := func() error {
 		if len(batch) == 0 {
+			return nil
+		}
+		if javaSession != nil {
+			if err := javaSession.upload(ctx, batch); err != nil {
+				return err
+			}
+			batch = make([]checkerSource, 0, checkerBatchFiles)
+			batchBytes = 0
 			return nil
 		}
 		request := checkerRequest{
@@ -149,13 +175,10 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		batch = make([]checkerSource, 0, checkerBatchFiles)
 		batchBytes = 0
 		remaining := checkerFindingLimit - len(allFindings)
-		if remaining <= 0 {
-			partial = true
-			return nil
-		}
 		if len(response.Findings) > remaining {
 			response.Findings = response.Findings[:remaining]
 			partial = true
+			diagnostics = append(diagnostics, "JAVA_FINDING_LIMIT: findings exceeded the run finding limit")
 		}
 		allFindings = append(allFindings, response.Findings...)
 		return nil
@@ -209,6 +232,19 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	if err := flush(); err != nil {
 		return err
 	}
+	if javaSession != nil {
+		response, err := javaSession.analyze(ctx)
+		if err != nil {
+			return err
+		}
+		partial = partial || response.Status == "partial"
+		responses = append(responses, response)
+		diagnostics = append(diagnostics, response.Diagnostics...)
+		allFindings = append(allFindings, response.Findings...)
+		// Source files are no longer needed remotely. Release their tmpfs budget
+		// before the same checker starts bytecode extraction in its shared slot.
+		javaSession.close()
+	}
 
 	validated := make([]validatedCheckerFinding, 0, len(allFindings))
 	for _, finding := range allFindings {
@@ -236,6 +272,10 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			continue
 		}
 		snippet, snippetStart := sourceSnippet(source.lines, line, 2)
+		if project.language == "java" && !verifyJavaNullnessTrace(finding.Evidence, sources) {
+			partial = true
+			diagnostics = append(diagnostics, cleaned+": checker returned an unverifiable nullness trace; invalid steps were omitted")
+		}
 		finding.Path = cleaned
 		validated = append(validated, validatedCheckerFinding{
 			finding: finding, source: source, startLine: line, startColumn: column,
@@ -254,7 +294,7 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	var bytecodeSources spotBugsSourceCorrelation
 	if format := project.spotBugsFormat(); format != "" {
 		bytecode = e.checkSpotBugs(ctx, client, url, project.input, manifest, format, checkerFindingLimit-len(validated))
-		partial = partial || bytecode.Status == "partial"
+		partial = partial || bytecode.Status == "partial" || bytecode.Status == "skipped"
 		diagnostics = append(diagnostics, bytecode.Diagnostics...)
 		artifact["bytecodeResponse"] = bytecode
 		metadata["bytecodeStatus"] = bytecode.Status
@@ -279,6 +319,12 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	}
 	validatedCount := len(validated) + len(bytecode.Findings)
 	findingCount := validatedCount - bytecodeSources.mergedCount
+	if project.language == "java" && manifest.JVMArchive != nil {
+		for _, diagnostic := range manifest.JVMArchive.Diagnostics {
+			partial = true
+			diagnostics = append(diagnostics, "Java module coverage: "+diagnostic)
+		}
+	}
 	artifact["diagnostics"] = diagnostics
 	artifact["validatedFindingCount"] = validatedCount
 	if bytecode.Status != "" {
@@ -286,6 +332,11 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	}
 	metadata["diagnosticCount"] = len(diagnostics)
 	metadata["findingCount"] = findingCount
+	if project.language == "java" {
+		summary := javaAnalysisSummary(manifest, responses, diagnostics, bytecode, partial)
+		artifact["analysisSummary"] = summary
+		metadata["analysisSummary"] = summary
+	}
 	artifactBody, err := json.MarshalIndent(artifact, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode checker evidence: %w", err)
@@ -593,13 +644,31 @@ func callChecker(ctx context.Context, client *http.Client, url string, request c
 		}
 		return checkerResponse{}, fmt.Errorf("checker returned HTTP %d: %s", response.StatusCode, truncate(string(responseBody), 1024))
 	}
+	return decodeCheckerResponse(responseBody, request)
+}
+
+func decodeCheckerResponse(responseBody []byte, request checkerRequest) (checkerResponse, error) {
 	var result checkerResponse
 	if err := json.Unmarshal(responseBody, &result); err != nil {
 		return checkerResponse{}, fmt.Errorf("parse checker response: %w", err)
 	}
 	if result.Version != "checker-v1" || result.ProjectID != request.ProjectID ||
-		(result.Status != "complete" && result.Status != "partial") || len(result.Findings) > checkerFindingLimit {
+		(result.Status != "complete" && result.Status != "partial") || len(result.Findings) > checkerFindingLimit ||
+		len(result.Diagnostics) > 1000 || len(result.DiagnosticDetails) > 1000 {
 		return checkerResponse{}, fmt.Errorf("checker response violates checker-v1")
+	}
+	if result.Coverage != nil && !result.Coverage.valid() {
+		return checkerResponse{}, fmt.Errorf("checker response contains invalid coverage statistics")
+	}
+	for _, diagnostic := range result.Diagnostics {
+		if len(diagnostic) > 8192 || strings.ContainsRune(diagnostic, '\x00') {
+			return checkerResponse{}, fmt.Errorf("checker response contains an invalid diagnostic")
+		}
+	}
+	for _, detail := range result.DiagnosticDetails {
+		if len(detail.Code) > 128 || len(detail.Path) > 1024 || len(detail.Message) > 8192 || detail.Line < 0 || detail.Column < 0 {
+			return checkerResponse{}, fmt.Errorf("checker response contains an invalid diagnostic detail")
+		}
 	}
 	if request.CatalogVersion != "" {
 		expected, err := checkrules.Normalize(request.RuleIDs)

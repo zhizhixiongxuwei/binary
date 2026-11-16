@@ -339,6 +339,15 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 	if len(runs) != len(runIDs) {
 		return nil, sql.ErrNoRows
 	}
+	summaries, err := s.javaAnalysisSummaries(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	for _, run := range runs {
+		if summary, ok := summaries[run["id"].(string)]; ok {
+			run["analysisSummary"] = summary
+		}
+	}
 	findingArgs := make([]any, len(runIDs))
 	for index, runID := range runIDs {
 		findingArgs[index] = runID

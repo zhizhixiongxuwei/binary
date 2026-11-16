@@ -12,12 +12,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
 
 	"binaryscan.local/backend/internal/checkrules"
+	"binaryscan.local/backend/internal/jvmarchive"
 	"binaryscan.local/backend/internal/storage"
 )
 
@@ -64,6 +66,7 @@ type spotBugsResponse struct {
 	ToolVersion string            `json:"toolVersion,omitempty"`
 	Findings    []spotBugsFinding `json:"findings"`
 	Diagnostics []string          `json:"diagnostics"`
+	Scope       *jvmarchive.Scope `json:"scope,omitempty"`
 }
 
 func (project checkerProject) spotBugsFormat() string {
@@ -88,7 +91,8 @@ func spotBugsFormat(detected string) string {
 func (e *Executor) checkSpotBugs(ctx context.Context, client *http.Client, url string, input spotBugsInput, manifest storage.Manifest, format string, remaining int) spotBugsResponse {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
-	body, err := e.readSpotBugsInput(input, manifest, format)
+	body, wireFormat, scope, cleanup, err := e.prepareSpotBugsInput(ctx, input, manifest, format)
+	defer cleanup()
 	if err == errSpotBugsLargeJAR {
 		return spotBugsResponse{
 			Version: spotBugsProtocol, Format: format, Status: "skipped", SkipReason: "input_too_large",
@@ -96,8 +100,14 @@ func (e *Executor) checkSpotBugs(ctx context.Context, client *http.Client, url s
 		}
 	}
 	for err == nil {
-		result, callErr := callSpotBugs(ctx, client, url, format, body)
+		result, callErr := callSpotBugs(ctx, client, url, wireFormat, body)
 		if callErr == nil {
+			result.Format = format
+			result.Scope = scope
+			if scope != nil && len(scope.Diagnostics) > 0 {
+				result.Status = "partial"
+				result.Diagnostics = append(result.Diagnostics, scope.Diagnostics...)
+			}
 			result.validateFindings(remaining)
 			return result
 		}
@@ -114,8 +124,80 @@ func (e *Executor) checkSpotBugs(ctx context.Context, client *http.Client, url s
 	}
 	return spotBugsResponse{
 		Version: spotBugsProtocol, Format: format, Status: "partial", Findings: []spotBugsFinding{},
-		Diagnostics: []string{"SpotBugs: " + err.Error()},
+		Diagnostics: []string{"SpotBugs: " + err.Error()}, Scope: scope,
 	}
+}
+
+func (e *Executor) prepareSpotBugsInput(ctx context.Context, input spotBugsInput, manifest storage.Manifest, format string) ([]byte, string, *jvmarchive.Scope, func(), error) {
+	noop := func() {}
+	if format != "jar" {
+		body, err := e.readSpotBugsInput(input, manifest, format)
+		return body, format, nil, noop, err
+	}
+	if !input.blobID.Valid || !input.storageKey.Valid || !input.logicalPath.Valid || !input.sizeBytes.Valid ||
+		input.blobID.String != manifest.InputBlobID || len(input.sha256) != sha256.Size ||
+		!strings.EqualFold(hex.EncodeToString(input.sha256), manifest.InputSHA256) {
+		return nil, format, nil, noop, fmt.Errorf("original binary identity is unavailable or does not match the source project")
+	}
+	filename, err := e.blobPath(input.storageKey.String)
+	if err != nil {
+		return nil, format, nil, noop, fmt.Errorf("original binary is unavailable")
+	}
+	if err := jvmarchive.Verify(ctx, filename, input.sizeBytes.Int64, manifest.InputSHA256); err != nil {
+		return nil, format, nil, noop, err
+	}
+	workRoot := e.cfg.Worker.WorkRoot
+	if workRoot == "" {
+		workRoot = os.TempDir()
+	}
+	absWorkRoot, err := filepath.Abs(workRoot)
+	if err != nil {
+		return nil, format, nil, noop, err
+	}
+	work, err := os.MkdirTemp(absWorkRoot, "bytecode-input-")
+	if err != nil {
+		return nil, format, nil, noop, err
+	}
+	cleanup := func() {
+		if filepath.Dir(work) == absWorkRoot && strings.HasPrefix(filepath.Base(work), "bytecode-input-") {
+			_ = os.RemoveAll(work)
+		}
+	}
+	groups := jvmarchive.GroupsFromEnvironment()
+	if manifest.JVMArchive != nil {
+		if manifest.JVMArchive.Version != jvmarchive.Version || manifest.JVMArchive.InputSHA256 != manifest.InputSHA256 {
+			return nil, format, nil, cleanup, fmt.Errorf("JVM archive scope does not match original binary")
+		}
+		groups = append([]string{}, manifest.JVMArchive.ApplicationGroups...)
+	}
+	prepared, err := jvmarchive.Prepare(ctx, filename, filepath.Join(work, "modules"), jvmarchive.Options{ExpectedSHA256: manifest.InputSHA256, ApplicationGroups: groups})
+	if err != nil {
+		return nil, format, nil, cleanup, err
+	}
+	if prepared == nil {
+		body, err := e.readSpotBugsInput(input, manifest, format)
+		return body, format, nil, cleanup, err
+	}
+	if manifest.JVMArchive != nil && !prepared.SameInputs(manifest.JVMArchive) {
+		return nil, "bundle", &prepared.Scope, cleanup, fmt.Errorf("prepared JVM modules do not match the source project scope")
+	}
+	if manifest.JVMArchive == nil {
+		prepared.Scope.Diagnostics = append(prepared.Scope.Diagnostics, "Source project predates module-aware decompilation; create a new decompile project to cover nested application sources")
+	}
+	bundle := filepath.Join(work, "analysis.zip")
+	if err := prepared.Bundle(ctx, bundle); err != nil {
+		return nil, "bundle", &prepared.Scope, cleanup, err
+	}
+	file, err := os.Open(bundle)
+	if err != nil {
+		return nil, "bundle", &prepared.Scope, cleanup, err
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, jvmarchive.MaxBundleBytes+1))
+	if err == nil && int64(len(body)) > jvmarchive.MaxBundleBytes {
+		err = fmt.Errorf("prepared bytecode bundle exceeds transport limit")
+	}
+	return body, "bundle", &prepared.Scope, cleanup, err
 }
 
 // Send exactly the bytes whose identity was verified against the original
@@ -139,10 +221,8 @@ func (e *Executor) readSpotBugsInput(input spotBugsInput, manifest storage.Manif
 	}
 	defer file.Close()
 	if input.sizeBytes.Int64 > spotBugsInputLimit {
-		// Confirm this is a valid size-based skip without buffering the JAR.
-		info, err := file.Stat()
-		if err != nil || info.Size() != input.sizeBytes.Int64 {
-			return nil, fmt.Errorf("original binary size does not match its blob record")
+		if err := jvmarchive.Verify(context.Background(), filename, input.sizeBytes.Int64, manifest.InputSHA256); err != nil {
+			return nil, err
 		}
 		return nil, errSpotBugsLargeJAR
 	}

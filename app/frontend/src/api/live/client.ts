@@ -30,6 +30,7 @@ import {
   type LiveAnalysisRunMetadata,
 } from '@/api/live/analysisRunMetadata'
 import type * as Model from '@/api/types'
+import { javaSummaryIsPartial, parseJavaAnalysisSummary, parseJavaNullnessTrace } from '@/api/javaAnalysisSummary'
 import { AnalysisRulesContractError, analysisRuleRequest, parseAnalysisRuleCatalog } from '@/api/analysisRulesContract'
 import { parseArchiveTaskGroup } from '@/api/taskContract'
 import { buildAuditQuery, mapAuditPage, type LiveAuditPage } from '@/api/auditContract'
@@ -69,6 +70,7 @@ interface LiveFile {
 }
 
 interface LiveRun extends LiveAnalysisRunMetadata {
+  analysisSummary?: unknown
   id: string
   kind: string
   status: string
@@ -523,12 +525,37 @@ async function mapJavaAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise
   const project = mapProject(rawProject, detail)
   const findings = await loadFindings(detail.task.id, run.id)
   const count = findings.length
-  const status = run.kind === 'java_check' && run.status === 'complete' && run.resultQuality === 'partial_source'
+  const summary = parseJavaAnalysisSummary(run.analysisSummary)
+  const status = run.kind === 'java_check' && run.status === 'complete' && (run.resultQuality === 'partial_source' || javaSummaryIsPartial(summary))
     ? 'partial'
     : runStatus(run.status)
   return {
     id: run.id, task_id: detail.task.id, source_project_id: project.id, source_project: projectSummary(project),
     job_id: run.id, status, ...mapLiveAnalysisRunMetadata(run, 'java-checker'),
+    source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
+    source_size_bytes: project.source_size_bytes, source_file_count: project.source_file_count,
+    finding_count: count, diagnostic_count: summary?.diagnosticCount ?? null,
+    ...(summary ? { analysis_summary: summary } : {}),
+    coverage: { total_files: project.source_file_count, analyzed_files: summary?.coverage.analyzedFiles ?? null,
+      parsed_files: summary?.coverage.parsedFiles ?? null, recovered_files: null, failed_files: summary?.coverage.failedFiles ?? null },
+    severity_counts: severityCounts(findings), findings_truncated: summary?.findingsTruncated ?? false, diagnostics_truncated: summary?.diagnosticsTruncated ?? false,
+    error_code: run.errorCode, error_message: run.errorMessage, started_at: run.startedAt,
+    completed_at: run.completedAt, created_at: run.createdAt, updated_at: run.completedAt ?? run.createdAt,
+  }
+}
+
+async function mapPythonAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Model.PythonAnalysisRun> {
+  const rawProject = detail.projects.find((project) => project.id === run.subjectId)
+  if (!rawProject) throw new ApiError('找不到检测所使用的反编译源码', 404, { code: 'SOURCE_PROJECT_NOT_FOUND' })
+  const project = mapProject(rawProject, detail)
+  const findings = await loadFindings(detail.task.id, run.id)
+  const count = findings.length
+  const status = run.kind === 'python_check' && run.status === 'complete' && run.resultQuality === 'partial_source'
+    ? 'partial'
+    : runStatus(run.status)
+  return {
+    id: run.id, task_id: detail.task.id, source_project_id: project.id, source_project: projectSummary(project),
+    job_id: run.id, status, ...mapLiveAnalysisRunMetadata(run, 'python-checker'),
     source_manifest_sha256: '', input_sha256: '', bundle_sha256: '',
     source_size_bytes: project.source_size_bytes, source_file_count: project.source_file_count,
     finding_count: count, diagnostic_count: 0,
@@ -537,11 +564,6 @@ async function mapJavaAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise
     error_code: run.errorCode, error_message: run.errorMessage, started_at: run.startedAt,
     completed_at: run.completedAt, created_at: run.createdAt, updated_at: run.completedAt ?? run.createdAt,
   }
-}
-
-async function mapPythonAnalysisRun(detail: LiveTaskDetail, run: LiveRun): Promise<Model.PythonAnalysisRun> {
-  const java = await mapJavaAnalysisRun(detail, run)
-  return { ...java, analyzer_name: run.toolName ?? 'python-checker' }
 }
 
 function positiveCoordinate(value: number | null | undefined, fallback: number): number {
@@ -607,6 +629,9 @@ function mapJavaSourceFinding(
   const projectId = sourceProjectId(value, fallbackProjectId)
   const location = findingLocation(value)
   const snippet = findingSnippet(value)
+  const trace = parseJavaNullnessTrace(value.evidence?.nullnessTrace)
+  const certainty = value.evidence?.nullnessCertainty
+  const modelVersion = value.evidence?.nullnessModelVersion
   return {
     id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
     file: { result_id: projectId, logical_path: value.path ?? '', binary_name: value.path ? displayName(value.path) : '' },
@@ -615,6 +640,10 @@ function mapJavaSourceFinding(
     ...(value.path ? { source_path: value.path } : {}),
     callable: { kind: '', type_name: '', name: '', signature: '' },
     location,
+    ...(trace ? { nullness_trace: trace } : {}),
+    ...(value.evidence?.traceIncomplete === true ? { nullness_trace_incomplete: true } : {}),
+    ...(certainty === 'definite' || certainty === 'possible' ? { nullness_certainty: certainty } : {}),
+    ...(typeof modelVersion === 'string' && modelVersion.length <= 128 ? { nullness_model_version: modelVersion } : {}),
     message: value.message,
     ...(snippet !== undefined ? { snippet } : {}),
     snippet_start_line: positiveCoordinate(value.snippetStartLine, location.start_line),

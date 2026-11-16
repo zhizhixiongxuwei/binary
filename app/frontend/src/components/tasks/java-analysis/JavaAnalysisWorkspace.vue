@@ -137,7 +137,7 @@ defineExpose({
     </div>
 
     <template v-if="analysis.selectedRun.value">
-      <JavaAnalysisSummary :run="analysis.selectedRun.value" />
+      <JavaAnalysisSummary :run="analysis.selectedRun.value" @open-source="emit('openSource', $event)" />
 
       <template
         v-if="['succeeded', 'partial'].includes(analysis.selectedRun.value.status)"

@@ -21,10 +21,10 @@ final class BytecodeCheckController {
 
     @PostMapping(path = "/v1/bytecode/check", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     SpotBugsReport.Result check(@RequestParam("format") String format, HttpServletRequest request) throws IOException {
-        if (!"jar".equals(format) && !"class".equals(format)) {
+        if (!"jar".equals(format) && !"class".equals(format) && !"bundle".equals(format)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "unsupported bytecode format");
         }
-        if (request.getContentLengthLong() > SpotBugsAnalyzer.INPUT_LIMIT) {
+        if (request.getContentLengthLong() > SpotBugsAnalyzer.inputLimit(format)) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "bytecode input is too large");
         }
         return analyzer.analyze(format, request.getInputStream());

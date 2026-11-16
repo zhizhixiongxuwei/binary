@@ -27,7 +27,7 @@ func buildReportSummary(runs, findings []map[string]any) map[string]any {
 	affectedFiles := make(map[string]struct{})
 	rules := make(map[string]struct{})
 	for _, run := range runs {
-		status := strings.ToLower(reportText(run["status"]))
+		status := strings.ToLower(reportRunStatus(run))
 		if _, known := runCounts[status]; known && status != "total" && status != "other" {
 			runCounts[status]++
 		} else {
@@ -111,12 +111,18 @@ func buildHTMLReport(snapshot map[string]any) []byte {
 	} else {
 		output.WriteString(`<table><thead><tr><th>类型</th><th>状态</th><th class="run-tool">分析引擎</th><th>规则选择覆盖范围</th><th>结果质量</th><th>完成时间</th></tr></thead><tbody>`)
 		for _, run := range runs {
-			output.WriteString(`<tr><td>` + html.EscapeString(reportRunKindText(run["kind"])) + `</td><td>` + html.EscapeString(reportDisplayText(run["status"])) + `</td>`)
+			output.WriteString(`<tr><td>` + html.EscapeString(reportRunKindText(run["kind"])) + `</td><td>` + html.EscapeString(reportRunStatus(run)) + `</td>`)
 			output.WriteString(`<td class="run-tool">` + html.EscapeString(reportToolText(run)) + `</td><td>` + html.EscapeString(reportRuleSelectionText(run)) + `</td><td>` + html.EscapeString(reportDisplayText(run["resultQuality"])) + `</td><td>` + html.EscapeString(reportTimeText(run["completedAt"])) + `</td></tr>`)
 		}
 		output.WriteString(`</tbody></table>`)
 	}
 	output.WriteString(`</section>`)
+	for _, run := range runs {
+		if reportText(run["kind"]) != "java_check" {
+			continue
+		}
+		output.WriteString(`<section class="panel"><h2>Java 检测覆盖与诊断</h2><pre>` + html.EscapeString(reportJavaAnalysisText(run)) + `</pre></section>`)
+	}
 
 	output.WriteString(`<section class="panel"><h2>漏洞明细（` + strconv.Itoa(len(findings)) + `）</h2>`)
 	if truncated, _ := snapshot["findingsTruncated"].(bool); truncated {
@@ -160,6 +166,9 @@ func writeHTMLFinding(output *strings.Builder, number int, finding map[string]an
 	}
 	if label, related := reportRelatedLocation(finding); related != "" {
 		output.WriteString(`<p class="location"><strong>` + html.EscapeString(label) + `：</strong><code>` + html.EscapeString(related) + `</code></p>`)
+	}
+	if trace := reportNullnessTraceText(finding); trace != "" {
+		output.WriteString(`<h4>空值传播路径</h4><pre>` + html.EscapeString(trace) + `</pre>`)
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {
 		output.WriteString(`<pre><code>` + html.EscapeString(snippet) + `</code></pre>`)
@@ -243,9 +252,17 @@ func docxDocumentXML(snapshot map[string]any) string {
 	} else {
 		rows := [][]string{{"类型", "状态", "分析引擎", "规则选择覆盖范围", "结果质量", "完成时间"}}
 		for _, run := range runs {
-			rows = append(rows, []string{reportRunKindText(run["kind"]), reportDisplayText(run["status"]), reportToolText(run), reportRuleSelectionText(run), reportDisplayText(run["resultQuality"]), reportTimeText(run["completedAt"])})
+			rows = append(rows, []string{reportRunKindText(run["kind"]), reportRunStatus(run), reportToolText(run), reportRuleSelectionText(run), reportDisplayText(run["resultQuality"]), reportTimeText(run["completedAt"])})
 		}
 		body.WriteString(docxTable(rows, []int{1200, 900, 1800, 3300, 900, 1260}, true, false))
+	}
+
+	for _, run := range runs {
+		if reportText(run["kind"]) != "java_check" {
+			continue
+		}
+		body.WriteString(docxParagraph("Java 检测覆盖与诊断", "Heading1"))
+		body.WriteString(docxCodeParagraph(reportJavaAnalysisText(run)))
 	}
 
 	body.WriteString(docxParagraph("漏洞明细（"+strconv.Itoa(len(findings))+"）", "Heading1"))
@@ -282,6 +299,10 @@ func docxFindingXML(number int, finding map[string]any) string {
 	}
 	if label, related := reportRelatedLocation(finding); related != "" {
 		body.WriteString(docxParagraph(label+"："+related, "Location"))
+	}
+	if trace := reportNullnessTraceText(finding); trace != "" {
+		body.WriteString(docxParagraph("空值传播路径", "Heading2"))
+		body.WriteString(docxCodeParagraph(trace))
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {
 		body.WriteString(docxParagraph("相关代码", "Heading3"))
