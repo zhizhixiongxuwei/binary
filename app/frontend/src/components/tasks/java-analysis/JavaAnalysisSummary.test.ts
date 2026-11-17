@@ -20,10 +20,10 @@ describe('Java coverage presentation', () => {
     const html = await renderToString(createSSRApp(JavaAnalysisSummary, { run: run() }))
     expect(html).toContain('覆盖统计未知')
     expect(html).not.toContain('100%')
-    expect(html).toContain('检测结果不完整')
+    expect(html).not.toContain('检测结果不完整')
   })
 
-  it('explains real parser failures and skipped bytecode analysis', async () => {
+  it('keeps diagnostic details out of the finding view without changing the record', async () => {
     const value = run()
     value.diagnostic_count = 73
     value.coverage = { total_files: 276, analyzed_files: 204, parsed_files: 204, failed_files: 72, recovered_files: null }
@@ -32,7 +32,11 @@ describe('Java coverage presentation', () => {
       diagnosticCount: 73, diagnostics: [{ code: 'PARSE_ERROR', path: 'Foo.java', message: 'Bad syntax' }], diagnosticsTruncated: false, findingsTruncated: false,
       engines: { source: { status: 'partial' }, bytecode: { status: 'skipped', reason: 'input_too_large' } },
     }
+    const original = JSON.stringify(value)
     const html = await renderToString(createSSRApp(JavaAnalysisSummary, { run: value }))
-    for (const expected of ['72 个文件未成功解析', '输入超过分析上限', '73 条诊断', 'Bad syntax']) expect(html).toContain(expected)
+    for (const diagnostic of ['检测结果不完整', '源码引擎', '字节码引擎', '73 条诊断', 'Bad syntax', 'PARSE_ERROR']) expect(html).not.toContain(diagnostic)
+    expect(html).toContain('已结束')
+    expect(html).toContain('204/276')
+    expect(JSON.stringify(value)).toBe(original)
   })
 })

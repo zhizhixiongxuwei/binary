@@ -1,0 +1,4 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Mon Nov 16 11:56:59 UTC 2026
+6f3bdd9bdbd044b9c16f7ddd28e8835c65591a5e@default-maven-public-http\://172.28.0.13\:8082/repository/maven-public/.lastUpdated=1794830219530
+http\://172.28.0.13\:8082/repository/maven-public/.error=Could not transfer artifact org.springframework.boot\:spring-boot-starter-parent\:pom\:3.5.16 from/to maven-public (http\://172.28.0.13\:8082/repository/maven-public/)\: Connect to 172.28.0.13\:8082 [/172.28.0.13] failed\: Connect timed out

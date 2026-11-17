@@ -11,6 +11,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  */
 @SpringBootApplication
 public class JavaCheckerApplication {
+    @org.springframework.context.annotation.Bean
+    org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer projectJsonLimits(){
+        return builder->builder.postConfigurer(mapper->mapper.getFactory().setStreamReadConstraints(ProjectRequestLimitFilter.constraints()));
+    }
     public static void main(String[] args) {
         SpringApplication.run(JavaCheckerApplication.class, args);
     }

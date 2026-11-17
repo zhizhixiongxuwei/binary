@@ -9,6 +9,35 @@ function event(analyzer: string, phase: string, type = 'decompile.progress'): Ta
 }
 
 describe('task log business presentation', () => {
+  it('shows archive preparation module counters with their real unit', () => {
+    const message = event('vineflower', 'preparing')
+    message.data.payload = { analyzer: 'vineflower', phase: 'preparing', current: 50, total: 100, unit: 'modules' }
+    expect(toTaskExecutionLogEntry(message)?.detailLabel).toBe('模块 50 / 100')
+  })
+
+  it('recovers a missing zero module counter from historical progress events', () => {
+    const message = event('vineflower', 'decompiling')
+    message.data.payload = { analyzer: 'vineflower', phase: 'decompiling', current: 212, total: 212, module_total: 21, unit: 'classes' }
+    const entry = toTaskExecutionLogEntry(message)
+    expect(entry?.moduleCurrent).toBe(0)
+    expect(entry?.detailLabel).toContain('模块 1 / 21')
+    expect(entry?.progressLabel).toBe('5%')
+  })
+
+  it('preserves structured decompiler cancellation events', () => {
+    const entry = toTaskExecutionLogEntry(event('vineflower', 'cancelled', 'decompile.cancelled'))
+    expect(entry?.phase).toBe('cancelled')
+    expect(entry?.title).toContain('已取消')
+  })
+
+  it('labels iterative analysis work separately from source files', () => {
+    const message = event('java-checker', 'analyzing', 'analysis.progress')
+    message.data.payload = { analyzer: 'java-checker', phase: 'analyzing', current: 636, total: 11448, unit: 'steps' }
+    const entry = toTaskExecutionLogEntry(message)
+    expect(entry?.detailLabel).toBe('分析单元 636 / 11448')
+    expect(entry?.detailLabel).not.toContain('文件')
+  })
+
   it.each(['ghidra', 'vineflower', 'cfr', 'jadx', 'pycdc', 'python-bytecode'])('relabels historical %s events without changing the record', (analyzer) => {
     for (const [phase, type] of [['starting', 'decompile.progress'], ['running', 'decompile.progress'],
       ['completed', 'decompile.completed'], ['failed', 'decompile.failed']]) {

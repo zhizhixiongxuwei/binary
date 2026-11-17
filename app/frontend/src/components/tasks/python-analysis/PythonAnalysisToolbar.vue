@@ -30,7 +30,7 @@ const statusLabels: Readonly<Record<PythonAnalysisRun['status'], string>> = {
   queued: '排队中',
   running: '检测中',
   succeeded: '已完成',
-  partial: '部分完成',
+  partial: '已结束',
   failed: '失败',
   cancel_requested: '正在取消',
   cancelled: '已取消',

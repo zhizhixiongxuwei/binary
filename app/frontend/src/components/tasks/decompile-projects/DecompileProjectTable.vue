@@ -58,14 +58,13 @@ const analysisStatusLabels: Readonly<Record<CAnalysisRun['status'], string>> = {
   cancelled: '已取消',
 }
 
-type SourceAnalysisRun = Pick<CAnalysisRun, 'status' | 'finding_count'> & { diagnostic_count: number | null }
+type SourceAnalysisRun = Pick<CAnalysisRun, 'status' | 'finding_count'>
 
 function analysisStatusLabel(run: SourceAnalysisRun | undefined): string {
   if (!run) return '未执行'
   const status = analysisStatusLabels[run.status]
   if (run.status === 'succeeded' || run.status === 'partial') {
-    const diagnostics = run.diagnostic_count === null ? ' · 诊断数未知' : run.diagnostic_count > 0 ? ` · ${run.diagnostic_count} 条诊断` : ''
-    return `${status} · ${run.finding_count} 条发现${diagnostics}`
+    return `${status} · ${run.finding_count} 条发现`
   }
   return status
 }
@@ -180,82 +179,98 @@ function engineLabel(project: DecompileProject): string {
         {{ formatDateTime(project.completed_at || project.created_at) }}
       </time>
       <div class="project-actions" role="cell" data-label="操作">
-        <button
-          v-if="canAnalyze && supportsCAnalysis(project)"
-          type="button"
-          title="对该源码项目执行 C 检测"
-          :aria-label="`对源码项目 ${project.id} 执行 C 检测`"
-          :disabled="
-            analysisActive(latestCAnalysisByProject[project.id]) ||
-              Boolean(deletingProjectId) ||
-              Boolean(downloadingProjectId)
-          "
-          @click="$emit('analyze', project)"
-        >
-          <ScanSearch :size="14" aria-hidden="true" />
-        </button>
-        <button
-          v-if="canAnalyze && supportsJavaAnalysis(project)"
-          type="button"
-          title="对该源码项目执行 Java 检测"
-          :aria-label="`对源码项目 ${project.id} 执行 Java 检测`"
-          :disabled="
-            javaAnalysisActive(latestJavaAnalysisByProject[project.id]) ||
-              Boolean(deletingProjectId) ||
-              Boolean(downloadingProjectId)
-          "
-          @click="$emit('analyzeJava', project)"
-        >
-          <FileCode2 :size="14" aria-hidden="true" />
-        </button>
-        <button
-          v-if="canAnalyze && supportsPythonAnalysis(project)"
-          type="button"
-          title="对该源码项目执行 Python 检测"
-          :aria-label="`对源码项目 ${project.id} 执行 Python 检测`"
-          :disabled="
-            pythonAnalysisActive(latestPythonAnalysisByProject[project.id]) ||
-              Boolean(deletingProjectId) ||
-              Boolean(downloadingProjectId)
-          "
-          @click="$emit('analyzePython', project)"
-        >
-          <FileCode2 :size="14" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          title="下载源码项目"
-          :aria-label="`下载源码项目 ${project.id}`"
-          :aria-busy="downloadingProjectId === project.id"
-          :disabled="Boolean(downloadingProjectId) || deletingProjectId === project.id"
-          @click="$emit('download', project)"
-        >
-          <LoaderCircle
-            v-if="downloadingProjectId === project.id"
-            class="spin"
-            :size="14"
-            aria-hidden="true"
-          />
-          <Download v-else :size="14" aria-hidden="true" />
-        </button>
-        <button
-          v-if="canDelete"
-          type="button"
-          class="project-actions__delete"
-          title="删除源码项目版本"
-          :aria-label="`删除源码项目版本 ${project.id}`"
-          :aria-busy="deletingProjectId === project.id"
-          :disabled="Boolean(deletingProjectId) || downloadingProjectId === project.id"
-          @click="$emit('delete', project)"
-        >
-          <LoaderCircle
-            v-if="deletingProjectId === project.id"
-            class="spin"
-            :size="14"
-            aria-hidden="true"
-          />
-          <Trash2 v-else :size="14" aria-hidden="true" />
-        </button>
+        <el-tooltip v-if="canAnalyze && supportsCAnalysis(project)" content="对该源码项目执行 C 检测" placement="top" :show-after="150">
+          <span class="project-actions__tooltip">
+            <button
+              type="button"
+              title="对该源码项目执行 C 检测"
+              :aria-label="`对源码项目 ${project.id} 执行 C 检测`"
+              :disabled="
+                analysisActive(latestCAnalysisByProject[project.id]) ||
+                  Boolean(deletingProjectId) ||
+                  Boolean(downloadingProjectId)
+              "
+              @click="$emit('analyze', project)"
+            >
+              <ScanSearch :size="14" aria-hidden="true" />
+            </button>
+          </span>
+        </el-tooltip>
+        <el-tooltip v-if="canAnalyze && supportsJavaAnalysis(project)" content="对该源码项目执行 Java 检测" placement="top" :show-after="150">
+          <span class="project-actions__tooltip">
+            <button
+              type="button"
+              title="对该源码项目执行 Java 检测"
+              :aria-label="`对源码项目 ${project.id} 执行 Java 检测`"
+              :disabled="
+                javaAnalysisActive(latestJavaAnalysisByProject[project.id]) ||
+                  Boolean(deletingProjectId) ||
+                  Boolean(downloadingProjectId)
+              "
+              @click="$emit('analyzeJava', project)"
+            >
+              <FileCode2 :size="14" aria-hidden="true" />
+            </button>
+          </span>
+        </el-tooltip>
+        <el-tooltip v-if="canAnalyze && supportsPythonAnalysis(project)" content="对该源码项目执行 Python 检测" placement="top" :show-after="150">
+          <span class="project-actions__tooltip">
+            <button
+              type="button"
+              title="对该源码项目执行 Python 检测"
+              :aria-label="`对源码项目 ${project.id} 执行 Python 检测`"
+              :disabled="
+                pythonAnalysisActive(latestPythonAnalysisByProject[project.id]) ||
+                  Boolean(deletingProjectId) ||
+                  Boolean(downloadingProjectId)
+              "
+              @click="$emit('analyzePython', project)"
+            >
+              <FileCode2 :size="14" aria-hidden="true" />
+            </button>
+          </span>
+        </el-tooltip>
+        <el-tooltip content="下载源码项目" placement="top" :show-after="150">
+          <span class="project-actions__tooltip">
+            <button
+              type="button"
+              title="下载源码项目"
+              :aria-label="`下载源码项目 ${project.id}`"
+              :aria-busy="downloadingProjectId === project.id"
+              :disabled="Boolean(downloadingProjectId) || deletingProjectId === project.id"
+              @click="$emit('download', project)"
+            >
+              <LoaderCircle
+                v-if="downloadingProjectId === project.id"
+                class="spin"
+                :size="14"
+                aria-hidden="true"
+              />
+              <Download v-else :size="14" aria-hidden="true" />
+            </button>
+          </span>
+        </el-tooltip>
+        <el-tooltip v-if="canDelete" content="删除源码项目版本" placement="top" :show-after="150">
+          <span class="project-actions__tooltip">
+            <button
+              type="button"
+              class="project-actions__delete"
+              title="删除源码项目版本"
+              :aria-label="`删除源码项目版本 ${project.id}`"
+              :aria-busy="deletingProjectId === project.id"
+              :disabled="Boolean(deletingProjectId) || downloadingProjectId === project.id"
+              @click="$emit('delete', project)"
+            >
+              <LoaderCircle
+                v-if="deletingProjectId === project.id"
+                class="spin"
+                :size="14"
+                aria-hidden="true"
+              />
+              <Trash2 v-else :size="14" aria-hidden="true" />
+            </button>
+          </span>
+        </el-tooltip>
       </div>
     </div>
   </div>
@@ -268,6 +283,7 @@ function engineLabel(project: DecompileProject): string {
 </template>
 
 <style scoped>
+.project-actions__tooltip { display: inline-flex; }
 .project-table__header,
 .project-row {
   display: grid;

@@ -222,6 +222,7 @@ export interface ApiClient {
     taskId: string,
     includeCombined?: boolean,
   ): Promise<ReportDownload>
+  downloadProjectExport(taskId: string): Promise<ReportDownload>
   listTaskVulnerabilities(
     taskId: string,
     query?: VulnerabilityListQuery,

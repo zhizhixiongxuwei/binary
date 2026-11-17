@@ -35,6 +35,7 @@ public final class ExportPseudoC extends GhidraScript {
             }
             if (functions.size() >= maxFunctions) {
                 partial = true;
+				println("BINARYSCAN_DIAGNOSTIC function count exceeded output limit " + maxFunctions);
                 break;
             }
             functions.add(function);
@@ -43,6 +44,8 @@ public final class ExportPseudoC extends GhidraScript {
 
         long written = 0;
         int ordinal = 0;
+		int processed = 0;
+		println("BINARYSCAN_PROGRESS decompiling 0 " + functions.size() + " functions");
         DecompInterface decompiler = new DecompInterface();
         if (!decompiler.openProgram(currentProgram)) {
             throw new IllegalStateException("Ghidra decompiler cannot open the imported program");
@@ -51,13 +54,17 @@ public final class ExportPseudoC extends GhidraScript {
             for (Function function : functions) {
                 monitor.checkCancelled();
                 DecompileResults result = decompiler.decompileFunction(function, 60, monitor);
+				processed++;
+				println("BINARYSCAN_PROGRESS decompiling " + processed + " " + functions.size() + " functions");
                 if (!result.decompileCompleted() || result.getDecompiledFunction() == null) {
                     partial = true;
+					println("BINARYSCAN_DIAGNOSTIC function " + function.getEntryPoint() + " failed: " + result.getErrorMessage());
                     continue;
                 }
                 byte[] source = result.getDecompiledFunction().getC().getBytes(StandardCharsets.UTF_8);
                 if (source.length > maxBytes - written) {
                     partial = true;
+					println("BINARYSCAN_DIAGNOSTIC source output exceeded byte limit " + maxBytes);
                     break;
                 }
                 String address = function.getEntryPoint().toString().replaceAll("[^A-Za-z0-9_-]", "_");

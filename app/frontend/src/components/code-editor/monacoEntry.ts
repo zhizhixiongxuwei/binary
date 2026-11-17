@@ -1,5 +1,7 @@
 import 'monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution.js'
 import 'monaco-editor/esm/vs/basic-languages/java/java.contribution.js'
+import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution.js'
+import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution.js'
 
 import 'monaco-editor/esm/vs/editor/contrib/folding/browser/folding.js'
 

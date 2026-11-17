@@ -1059,6 +1059,9 @@ export function createDemoApiClient(options: DemoApiOptions = {}): ApiClient {
       })
     },
 
+    async downloadProjectExport() {
+      throw new ApiError('界面预览不会导出真实项目信息', 501, { code: 'DEMO_READ_ONLY' })
+    },
     async downloadDecompileSources() {
       await delay()
       requireUser()

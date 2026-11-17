@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 // Repository 是任务、运行、尝试记录和资源槽位的统一状态机入口。
@@ -186,8 +188,44 @@ func (r *Repository) Start(ctx context.Context, workerID string, claim Claim) (u
 
 // Heartbeat 仅为当前 owner/token 且尚未过期的租约续期；过期后不允许“复活”，必须重新领取并获得新 token。
 func (r *Repository) Heartbeat(ctx context.Context, workerID string, claim Claim, lease time.Duration) error {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin job heartbeat: %w", err)
+	}
+	defer tx.Rollback()
+	var runID, status string
+	var owner sql.NullString
+	var fence uint64
+	var live sql.NullBool
+	err = tx.QueryRowContext(ctx, `SELECT run_id, status, lease_owner, fencing_token,
+		lease_until > UTC_TIMESTAMP(6) FROM jobs WHERE id = ? FOR UPDATE NOWAIT`, claim.ID).Scan(
+		&runID, &status, &owner, &fence, &live)
+	if isNowaitConflict(err) {
+		_ = tx.Rollback()
+		// A fenced publication can hold this row longer than the original
+		// lease. It prevents reapers from claiming the job, and refreshes the
+		// lease before releasing its lock. Do not wait here and cancel that
+		// publication because of innodb_lock_wait_timeout. A nonlocking read
+		// still rejects an already changed owner/token/status immediately.
+		err = r.db.QueryRowContext(ctx, `SELECT 1 FROM jobs WHERE id = ? AND run_id = ?
+			AND status IN ('leased', 'running') AND lease_owner = ? AND fencing_token = ?`,
+			claim.ID, claim.RunID, workerID, claim.FencingToken).Scan(new(int))
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrFenceLost
+		}
+		return err
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrFenceLost
+	}
+	if err != nil {
+		return fmt.Errorf("lock heartbeat job %d: %w", claim.ID, err)
+	}
+	if runID != claim.RunID || !owner.Valid || owner.String != workerID || fence != claim.FencingToken || (status != "leased" && status != "running") || !live.Valid || !live.Bool {
+		return ErrFenceLost
+	}
 	leaseSeconds := int64(lease / time.Second)
-	result, err := r.db.ExecContext(ctx, `UPDATE jobs
+	result, err := tx.ExecContext(ctx, `UPDATE jobs
         SET heartbeat_at = UTC_TIMESTAMP(6),
             lease_until = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL ? SECOND)
         WHERE id = ? AND status IN ('leased', 'running')
@@ -199,7 +237,12 @@ func (r *Repository) Heartbeat(ctx context.Context, workerID string, claim Claim
 	if err := requireOneRow(result); err != nil {
 		return ErrFenceLost
 	}
-	return nil
+	return tx.Commit()
+}
+
+func isNowaitConflict(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 3572
 }
 
 // Complete 在一个事务中结束 job、attempt 和 run，更新任务聚合状态并释放资源槽。
@@ -248,6 +291,9 @@ func (r *Repository) Complete(ctx context.Context, workerID string, claim Claim,
 	}
 	if err := updateTaskForCompletion(ctx, tx, claim, completion); err != nil {
 		return err
+	}
+	if err := recordCompletionProgress(ctx, tx, claim, completion); err != nil {
+		return fmt.Errorf("record run completion progress: %w", err)
 	}
 	slotResult, err := tx.ExecContext(ctx, `UPDATE resource_slots
         SET job_id = NULL, fencing_token = NULL, lease_owner = NULL, acquired_at = NULL
@@ -352,10 +398,11 @@ func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql
 		return fmt.Errorf("begin fenced publication: %w", err)
 	}
 	defer tx.Rollback()
-	var valid int
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM jobs
+	var leaseSeconds int64
+	if err := tx.QueryRowContext(ctx, `SELECT GREATEST(30,
+		COALESCE(TIMESTAMPDIFF(SECOND, heartbeat_at, lease_until), 60)) FROM jobs
         WHERE id = ? AND run_id = ? AND status = 'running' AND fencing_token = ?
-          AND lease_until > UTC_TIMESTAMP(6) FOR UPDATE`, claim.ID, claim.RunID, claim.FencingToken).Scan(&valid); err != nil {
+          AND lease_until > UTC_TIMESTAMP(6) FOR UPDATE`, claim.ID, claim.RunID, claim.FencingToken).Scan(&leaseSeconds); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrFenceLost
 		}
@@ -375,6 +422,17 @@ func (r *Repository) WithFence(ctx context.Context, claim Claim, apply func(*sql
 	}
 	if err := apply(tx); err != nil {
 		return err
+	}
+	// Holding the job's exclusive lock protects the fence throughout apply,
+	// even when source registration outlasts the lease. Heartbeats/reapers
+	// cannot modify the row in that interval. Restore a full lease before
+	// committing so completion and the next heartbeat never see an expired
+	// lease immediately after a successful, possibly slow publication.
+	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET heartbeat_at = UTC_TIMESTAMP(6),
+		lease_until = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL ? SECOND)
+		WHERE id = ? AND run_id = ? AND status = 'running' AND fencing_token = ?`,
+		leaseSeconds, claim.ID, claim.RunID, claim.FencingToken); err != nil {
+		return fmt.Errorf("renew publication lease: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE runs
         SET published_at = COALESCE(published_at, UTC_TIMESTAMP(6))

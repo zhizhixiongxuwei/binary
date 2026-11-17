@@ -25,7 +25,7 @@ final class JavaAnalyzerTest {
     }
 
     @Test
-    void coversAllRegisteredRuleFamilies() {
+    void coversAllLocalAstRuleFamilies() {
         String content = """
             package example;
             import java.io.*;
@@ -79,8 +79,10 @@ final class JavaAnalyzerTest {
             .map(Models.Finding::ruleId).collect(Collectors.toSet());
 
         assertEquals(Set.of(), Set.copyOf(analysis.diagnostics()));
-        assertEquals(JavaAnalyzer.RULE_IDS, actual);
-        for (String id : JavaAnalyzer.RULE_IDS) {
+        var localRules = new java.util.HashSet<>(JavaAnalyzer.RULE_IDS);
+        localRules.removeAll(Set.of(SecurityAnalysis.JACKSON, SecurityAnalysis.JWT, SecurityAnalysis.WEB_EXEC, SecurityAnalysis.CLASS_LOAD, SecurityAnalysis.WEB_IMPLANT, SecurityAnalysis.AUTH_BYPASS));
+        assertEquals(localRules, actual);
+        for (String id : localRules) {
             var selected = new JavaAnalyzer().analyze(new Models.SourceFile("Rules.java", content), Set.of(id));
             assertEquals(0, selected.diagnostics().size(), id);
             assertEquals(Set.of(id), selected.findings().stream().map(Models.Finding::ruleId).collect(Collectors.toSet()), id);

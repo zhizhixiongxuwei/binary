@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { AlertTriangle, CircleCheck, Cpu, FileWarning } from 'lucide-vue-next'
+import { AlertTriangle, CircleCheck, Cpu } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import type { PythonAnalysisRun, PythonAnalysisSeverity } from '@/api/types'
 import RuleSelectionSummary from '@/components/tasks/analysis-rules/RuleSelectionSummary.vue'
 import { formatBytes, formatDateTime } from '@/utils/formatters'
-import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
+import { analysisEngineLabel } from '@/utils/analysisPresentation'
 
 const props = defineProps<{
   run: PythonAnalysisRun
@@ -15,7 +15,7 @@ const statusLabels: Readonly<Record<PythonAnalysisRun['status'], string>> = {
   queued: '排队中',
   running: '检测中',
   succeeded: '已完成',
-  partial: '部分完成',
+  partial: '已结束',
   failed: '失败',
   cancel_requested: '正在取消',
   cancelled: '已取消',
@@ -82,24 +82,12 @@ const coveragePercent = computed(() =>
     <span><small>检测器</small><span>{{ analysisEngineLabel(run.analyzer_name) }}</span></span>
     <span><small>规则集</small><code>{{ run.ruleset_version || '等待引擎返回' }}</code></span>
     <span><small>源码</small><code>{{ formatBytes(run.source_size_bytes) }} · {{ run.source_file_count }} 文件</code></span>
-    <span><small>解析诊断</small><code>{{ run.diagnostic_count }}</code></span>
     <span><small>创建时间</small><time :datetime="run.created_at">{{ formatDateTime(run.created_at) }}</time></span>
   </section>
 
-  <div
-    v-if="run.status === 'partial' || run.findings_truncated || run.diagnostics_truncated"
-    class="analysis-notice"
-    role="status"
-  >
-    <FileWarning :size="16" aria-hidden="true" />
-    <span>
-      检测结果不完整：{{ run.coverage.failed_files }} 个文件未成功解析<span v-if="run.findings_truncated">，发现数量达到上限</span><span v-if="run.diagnostics_truncated">，诊断数量达到上限</span>。
-    </span>
-  </div>
-
   <div v-if="run.error_message" class="analysis-error" role="alert">
     <AlertTriangle :size="16" aria-hidden="true" />
-    <span><code>{{ run.error_code || 'python_analysis_failed' }}</code>{{ analysisMessage(run.error_message) }}</span>
+    <span>检测未能完成，可在任务信息中导出项目全部信息查看详情。</span>
   </div>
 </template>
 
@@ -137,7 +125,7 @@ const coveragePercent = computed(() =>
 
 .analysis-meta {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   border-bottom: 1px solid var(--line);
   background: var(--line);

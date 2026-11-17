@@ -168,7 +168,7 @@ func writeHTMLFinding(output *strings.Builder, number int, finding map[string]an
 		output.WriteString(`<p class="location"><strong>` + html.EscapeString(label) + `：</strong><code>` + html.EscapeString(related) + `</code></p>`)
 	}
 	if trace := reportNullnessTraceText(finding); trace != "" {
-		output.WriteString(`<h4>空值传播路径</h4><pre>` + html.EscapeString(trace) + `</pre>`)
+		output.WriteString(`<h4>` + reportTraceTitle(finding) + `</h4><pre>` + html.EscapeString(trace) + `</pre>`)
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {
 		output.WriteString(`<pre><code>` + html.EscapeString(snippet) + `</code></pre>`)
@@ -301,7 +301,7 @@ func docxFindingXML(number int, finding map[string]any) string {
 		body.WriteString(docxParagraph(label+"："+related, "Location"))
 	}
 	if trace := reportNullnessTraceText(finding); trace != "" {
-		body.WriteString(docxParagraph("空值传播路径", "Heading2"))
+		body.WriteString(docxParagraph(reportTraceTitle(finding), "Heading2"))
 		body.WriteString(docxCodeParagraph(trace))
 	}
 	if snippet := reportText(finding["snippet"]); snippet != "" {

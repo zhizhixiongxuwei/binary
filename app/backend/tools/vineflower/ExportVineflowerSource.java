@@ -1,6 +1,7 @@
 import org.jetbrains.java.decompiler.code.Instruction;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.Fernflower;
+import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeSourceMapper;
 import org.jetbrains.java.decompiler.main.decompiler.DirectoryResultSaver;
 import org.jetbrains.java.decompiler.main.decompiler.PrintStreamLogger;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.JarFile;
 
 import static org.jetbrains.java.decompiler.code.CodeConstants.*;
@@ -32,7 +34,7 @@ public final class ExportVineflowerSource {
     private static final int MAX_BYTES = 16 << 20;
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 3) throw new IllegalArgumentException("expected input, output directory and mapping file");
+        if (args.length < 3 || args.length > 4) throw new IllegalArgumentException("expected input, output directory, mapping file and optional library paths");
         File input = new File(args[0]);
         File output = new File(args[1]);
         boolean standalone = input.getName().endsWith(".class");
@@ -41,6 +43,9 @@ public final class ExportVineflowerSource {
         if (access == null || (!standalone && ambiguousArchive(input))) mapping.disable();
         var decompiler = new MappingDecompiler(output, standalone, mapping, access);
         try {
+            if (args.length == 4 && !args[3].isBlank()) for (String library : args[3].split(java.util.regex.Pattern.quote(File.pathSeparator))) {
+                if (!library.isBlank()) decompiler.addLibrary(new File(library));
+            }
             decompiler.addSource(input);
             decompiler.decompileContext();
         } finally {
@@ -72,6 +77,8 @@ public final class ExportVineflowerSource {
         private final MapperAccess access;
         private final Set<String> classes = new HashSet<>();
         private final Map<StructClass, String> outputPaths = new ConcurrentHashMap<>();
+		private final AtomicInteger processed = new AtomicInteger();
+		private volatile int progressTotal;
 
         MappingDecompiler(File output, boolean standalone, Mapping mapping, MapperAccess access) {
             super(new SafeDirectorySaver(output), Map.of(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
@@ -83,6 +90,11 @@ public final class ExportVineflowerSource {
 
         @Override
         public String getClassEntryName(StructClass type, String inputEntry) {
+			if (progressTotal == 0) {
+				progressTotal = (int) DecompilerContext.getClassProcessor().getMapRootClasses().values().stream()
+					.filter(node -> node.type == ClassNode.Type.ROOT && node.classStruct.isOwn()).count();
+				progress(0);
+			}
             String entry = super.getClassEntryName(type, inputEntry);
             if (!mapping.disabled) {
                 if (classes.size() == MAX_ROWS || !classes.add(type.qualifiedName)) mapping.disable();
@@ -92,6 +104,19 @@ public final class ExportVineflowerSource {
             }
             return entry;
         }
+
+		@Override
+		public void processClass(StructClass type) throws IOException {
+			try {
+				super.processClass(type);
+			} finally {
+				progress(processed.incrementAndGet());
+			}
+		}
+
+		private void progress(int current) {
+			System.out.println("BINARYSCAN_PROGRESS decompiling " + current + " " + progressTotal + " classes");
+		}
 
         @Override
         public String getClassContent(StructClass type) {

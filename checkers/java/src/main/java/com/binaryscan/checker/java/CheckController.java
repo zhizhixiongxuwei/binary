@@ -50,31 +50,24 @@ final class CheckController {
         final List<String> applied;
         try { applied = RuleCatalog.selection(request.ruleIds(), request.catalogVersion()); }
         catch (IllegalArgumentException failure) { throw new InvalidRequest(); }
-        var findings = new ArrayList<Models.Finding>();
-        var diagnostics = new ArrayList<String>();
-        var details = new ArrayList<Models.Diagnostic>();
-        int parsed = 0, methods = 0;
-        for (Models.SourceFile file : request.files()) {
-            validatePath(file.path());
-            JavaAnalyzer.Analysis result = analyzer.analyze(file, Set.copyOf(applied));
-            findings.addAll(result.findings());
-            diagnostics.addAll(result.diagnostics());
-            details.addAll(result.diagnosticDetails());
-            if (result.parsed()) { parsed++; methods += result.methods(); }
+        java.nio.file.Path root = null;
+        var staged = new ArrayList<java.nio.file.Path>();
+        try {
+            root = java.nio.file.Files.createTempDirectory("java-check-");
+            var inputs = new ArrayList<ProjectAnalyzer.Input>();
+            for (var file : request.files()) {
+                validatePath(file.path());
+                var destination = root.resolve(Integer.toString(staged.size()));
+                java.nio.file.Files.writeString(destination, file.content()); staged.add(destination);
+                inputs.add(new ProjectAnalyzer.Input(file.path(), destination));
+            }
+            return ProjectAnalyzer.analyze(request.projectId(), inputs, applied, analyzer);
+        } catch (java.io.IOException failure) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "bounded source analysis workspace unavailable");
+        } finally {
+            for(var file:staged)try{java.nio.file.Files.deleteIfExists(file);}catch(java.io.IOException ignored){}
+            if(root!=null)try{java.nio.file.Files.deleteIfExists(root);}catch(java.io.IOException ignored){}
         }
-        String status = diagnostics.isEmpty() ? "complete" : "partial";
-        boolean findingsTruncated = findings.size() > 10_000;
-        if (findingsTruncated) {
-            // 对外契约明确标记 partial，调用方不会把“被截断”误解为完整无遗漏结果。
-            findings = new ArrayList<>(findings.subList(0, 10_000));
-            diagnostics.add("finding limit reached");
-            status = "partial";
-        }
-        boolean diagnosticsTruncated = diagnostics.size() > 1000 || details.size() > 1000;
-        return new Models.CheckResponse("checker-v1", request.projectId(), status, findings,
-            List.copyOf(diagnostics.subList(0, Math.min(1000, diagnostics.size()))), RuleCatalog.VERSION, applied,
-            new Models.Coverage(request.files().size(), parsed, request.files().size() - parsed, parsed, methods, methods, 0),
-            List.copyOf(details.subList(0, Math.min(1000, details.size()))), findingsTruncated, diagnosticsTruncated);
     }
 
     @GetMapping("/v1/rules")
@@ -87,7 +80,7 @@ final class CheckController {
         }
         if (request.files().stream().anyMatch(file -> file == null || file.content() == null)) throw new InvalidRequest();
         long bytes = request.files().stream().mapToLong(file -> file.content().getBytes(StandardCharsets.UTF_8).length).sum();
-        if (bytes > 128L * 1024 * 1024 || request.files().stream().anyMatch(file -> file.content().getBytes(StandardCharsets.UTF_8).length > 4L << 20)) {
+        if (bytes > 128L * 1024 * 1024 || request.files().stream().anyMatch(file -> file.content().getBytes(StandardCharsets.UTF_8).length > ((DependencyIndex.PATH.equals(file.path())?24L:4L) << 20))) {
             throw new InvalidRequest();
         }
     }

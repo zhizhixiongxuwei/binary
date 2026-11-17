@@ -23,21 +23,22 @@ const (
 
 // Manifest 是已发布源码项目的自描述索引，绑定输入 Blob、生成工具和每个源码文件的摘要。
 type Manifest struct {
-	Version      string            `json:"version"`
-	ProjectID    string            `json:"projectId"`
-	RunID        string            `json:"runId"`
-	InputBlobID  string            `json:"inputBlobId"`
-	InputSHA256  string            `json:"inputSha256"`
-	InputPath    string            `json:"inputPath"`
-	Kind         string            `json:"kind"`
-	Language     string            `json:"language"`
-	Quality      string            `json:"quality"`
-	ToolName     string            `json:"toolName"`
-	ToolVersion  string            `json:"toolVersion"`
-	Files        []ManifestFile    `json:"files"`
-	JVMSourceMap *ManifestSidecar  `json:"jvmSourceMap,omitempty"`
-	JVMArchive   *jvmarchive.Scope `json:"jvmArchive,omitempty"`
-	PublishedAt  time.Time         `json:"publishedAt"`
+	Version       string            `json:"version"`
+	ProjectID     string            `json:"projectId"`
+	RunID         string            `json:"runId"`
+	InputBlobID   string            `json:"inputBlobId"`
+	InputSHA256   string            `json:"inputSha256"`
+	InputPath     string            `json:"inputPath"`
+	Kind          string            `json:"kind"`
+	Language      string            `json:"language"`
+	Quality       string            `json:"quality"`
+	ToolName      string            `json:"toolName"`
+	ToolVersion   string            `json:"toolVersion"`
+	Files         []ManifestFile    `json:"files"`
+	JVMSourceMap  *ManifestSidecar  `json:"jvmSourceMap,omitempty"`
+	JavaTypeIndex *ManifestSidecar  `json:"javaTypeIndex,omitempty"`
+	JVMArchive    *jvmarchive.Scope `json:"jvmArchive,omitempty"`
+	PublishedAt   time.Time         `json:"publishedAt"`
 }
 
 type ManifestFile struct {
@@ -58,12 +59,14 @@ type Publication struct {
 
 // Workspace 是单次反编译运行的私有暂存区；所有输出先完成路径、大小和编码校验，再整体发布。
 type Workspace struct {
-	root         string
-	runID        string
-	files        map[string]ManifestFile
-	maxBytes     int64
-	written      int64
-	jvmSourceMap *ManifestSidecar
+	root             string
+	runID            string
+	files            map[string]ManifestFile
+	maxBytes         int64
+	written          int64
+	jvmSourceMap     *ManifestSidecar
+	javaTypeIndex    *ManifestSidecar
+	javaTypeInputSHA string
 }
 
 func (w *Workspace) Stats() (int, int64) {
@@ -104,7 +107,7 @@ func (w *Workspace) WriteFile(relativePath, language string, source io.Reader) e
 	if err != nil {
 		return err
 	}
-	if cleaned == "project.json" || cleaned == JVMSourceMapPath {
+	if cleaned == "project.json" || cleaned == JVMSourceMapPath || cleaned == jvmarchive.TypeIndexPath {
 		return fmt.Errorf("workspace path %q is reserved for project metadata", cleaned)
 	}
 	if _, exists := w.files[cleaned]; exists {
@@ -170,6 +173,10 @@ func (w *Workspace) PublishProject(finalRoot, projectID string, manifest Manifes
 	manifest.ProjectID = projectID
 	manifest.PublishedAt = time.Now().UTC()
 	manifest.JVMSourceMap = w.jvmSourceMap
+	if w.javaTypeIndex != nil && w.javaTypeInputSHA != manifest.InputSHA256 {
+		return Publication{}, fmt.Errorf("Java type context does not match published input")
+	}
+	manifest.JavaTypeIndex = w.javaTypeIndex
 	manifest.Files = make([]ManifestFile, 0, len(w.files))
 	for _, file := range w.files {
 		manifest.Files = append(manifest.Files, file)

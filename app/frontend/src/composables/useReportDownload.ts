@@ -154,19 +154,18 @@ export function useReportDownload(options: UseReportDownloadOptions) {
     }
   }
 
-  async function downloadSources(includeCombined: boolean): Promise<void> {
+  async function downloadBundle(kind: 'sources' | 'project-info', includeCombined = false): Promise<void> {
     const taskId = toValue(options.taskId)
     if (!taskId || !isEnabled() || pendingKey.value) return
 
     const currentScope = scopeGeneration
-    pendingKey.value = `decompile-sources:${includeCombined ? 'combined' : 'functions'}`
+    pendingKey.value = kind === 'project-info' ? 'project-info' : `decompile-sources:${includeCombined ? 'combined' : 'functions'}`
     error.value = ''
 
     try {
-      const result = await api.downloadDecompileSources(
-        taskId,
-        includeCombined,
-      )
+      const result = kind === 'project-info'
+        ? await api.downloadProjectExport(taskId)
+        : await api.downloadDecompileSources(taskId, includeCombined)
       if (
         currentScope !== scopeGeneration ||
         taskId !== toValue(options.taskId)
@@ -193,7 +192,7 @@ export function useReportDownload(options: UseReportDownloadOptions) {
       }
       const objectUrl = URL.createObjectURL(result.blob)
       scheduleBlobRelease(objectUrl)
-      clickDownload(objectUrl, 'binaryscan-decompile-sources.zip')
+      clickDownload(objectUrl, kind === 'project-info' ? 'binaryscan-project-info.zip' : 'binaryscan-decompile-sources.zip')
     } catch (caught) {
       if (
         currentScope !== scopeGeneration ||
@@ -201,7 +200,7 @@ export function useReportDownload(options: UseReportDownloadOptions) {
       ) {
         return
       }
-      error.value = `导出反编译源码包失败：${errorMessage(caught)}`
+      error.value = `导出${kind === 'project-info' ? '项目全部信息' : '反编译源码包'}失败：${errorMessage(caught)}`
     } finally {
       if (currentScope === scopeGeneration) pendingKey.value = ''
     }
@@ -234,6 +233,7 @@ export function useReportDownload(options: UseReportDownloadOptions) {
     error: readonly(error),
     clearError,
     download,
-    downloadSources,
+    downloadSources: (includeCombined: boolean) => downloadBundle('sources', includeCombined),
+    downloadProjectInfo: () => downloadBundle('project-info'),
   }
 }

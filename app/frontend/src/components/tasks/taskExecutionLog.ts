@@ -2,7 +2,7 @@ import type { JsonValue, TaskEventMessage } from '@/api/types'
 import { analysisEngineLabel } from '@/utils/analysisPresentation'
 
 export type TaskExecutionLogTone = 'neutral' | 'info' | 'warning' | 'error'
-export type TaskWorkflowKind = 'decompile' | 'image-scan' | 'task'
+export type TaskWorkflowKind = 'decompile' | 'source-analysis' | 'image-scan' | 'task'
 
 export interface TaskExecutionLogEntry {
   key: string
@@ -18,6 +18,11 @@ export interface TaskExecutionLogEntry {
   phase: string | null
   current: number | null
   total: number | null
+  analyzer?: string | null
+  runId?: string | null
+  moduleCurrent?: number | null
+  moduleTotal?: number | null
+  elapsedSeconds?: number | null
 }
 
 interface SafeEventSummary {
@@ -122,7 +127,7 @@ function countDetail(
   current: number | null,
   total: number | null,
 ): string | null {
-  if (current === null || total === null || current > total) return null
+  if (current === null || total === null || total <= 0 || current > total) return null
   return `${label} ${current} / ${total}`
 }
 
@@ -130,6 +135,16 @@ function appendElapsed(detail: string | null, seconds: number | null): string | 
   if (seconds === null) return detail
   const elapsed = `已运行 ${seconds} 秒`
   return detail ? `${detail} · ${elapsed}` : elapsed
+}
+
+function decompileCountDetail(payload: JsonRecord, counterLabel: string): string | null {
+  const unit = safePayloadToken(payload, 'unit')
+  const unitLabels: Record<string, string> = { files: '文件', classes: '类', functions: '函数', methods: '方法', modules: '模块', steps: '分析单元' }
+  const detail = countDetail(unitLabels[unit ?? ''] ?? counterLabel, safeCounter(payload, 'current'), safeCounter(payload, 'total'))
+  const total = safeCounter(payload, 'module_total')
+  const current = safeCounter(payload, 'module_current') ?? (total !== null && total > 0 ? 0 : null)
+  const module = current !== null && total !== null ? countDetail('模块', Math.min(current + 1, total), total) : null
+  return [module, detail].filter(Boolean).join(' · ') || null
 }
 
 function decompileSummary(
@@ -147,7 +162,7 @@ function decompileSummary(
 
   if (eventType === 'decompile.progress') {
     if (phase === 'preparing') {
-      return { title: `${operationLabel}：正在准备输入`, detailLabel: null }
+      return { title: `${operationLabel}：正在准备输入`, detailLabel: appendElapsed(decompileCountDetail(payload, counterLabel), safeSeconds(payload)) }
     }
     if (phase === 'starting') {
       return {
@@ -155,19 +170,19 @@ function decompileSummary(
         detailLabel: null,
       }
     }
-    if (phase === 'running') {
+    if (phase === 'running' || phase === 'decompiling') {
       return {
         title: `正在进行${operationLabel}`,
         detailLabel: appendElapsed(
-          countDetail(counterLabel, current, total),
+          decompileCountDetail(payload, counterLabel),
           safeSeconds(payload),
         ),
       }
     }
-    if (phase === 'publishing') {
+    if (phase === 'collecting' || phase === 'uploading' || phase === 'publishing') {
       return {
         title: '正在保存反编译结果',
-        detailLabel: countDetail(counterLabel, current, total),
+        detailLabel: decompileCountDetail(payload, counterLabel),
       }
     }
     return null
@@ -190,7 +205,36 @@ function decompileSummary(
       detailLabel: errorCode ? `错误码 ${errorCode}` : null,
     }
   }
+  if (eventType === 'decompile.cancelled' && phase === 'cancelled') {
+    return { title: `${operationLabel}已取消`, detailLabel: null }
+  }
   return null
+}
+
+function isSourceAnalysisEvent(type: string): boolean {
+  return /^(?:analysis|c_analysis|java_analysis|python_analysis)\./.test(type)
+}
+
+function sourceAnalysisSummary(eventType: string, payload: JsonRecord): SafeEventSummary | null {
+  const analyzer = safePayloadToken(payload, 'analyzer')
+  if (!analyzer || !['java-checker', 'c-checker', 'python-checker'].includes(analyzer)) return null
+  const label = { 'java-checker': 'Java', 'c-checker': 'C', 'python-checker': 'Python' }[analyzer]
+  const phase = safePayloadToken(payload, 'phase') ?? eventType.split('.').pop()
+  const phaseLabels: Record<string, string> = {
+    queued: '等待源码检测', preparing: '正在准备源码', starting: '正在启动源码检测',
+    parsing: '正在解析源码', indexing: '正在建立源码索引', analyzing: '正在检测源码',
+    running: '正在检测源码', collecting: '正在收集检测结果', uploading: '正在上传源码',
+    publishing: '正在保存检测结果', completed: '源码检测已结束', failed: '源码检测失败',
+    cancelled: '源码检测已取消',
+  }
+  const title = phase ? phaseLabels[phase] : undefined
+  if (!title) return null
+  const unit = safePayloadToken(payload, 'unit')
+  const unitLabels: Record<string, string> = { files: '文件', classes: '类', functions: '函数', methods: '方法', rules: '规则', steps: '分析单元' }
+  return {
+    title: `${label} ${title}`,
+    detailLabel: appendElapsed(countDetail(unitLabels[unit ?? ''] ?? '文件', safeCounter(payload, 'current'), safeCounter(payload, 'total')), safeSeconds(payload)),
+  }
 }
 
 function trivyCountDetail(
@@ -303,6 +347,9 @@ function safeSummary(message: TaskEventMessage): SafeEventSummary | null {
   if (message.data.type.startsWith('trivy.')) {
     return trivySummary(message.data.type, payload)
   }
+  if (isSourceAnalysisEvent(message.data.type)) {
+    return sourceAnalysisSummary(message.data.type, payload)
+  }
   return null
 }
 
@@ -312,6 +359,17 @@ function knownStageLabel(value: string | null): string | null {
 }
 
 function progressLabel(message: TaskEventMessage): string | null {
+  const payload = payloadRecord(message.data.payload)
+  const current = payload ? safeCounter(payload, 'current') : null
+  const total = payload ? safeCounter(payload, 'total') : null
+  if (current !== null && total !== null && total > 0 && current <= total) {
+    const moduleTotal = payload ? safeCounter(payload, 'module_total') : null
+    const moduleCurrent = payload ? safeCounter(payload, 'module_current') ?? (moduleTotal !== null && moduleTotal > 0 ? 0 : null) : null
+    const fraction = moduleCurrent !== null && moduleTotal !== null && moduleTotal > 0 && moduleCurrent <= moduleTotal
+      ? Math.min(1, (moduleCurrent + current / total) / moduleTotal)
+      : current / total
+    return `${Math.round(fraction * 100)}%`
+  }
   if (message.data.progress_indeterminate) return '计算中'
   const progress = message.data.progress
   if (
@@ -349,22 +407,22 @@ export function toTaskExecutionLogEntry(
     : message.data.type.startsWith('trivy.')
       || message.data.type === 'image_scan.queued'
       ? 'image-scan'
-      : 'task'
+      : isSourceAnalysisEvent(message.data.type)
+        ? 'source-analysis'
+        : 'task'
   const phase = message.data.type === 'decompile.queued'
     || message.data.type === 'image_scan.queued'
     ? 'queued'
     : payload === null
       ? null
-      : safePayloadToken(payload, 'phase')
+      : safePayloadToken(payload, 'phase') ?? (isSourceAnalysisEvent(message.data.type) ? message.data.type.split('.').pop() ?? null : null)
   return {
     key: String(message.data.sequence),
     sequence: message.data.sequence,
     title: summary.title,
     detailLabel: summary.detailLabel,
     stageLabel: knownStageLabel(message.data.stage),
-    progressLabel: message.data.type.startsWith('task.')
-      ? progressLabel(message)
-      : null,
+    progressLabel: progressLabel(message),
     severityLabel: severity.label,
     tone: severity.tone,
     createdAt: message.data.created_at,
@@ -372,5 +430,10 @@ export function toTaskExecutionLogEntry(
     phase,
     current: payload === null ? null : safeCounter(payload, 'current'),
     total: payload === null ? null : safeCounter(payload, 'total'),
+    analyzer: payload === null ? null : safePayloadToken(payload, 'analyzer'),
+    runId: payload === null ? null : safePayloadToken(payload, 'run_id'),
+    moduleCurrent: payload === null ? null : safeCounter(payload, 'module_current') ?? ((safeCounter(payload, 'module_total') ?? 0) > 0 ? 0 : null),
+    moduleTotal: payload === null ? null : safeCounter(payload, 'module_total'),
+    elapsedSeconds: payload === null ? null : safeSeconds(payload),
   }
 }

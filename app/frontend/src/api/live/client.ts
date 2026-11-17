@@ -632,6 +632,10 @@ function mapJavaSourceFinding(
   const trace = parseJavaNullnessTrace(value.evidence?.nullnessTrace)
   const certainty = value.evidence?.nullnessCertainty
   const modelVersion = value.evidence?.nullnessModelVersion
+  const securityTrace = parseJavaNullnessTrace(value.evidence?.securityTrace)
+  const securityBindings = parseJavaNullnessTrace(value.evidence?.bindingLocations)
+  const securityCertainty = value.evidence?.certainty
+  const securityVersion = value.evidence?.securityModelVersion
   return {
     id: String(value.id), cwe: value.cwe ?? '', rule_id: value.ruleId ?? '', severity: severity(value.severity),
     file: { result_id: projectId, logical_path: value.path ?? '', binary_name: value.path ? displayName(value.path) : '' },
@@ -644,6 +648,13 @@ function mapJavaSourceFinding(
     ...(value.evidence?.traceIncomplete === true ? { nullness_trace_incomplete: true } : {}),
     ...(certainty === 'definite' || certainty === 'possible' ? { nullness_certainty: certainty } : {}),
     ...(typeof modelVersion === 'string' && modelVersion.length <= 128 ? { nullness_model_version: modelVersion } : {}),
+    ...(securityTrace ? { security_trace: securityTrace } : {}),
+    ...(securityBindings ? { security_binding_locations: securityBindings } : {}),
+    ...(securityCertainty === 'possible' || securityCertainty === 'configuration-risk' ? { security_certainty: securityCertainty } : {}),
+    ...(typeof value.evidence?.entryVerified === 'boolean' ? { security_entry_verified: value.evidence.entryVerified } : {}),
+    ...(typeof securityVersion === 'string' && securityVersion.length <= 128 ? { security_model_version: securityVersion } : {}),
+    ...(securityTrace && value.evidence?.traceIncomplete === true ? { security_trace_incomplete: true } : {}),
+    ...(value.evidence?.runtimeOverride === 'unknown' ? { security_runtime_override: 'unknown' } : {}),
     message: value.message,
     ...(snippet !== undefined ? { snippet } : {}),
     snippet_start_line: positiveCoordinate(value.snippetStartLine, location.start_line),
@@ -976,6 +987,19 @@ export function createLiveApiClient(): ApiClient {
     },
     async downloadDecompileSources(taskId, includeCombined = false) {
       return { kind: 'url', url: apiEndpoint(`/tasks/${encode(taskId)}/sources?combined=${includeCombined ? '1' : '0'}`) }
+    },
+    async downloadProjectExport(taskId) {
+      const response = await fetchLiveResponse(`/tasks/${encode(taskId)}/project-export`, {
+        headers: { Accept: 'application/zip' },
+      })
+      if (!response.ok) {
+        const body = parseApiErrorBody(await response.json().catch(() => undefined))
+        throw new ApiError(body?.message ?? '导出项目全部信息失败', response.status, body)
+      }
+      if (!response.headers.get('Content-Type')?.toLowerCase().includes('application/zip')) {
+        throw new ApiError('项目导出响应格式错误，请重试', 502, { code: 'INVALID_PROJECT_EXPORT' })
+      }
+      return { kind: 'blob', blob: await response.blob(), filename: 'binaryscan-project-info.zip' }
     },
     async listTaskVulnerabilities(taskId, query = {}) {
       let findings = (await loadFindings(taskId)).filter((finding) => finding.type === 'vulnerability')

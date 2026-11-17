@@ -192,6 +192,10 @@ func reportJavaAnalysisText(run map[string]any) string {
 func reportNullnessTraceText(finding map[string]any) string {
 	evidence := reportMap(finding["evidence"])
 	steps := reportMapSlice(evidence["nullnessTrace"])
+	if len(steps) == 0 {
+		steps = reportMapSlice(evidence["securityTrace"])
+	}
+	steps = append(steps, reportMapSlice(evidence["bindingLocations"])...)
 	if len(steps) > 32 {
 		steps = steps[:32]
 	}
@@ -203,4 +207,11 @@ func reportNullnessTraceText(finding map[string]any) string {
 		lines = append(lines, fmt.Sprintf("%s %s:%s:%s — %s", reportText(step["kind"]), reportText(step["path"]), reportDisplayText(step["line"]), reportDisplayText(step["column"]), reportText(step["message"])))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func reportTraceTitle(finding map[string]any) string {
+	if len(reportMapSlice(reportMap(finding["evidence"])["securityTrace"])) > 0 {
+		return "安全行为证据"
+	}
+	return "空值传播路径"
 }

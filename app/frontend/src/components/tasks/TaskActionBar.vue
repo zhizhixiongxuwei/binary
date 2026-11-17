@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   Command,
+  Download,
   RotateCcw,
   Square,
   Trash2,
@@ -22,12 +23,15 @@ const props = defineProps<{
   isCreator: boolean
   now?: Date
   pendingAction?: 'cancel' | 'retry' | 'delete' | null
+  exporting?: boolean
+  exportError?: string
 }>()
 
 const emit = defineEmits<{
   cancel: []
   retry: []
   delete: []
+  exportProject: []
 }>()
 
 const cancelDialogOpen = shallowRef(false)
@@ -98,77 +102,98 @@ function confirmDelete(): void {
     </header>
 
     <div class="task-actions__commands" role="group" aria-label="任务操作命令">
-      <div
-        class="task-action"
-        :title="model.cancel.reason"
-        :tabindex="!model.cancel.enabled || operationPending ? 0 : -1"
-        aria-describedby="cancel-action-reason"
-      >
-        <el-button
-          data-action="cancel"
-          size="small"
-          :icon="Square"
-          :loading="pendingAction === 'cancel'"
-          :disabled="!model.cancel.enabled || operationPending"
-          :title="model.cancel.reason"
+      <el-tooltip content="导出项目全部信息（含反编译、源码检测和异常诊断）" placement="top" :show-after="150">
+        <div class="task-action" title="导出项目全部信息（含反编译、源码检测和异常诊断）">
+          <el-button
+            data-action="export-project"
+            size="small"
+            :icon="Download"
+            :loading="exporting"
+            :disabled="mode === 'preview' || exporting || task.status.toUpperCase() === 'DELETING'"
+            title="导出项目全部信息"
+            @click="emit('exportProject')"
+          >导出项目全部信息</el-button>
+        </div>
+      </el-tooltip>
+      <el-tooltip :content="`取消任务${model.cancel.reason ? '：' + model.cancel.reason : ''}`" placement="top" :show-after="150">
+        <div
+          class="task-action"
+          :title="`取消任务${model.cancel.reason ? '：' + model.cancel.reason : ''}`"
+          :tabindex="!model.cancel.enabled || operationPending ? 0 : -1"
           aria-describedby="cancel-action-reason"
-          @click="openCancelDialog"
         >
-          取消
-        </el-button>
-        <span id="cancel-action-reason" class="sr-only">
-          {{ model.cancel.reason }}
-        </span>
-      </div>
+          <el-button
+            data-action="cancel"
+            size="small"
+            :icon="Square"
+            :loading="pendingAction === 'cancel'"
+            :disabled="!model.cancel.enabled || operationPending"
+            :title="`取消任务${model.cancel.reason ? '：' + model.cancel.reason : ''}`"
+            aria-describedby="cancel-action-reason"
+            @click="openCancelDialog"
+          >
+            取消
+          </el-button>
+          <span id="cancel-action-reason" class="sr-only">
+            {{ model.cancel.reason }}
+          </span>
+        </div>
+      </el-tooltip>
 
-      <div
-        class="task-action"
-        :title="model.retry.reason"
-        :tabindex="!model.retry.enabled || operationPending ? 0 : -1"
-        aria-describedby="retry-action-reason"
-      >
-        <el-button
-          data-action="retry"
-          size="small"
-          :icon="RotateCcw"
-          :loading="pendingAction === 'retry'"
-          :disabled="!model.retry.enabled || operationPending"
-          :title="model.retry.reason"
+      <el-tooltip :content="`重新检测${model.retry.reason ? '：' + model.retry.reason : ''}`" placement="top" :show-after="150">
+        <div
+          class="task-action"
+          :title="`重新检测${model.retry.reason ? '：' + model.retry.reason : ''}`"
+          :tabindex="!model.retry.enabled || operationPending ? 0 : -1"
           aria-describedby="retry-action-reason"
-          @click="retryTask"
         >
-          重检
-        </el-button>
-        <span id="retry-action-reason" class="sr-only">
-          {{ model.retry.reason }}
-        </span>
-      </div>
+          <el-button
+            data-action="retry"
+            size="small"
+            :icon="RotateCcw"
+            :loading="pendingAction === 'retry'"
+            :disabled="!model.retry.enabled || operationPending"
+            :title="`重新检测${model.retry.reason ? '：' + model.retry.reason : ''}`"
+            aria-describedby="retry-action-reason"
+            @click="retryTask"
+          >
+            重检
+          </el-button>
+          <span id="retry-action-reason" class="sr-only">
+            {{ model.retry.reason }}
+          </span>
+        </div>
+      </el-tooltip>
 
-      <div
-        class="task-action task-action--danger"
-        :title="model.delete.reason"
-        :tabindex="!model.delete.enabled || operationPending ? 0 : -1"
-        aria-describedby="delete-action-reason"
-      >
-        <el-button
-          data-action="delete"
-          size="small"
-          type="danger"
-          plain
-          :icon="Trash2"
-          :loading="pendingAction === 'delete'"
-          :disabled="!model.delete.enabled || operationPending"
-          :title="model.delete.reason"
+      <el-tooltip :content="`删除任务${model.delete.reason ? '：' + model.delete.reason : ''}`" placement="top" :show-after="150">
+        <div
+          class="task-action task-action--danger"
+          :title="`删除任务${model.delete.reason ? '：' + model.delete.reason : ''}`"
+          :tabindex="!model.delete.enabled || operationPending ? 0 : -1"
           aria-describedby="delete-action-reason"
-          @click="openDeleteDialog"
         >
-          删除
-        </el-button>
-        <span id="delete-action-reason" class="sr-only">
-          {{ model.delete.reason }}
-        </span>
-      </div>
+          <el-button
+            data-action="delete"
+            size="small"
+            type="danger"
+            plain
+            :icon="Trash2"
+            :loading="pendingAction === 'delete'"
+            :disabled="!model.delete.enabled || operationPending"
+            :title="`删除任务${model.delete.reason ? '：' + model.delete.reason : ''}`"
+            aria-describedby="delete-action-reason"
+            @click="openDeleteDialog"
+          >
+            删除
+          </el-button>
+          <span id="delete-action-reason" class="sr-only">
+            {{ model.delete.reason }}
+          </span>
+        </div>
+      </el-tooltip>
     </div>
+
+    <p v-if="exportError" class="export-error" role="alert">{{ exportError }}</p>
 
     <el-dialog
       v-model="cancelDialogOpen"
@@ -277,13 +302,15 @@ function confirmDelete(): void {
 .task-actions__commands {
   display: grid;
   min-width: 336px;
-  grid-template-columns: repeat(3, minmax(98px, 1fr));
+  grid-template-columns: minmax(155px, 1.5fr) repeat(3, minmax(72px, 1fr));
   align-items: center;
   gap: 6px;
   padding: 9px 12px;
   border-left: 1px solid var(--line);
   background: var(--surface-raised);
 }
+
+.export-error { grid-column: 1 / -1; margin: 0; padding: 8px 16px; color: var(--danger); font-size: 12px; }
 
 .task-action {
   min-width: 0;

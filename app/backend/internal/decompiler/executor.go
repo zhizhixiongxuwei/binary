@@ -98,7 +98,15 @@ func newExecutor(mode Mode, cfg config.Config, db *sql.DB, jobs *job.Repository)
 // Execute 先在单次运行私有目录中执行外部工具，再把经过类型、数量、大小和 UTF-8 校验的源码
 // 写入不可变项目。项目目录发布完成后，只有仍持有有效 fence 的 worker 才能登记 source_project、
 // source_files 和完成事件，因此失去租约的旧执行不会成为数据库可见结果。
-func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
+func (e *Executor) Execute(ctx context.Context, claim job.Claim) (executionErr error) {
+	transcript := &toolTranscript{}
+	ctx = context.WithValue(ctx, transcriptContextKey{}, transcript)
+	defer func() {
+		if executionErr != nil {
+			noteToolDiagnostic(ctx, "Decompilation failed: "+executionErr.Error())
+		}
+		e.persistToolDiagnostics(ctx, claim, transcript)
+	}()
 	subject, err := e.loadSubject(ctx, claim.RunID)
 	if err != nil {
 		return err
@@ -115,6 +123,7 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 		return fmt.Errorf("create decompiler workspace: %w", err)
 	}
 	defer os.RemoveAll(workRoot)
+	job.ReportProgress(ctx, "preparing", 0, 0, "")
 	result, err := e.runTool(ctx, workRoot, inputPath, subject)
 	if err != nil {
 		return err
@@ -129,12 +138,36 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 		return err
 	}
 	defer workspace.Cleanup()
+	job.ReportProgress(ctx, "collecting", 0, 0, "files")
 	partial, err := collectSources(workspace, result.outputRoot, result.extension, e.language(), maxFiles)
 	if err != nil {
 		return err
 	}
 	if partial {
 		result.quality = "partial_source"
+		noteToolDiagnostic(ctx, "Some generated source files exceeded output file or byte limits and were omitted")
+	}
+	if e.mode == ModeJVM {
+		contextPath := filepath.Join(result.outputRoot, filepath.FromSlash(jvmarchive.TypeIndexPath))
+		if info, statErr := os.Lstat(contextPath); statErr == nil {
+			if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("Java type context is not a regular file")
+			}
+			stream, openErr := os.Open(contextPath)
+			if openErr != nil {
+				return openErr
+			}
+			writeErr := workspace.WriteJavaTypeIndex(stream)
+			closeErr := stream.Close()
+			if writeErr != nil {
+				return writeErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
 	}
 	fileCount, sizeBytes := workspace.Stats()
 	if fileCount == 0 {
@@ -142,6 +175,7 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	}
 	if result.jvmSourceMapPath != "" {
 		if err := stageJVMSourceMap(workspace, result.jvmSourceMapPath); err != nil {
+			noteToolDiagnostic(ctx, "Could not attach JVM source map: "+err.Error())
 			slog.Warn("could not attach JVM source map", "run_id", claim.RunID, "error", err)
 		}
 	}
@@ -149,6 +183,7 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 	if err != nil {
 		return err
 	}
+	job.ReportProgress(ctx, "publishing", 0, int64(fileCount), "files")
 	return e.jobs.WithFence(ctx, claim, func(tx *sql.Tx) error {
 		// Publish files only while the job fence is locked, so task deletion
 		// cannot miss a project published by a worker that has been cancelled.
@@ -197,7 +232,11 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 			if err != nil {
 				return fmt.Errorf("read published source %s: %w", source.Path, err)
 			}
-			if err := sourceindex.Store(ctx, tx, projectID, source.ID, sourceindex.Functions(source.Language, string(body))); err != nil {
+			functions := []sourceindex.Function{}
+			if source.Language != "java" || strings.HasSuffix(source.Path, ".java") {
+				functions = sourceindex.Functions(source.Language, string(body))
+			}
+			if err := sourceindex.Store(ctx, tx, projectID, source.ID, functions); err != nil {
 				return fmt.Errorf("index source %s: %w", source.Path, err)
 			}
 		}
@@ -241,24 +280,28 @@ func (e *Executor) runGhidra(ctx context.Context, workRoot, inputPath string) (t
 	args := []string{projectRoot, "binaryscan", "-import", inputPath,
 		"-scriptPath", e.cfg.Worker.GhidraScriptRoot, "-postScript", "ExportPseudoC.java",
 		outputRoot, strconvI(storage.MaxSourceFiles), strconvI64(maxProjectBytes), "-deleteProject"}
+	job.ReportProgress(ctx, "decompiling", 0, 0, "functions")
 	if err := runCommand(ctx, 90*time.Minute, workRoot, e.cfg.Worker.GhidraPath, args...); err != nil {
 		return toolResult{}, err
 	}
 	quality := "source"
 	if _, err := os.Stat(filepath.Join(outputRoot, ".binaryscan-partial")); err == nil {
 		quality = "partial_source"
+		noteToolDiagnostic(ctx, "Ghidra reported partial output; inspect its stdout and stderr for failed functions or output limits")
 	}
 	return toolResult{outputRoot: outputRoot, toolName: "ghidra", quality: quality, extension: ".c"}, nil
 }
 
 // runJVM 对 APK/DEX 使用 JADX；类文件与 JVM 归档优先 Vineflower，失败时回退 CFR。
 // 回退结果标记为 partial_source，向后续 checker 和报告显式传递工具降级事实。
-func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format string) (toolResult, error) {
+func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format string, libraries ...string) (toolResult, error) {
+	job.ReportProgress(ctx, "starting", 0, 0, "")
 	stagedInput := filepath.Join(workRoot, "input."+jvmInputExtension(format))
 	if err := os.Symlink(inputPath, stagedInput); err != nil {
 		return toolResult{}, fmt.Errorf("stage JVM input: %w", err)
 	}
 	inputPath = stagedInput
+	job.ReportProgress(ctx, "decompiling", 0, 0, "classes")
 	if format == "apk" || format == "dex" {
 		outputRoot := filepath.Join(workRoot, "jadx")
 		if err := os.MkdirAll(outputRoot, 0o700); err != nil {
@@ -283,7 +326,7 @@ func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format strin
 			err := runCommand(ctx, 45*time.Minute, workRoot, e.cfg.Worker.JavaPath,
 				"-Xms128m", "-Xmx3g", "-XX:+ExitOnOutOfMemoryError", "-cp",
 				e.cfg.Worker.VineflowerJar+string(os.PathListSeparator)+adapter,
-				"ExportVineflowerSource", inputPath, outputRoot, mapPath)
+				"ExportVineflowerSource", inputPath, outputRoot, mapPath, strings.Join(libraries, string(os.PathListSeparator)))
 			if err == nil {
 				return toolResult{outputRoot: outputRoot, toolName: "vineflower", quality: "source",
 					extension: ".java", jvmSourceMapPath: mapPath}, nil
@@ -292,6 +335,7 @@ func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format strin
 				return toolResult{}, ctx.Err()
 			}
 			slog.Warn("mapped Vineflower run failed, retrying with the standard decompiler", "error", err)
+			noteToolDiagnostic(ctx, "Mapped Vineflower failed; retrying standard Vineflower: "+err.Error())
 		}
 	}
 	vineflowerOutput := filepath.Join(workRoot, "vineflower")
@@ -305,6 +349,7 @@ func (e *Executor) runJVM(ctx context.Context, workRoot, inputPath, format strin
 		return toolResult{outputRoot: vineflowerOutput, toolName: "vineflower", quality: "source", extension: ".java"}, nil
 	}
 	cfrOutput := filepath.Join(workRoot, "cfr")
+	noteToolDiagnostic(ctx, "Vineflower failed; falling back to CFR: "+err.Error())
 	if mkdirErr := os.MkdirAll(cfrOutput, 0o700); mkdirErr != nil {
 		return toolResult{}, mkdirErr
 	}
@@ -346,6 +391,7 @@ func jvmInputExtension(format string) string {
 // runPYC 保留 pycdc 在非零退出前已经产生的有效文本，并把这种结果标记为 partial_source；
 // 若没有任何输出则按工具失败处理，避免发布空项目。
 func (e *Executor) runPYC(ctx context.Context, workRoot, inputPath string) (toolResult, error) {
+	job.ReportProgress(ctx, "decompiling", 0, 1, "files")
 	outputRoot := filepath.Join(workRoot, "source")
 	if err := os.MkdirAll(outputRoot, 0o700); err != nil {
 		return toolResult{}, err
@@ -361,9 +407,11 @@ func (e *Executor) runPYC(ctx context.Context, workRoot, inputPath string) (tool
 	command.Env = append(os.Environ(), "HOME="+workRoot, "TMPDIR="+workRoot)
 	var stderr limitedBuffer
 	stderr.limit = maxToolLogBytes
-	command.Stdout = output
-	command.Stderr = &stderr
+	stdoutLog, stderrLog, finishLog := toolLog(ctx, e.cfg.Worker.PYCDCPath, []string{inputPath})
+	command.Stdout = io.MultiWriter(output, stdoutLog)
+	command.Stderr = io.MultiWriter(&stderr, stderrLog)
 	runErr := command.Run()
+	finishLog(runErr)
 	closeErr := output.Close()
 	if closeErr != nil {
 		return toolResult{}, closeErr
@@ -378,7 +426,9 @@ func (e *Executor) runPYC(ctx context.Context, workRoot, inputPath string) (tool
 			return toolResult{}, fmt.Errorf("pycdc failed: %w: %s", runErr, stderr.String())
 		}
 		quality = "partial_source"
+		noteToolDiagnostic(ctx, "pycdc exited with partial output: "+runErr.Error())
 	}
+	job.ReportProgress(ctx, "decompiling", 1, 1, "files")
 	return toolResult{outputRoot: outputRoot, toolName: "pycdc", quality: quality, extension: ".py"}, nil
 }
 
@@ -450,7 +500,16 @@ func collectSources(workspace *storage.Workspace, root, extension, language stri
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("decompiler output contains a symbolic link")
 		}
-		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != extension {
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(root, filename)
+		if err != nil {
+			return err
+		}
+		logical := filepath.ToSlash(relative)
+		contextFile := language == "java" && strings.HasPrefix(logical, "resources/") && jvmarchive.ResourcePath(strings.TrimPrefix(logical, "resources/"))
+		if strings.ToLower(filepath.Ext(entry.Name())) != extension && !contextFile {
 			return nil
 		}
 		if count >= maxFiles {
@@ -464,13 +523,13 @@ func collectSources(workspace *storage.Workspace, root, extension, language stri
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("decompiler output is not a regular file")
 		}
-		if info.Size() > maxSourceBytes {
+		limit := int64(maxSourceBytes)
+		if logical == jvmarchive.TypeIndexPath {
+			limit = 24 << 20
+		}
+		if info.Size() > limit {
 			partial = true
 			return nil
-		}
-		relative, err := filepath.Rel(root, filename)
-		if err != nil {
-			return err
 		}
 		source, err := os.Open(filename)
 		if err != nil {
@@ -497,11 +556,14 @@ func runCommand(ctx context.Context, timeout time.Duration, workRoot, executable
 	defer cancel()
 	command := exec.CommandContext(executionCtx, executable, args...)
 	command.Env = append(os.Environ(), "HOME="+workRoot, "TMPDIR="+workRoot)
-	command.Stdout = io.Discard
+	stdoutLog, stderrLog, finishLog := toolLog(ctx, executable, args)
+	command.Stdout = io.MultiWriter(&toolProgressWriter{ctx: ctx}, stdoutLog)
 	var stderr limitedBuffer
 	stderr.limit = maxToolLogBytes
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
+	command.Stderr = io.MultiWriter(&stderr, &toolProgressWriter{ctx: ctx}, stderrLog)
+	err := command.Run()
+	finishLog(err)
+	if err != nil {
 		if errors.Is(executionCtx.Err(), context.DeadlineExceeded) {
 			return fmt.Errorf("%s timed out", filepath.Base(executable))
 		}

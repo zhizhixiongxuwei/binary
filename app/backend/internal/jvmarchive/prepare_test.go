@@ -116,9 +116,52 @@ func TestPrepareKeepsOrdinaryJARCompatibility(t *testing.T) {
 	body := jarBytes(t, map[string][]byte{"sample/Probe.class": probeClass})
 	filename := filepath.Join(t.TempDir(), "probe.jar")
 	_ = os.WriteFile(filename, body, 0o600)
-	prepared, err := Prepare(context.Background(), filename, t.TempDir(), Options{})
+	called := false
+	prepared, err := Prepare(context.Background(), filename, t.TempDir(), Options{OnProgress: func(_, _ int) { called = true }})
 	if err != nil || prepared != nil {
 		t.Fatalf("ordinary JAR changed: %+v, %v", prepared, err)
+	}
+	if called {
+		t.Fatal("ordinary JAR reported Boot archive preparation")
+	}
+}
+
+func TestPrepareReportsAllModulesIncludingUnselectedDependencies(t *testing.T) {
+	filename, digest := fixture(t, false, false)
+	var updates [][2]int
+	prepared, err := Prepare(context.Background(), filename, t.TempDir(), Options{
+		ExpectedSHA256: digest,
+		OnProgress:     func(done, total int) { updates = append(updates, [2]int{done, total}) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Targets) != 2 || len(prepared.Dependencies) != 1 || len(updates) != 4 {
+		t.Fatalf("preparation excluded dependency work: %+v; updates=%v", prepared, updates)
+	}
+	for index, update := range updates {
+		if update != [2]int{index, 3} {
+			t.Fatalf("non-monotonic or invented module counters: %v", updates)
+		}
+	}
+}
+
+func TestPrepareCancellationDoesNotReportUnfinishedModules(t *testing.T) {
+	filename, digest := fixture(t, false, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var last, totalSeen int
+	_, err := Prepare(ctx, filename, t.TempDir(), Options{
+		ExpectedSHA256: digest,
+		OnProgress: func(done, total int) {
+			last, totalSeen = done, total
+			if done == 1 {
+				cancel()
+			}
+		},
+	})
+	if err != context.Canceled || last != 1 || totalSeen != 3 {
+		t.Fatalf("cancelled preparation reported unfinished work: done=%d total=%d err=%v", last, totalSeen, err)
 	}
 }
 

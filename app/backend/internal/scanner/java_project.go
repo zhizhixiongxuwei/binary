@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,7 +15,9 @@ import (
 	"time"
 
 	"binaryscan.local/backend/internal/checkrules"
+	"binaryscan.local/backend/internal/frameworks"
 	"binaryscan.local/backend/internal/job"
+	"binaryscan.local/backend/internal/jvmarchive"
 	"binaryscan.local/backend/internal/storage"
 )
 
@@ -57,11 +60,31 @@ type javaProjectSession struct {
 // A project session is bound to a frozen manifest and rule selection. Batches
 // only transport files; they never divide the Java call graph into subprojects.
 func createJavaProject(ctx context.Context, client *http.Client, checkerURL string, project checkerProject, manifest storage.Manifest, runID string) (*javaProjectSession, error) {
-	files := make([]javaProjectFile, 0, len(manifest.Files))
-	for _, file := range manifest.Files {
-		if file.Language == "java" && file.SizeBytes <= 4<<20 {
-			files = append(files, javaProjectFile{file.Path, strings.ToLower(file.SHA256), file.SizeBytes})
+	if project.frameworks != nil {
+		if err := validateFrameworkSnapshot(project.frameworks, manifest.InputSHA256); err != nil {
+			return nil, err
 		}
+	}
+	files := make([]javaProjectFile, 0, len(manifest.Files))
+	javaFiles := 0
+	for _, file := range manifest.Files {
+		limit := int64(4 << 20)
+		if file.Path == jvmarchive.TypeIndexPath {
+			limit = 24 << 20
+		}
+		if file.Language == "java" && file.SizeBytes <= limit {
+			files = append(files, javaProjectFile{file.Path, strings.ToLower(file.SHA256), file.SizeBytes})
+			if strings.HasSuffix(file.Path, ".java") {
+				javaFiles++
+			}
+		}
+	}
+	if manifest.JavaTypeIndex != nil {
+		meta := manifest.JavaTypeIndex
+		if meta.Path != jvmarchive.TypeIndexPath || meta.SizeBytes < 1 || meta.SizeBytes > storage.JavaTypeIndexLimit {
+			return nil, fmt.Errorf("invalid pinned Java type sidecar")
+		}
+		files = append(files, javaProjectFile{meta.Path, strings.ToLower(meta.SHA256), meta.SizeBytes})
 	}
 	request := checkerRequest{Version: "checker-v1", ProjectID: project.id, Language: "java"}
 	if project.selection != nil {
@@ -82,14 +105,23 @@ func createJavaProject(ctx context.Context, client *http.Client, checkerURL stri
 		request.RuleIDs = selection.EnabledRuleIDs
 	}
 	payload := struct {
-		Version        string            `json:"version"`
-		ProjectID      string            `json:"projectId"`
-		RunID          string            `json:"runId"`
-		ManifestSHA256 string            `json:"manifestSha256"`
-		CatalogVersion string            `json:"catalogVersion,omitempty"`
-		RuleIDs        []string          `json:"ruleIds,omitempty"`
-		Files          []javaProjectFile `json:"files"`
-	}{javaProjectProtocol, project.id, runID, hex.EncodeToString(project.manifestSHA256), request.CatalogVersion, request.RuleIDs, files}
+		Version          string            `json:"version"`
+		ProjectID        string            `json:"projectId"`
+		RunID            string            `json:"runId"`
+		ManifestSHA256   string            `json:"manifestSha256"`
+		CatalogVersion   string            `json:"catalogVersion,omitempty"`
+		RuleIDs          []string          `json:"ruleIds,omitempty"`
+		Files            []javaProjectFile `json:"files"`
+		Frameworks       map[string]string `json:"frameworks,omitempty"`
+		FrameworksSHA256 string            `json:"frameworksSha256,omitempty"`
+		InputSHA256      string            `json:"inputSha256,omitempty"`
+	}{Version: javaProjectProtocol, ProjectID: project.id, RunID: runID, ManifestSHA256: hex.EncodeToString(project.manifestSHA256), CatalogVersion: request.CatalogVersion, RuleIDs: request.RuleIDs, Files: files}
+	payload.InputSHA256 = strings.ToLower(manifest.InputSHA256)
+	if project.frameworks != nil {
+		payload.Frameworks = project.frameworks.Artifacts
+		payload.FrameworksSHA256 = project.frameworks.Digest
+		payload.InputSHA256 = strings.ToLower(manifest.InputSHA256)
+	}
 	endpoint := checkrules.BaseURL(checkerURL) + "/v2/java/projects"
 	body, err := javaProjectCall(ctx, client, http.MethodPost, endpoint, payload)
 	if err != nil {
@@ -102,7 +134,7 @@ func createJavaProject(ctx context.Context, client *http.Client, checkerURL stri
 	if err := json.Unmarshal(body, &response); err != nil || response.Version != javaProjectProtocol || !validJavaSessionID(response.SessionID) {
 		return nil, fmt.Errorf("Java project session response violates %s", javaProjectProtocol)
 	}
-	return &javaProjectSession{client, endpoint + "/" + url.PathEscape(response.SessionID), request, len(files)}, nil
+	return &javaProjectSession{client, endpoint + "/" + url.PathEscape(response.SessionID), request, javaFiles}, nil
 }
 
 func validJavaSessionID(id string) bool {
@@ -132,7 +164,7 @@ func (session *javaProjectSession) upload(ctx context.Context, files []checkerSo
 }
 
 func (session *javaProjectSession) analyze(ctx context.Context) (checkerResponse, error) {
-	body, err := javaProjectCall(ctx, session.client, http.MethodPost, session.endpoint+"/analyze", nil)
+	body, err := javaProjectAnalyzeCall(ctx, session)
 	if err != nil {
 		return checkerResponse{}, err
 	}
@@ -230,10 +262,19 @@ func (coverage checkerCoverage) valid() bool {
 // Secondary source locations are evidence, too: a valid primary finding must
 // never acquire a fabricated navigation target from an untrusted checker.
 func verifyJavaNullnessTrace(evidence map[string]any, sources map[string]checkerSourceEvidence) bool {
-	if evidence == nil || evidence["nullnessTrace"] == nil {
+	valid := true
+	for _, key := range []string{"nullnessTrace", "securityTrace", "bindingLocations", "relatedLocations"} {
+		if !verifyJavaTrace(key, evidence, sources) {
+			valid = false
+		}
+	}
+	return valid
+}
+func verifyJavaTrace(key string, evidence map[string]any, sources map[string]checkerSourceEvidence) bool {
+	if evidence == nil || evidence[key] == nil {
 		return true
 	}
-	encoded, err := json.Marshal(evidence["nullnessTrace"])
+	encoded, err := json.Marshal(evidence[key])
 	var steps []struct {
 		Path    string `json:"path"`
 		Line    int    `json:"line"`
@@ -242,7 +283,7 @@ func verifyJavaNullnessTrace(evidence map[string]any, sources map[string]checker
 		Message string `json:"message"`
 	}
 	if err != nil || json.Unmarshal(encoded, &steps) != nil || len(steps) > 32 {
-		delete(evidence, "nullnessTrace")
+		delete(evidence, key)
 		evidence["traceIncomplete"] = true
 		return false
 	}
@@ -258,7 +299,7 @@ func verifyJavaNullnessTrace(evidence map[string]any, sources map[string]checker
 		}
 		verified = append(verified, map[string]any{"path": cleaned, "line": step.Line, "column": step.Column, "kind": step.Kind, "message": step.Message})
 	}
-	evidence["nullnessTrace"] = verified
+	evidence[key] = verified
 	if len(verified) != len(steps) {
 		evidence["traceIncomplete"] = true
 		return false
@@ -266,10 +307,50 @@ func verifyJavaNullnessTrace(evidence map[string]any, sources map[string]checker
 	return true
 }
 
+func verifyJavaModelSummary(summary map[string]any, snapshot *frameworks.Snapshot, sources map[string]checkerSourceEvidence) bool {
+	if len(summary) == 0 {
+		return true // Older checker-v1 responses did not record model evidence.
+	}
+	versions := map[string]string{}
+	if snapshot != nil {
+		versions = snapshot.Artifacts
+	}
+	digest := sha256.Sum256([]byte("framework-contracts-v1\n" + frameworks.ArtifactsDigest(versions)))
+	if (summary["modelVersion"] != "java-nullness-v4" && summary["modelVersion"] != "java-nullness-v5") || summary["frameworkContractVersion"] != "framework-contracts-v1" ||
+		summary["frameworkContractDigest"] != hex.EncodeToString(digest[:]) {
+		return false
+	}
+	var proofs []struct {
+		Path              string `json:"path"`
+		Line              int    `json:"line"`
+		Column            int    `json:"column"`
+		ModelID           string `json:"modelId"`
+		Condition         string `json:"condition"`
+		DependencyVersion string `json:"dependencyVersion"`
+	}
+	encoded, err := json.Marshal(summary["proofs"])
+	if err != nil || json.Unmarshal(encoded, &proofs) != nil || len(proofs) > 1000 {
+		return false
+	}
+	for _, proof := range proofs {
+		cleaned, err := storage.CleanRelativePath(proof.Path)
+		source, found := sources[cleaned]
+		if err != nil || cleaned != proof.Path || !found || proof.Line < 1 || proof.Line > len(source.lines) || proof.Column < 1 ||
+			!validSpotBugsIdentity(proof.ModelID, 128) || !validSpotBugsIdentity(proof.Condition, 1024) || len(proof.DependencyVersion) > 128 {
+			return false
+		}
+		if _, valid := utf16FindingEndColumn(source.lines[proof.Line-1], proof.Column); !valid {
+			return false
+		}
+	}
+	_, valid := summary["proofsTruncated"].(bool)
+	return valid
+}
+
 func javaAnalysisSummary(manifest storage.Manifest, responses []checkerResponse, diagnostics []string, bytecode spotBugsResponse, pipelinePartial bool) map[string]any {
 	total := 0
 	for _, file := range manifest.Files {
-		if file.Language == "java" {
+		if file.Language == "java" && strings.HasSuffix(file.Path, ".java") {
 			total++
 		}
 	}
@@ -278,11 +359,15 @@ func javaAnalysisSummary(manifest storage.Manifest, responses []checkerResponse,
 	sourcePartial, findingsTruncated, diagnosticsTruncated := manifest.Quality != "source", false, false
 	details := make([]checkerDiagnostic, 0, len(diagnostics))
 	seen := map[string]bool{}
+	modelSummaries := make([]map[string]any, 0, len(responses))
 	bytecodeMessages := map[string]bool{}
 	for _, message := range bytecode.Diagnostics {
 		bytecodeMessages[message] = true
 	}
 	for _, response := range responses {
+		if len(response.ModelSummary) > 0 {
+			modelSummaries = append(modelSummaries, response.ModelSummary)
+		}
 		sourcePartial = sourcePartial || response.Status == "partial"
 		findingsTruncated = findingsTruncated || response.FindingsTruncated
 		diagnosticsTruncated = diagnosticsTruncated || response.DiagnosticsTruncated
@@ -353,6 +438,9 @@ func javaAnalysisSummary(manifest storage.Manifest, responses []checkerResponse,
 		"engines": map[string]any{"source": map[string]any{"name": "java-checker", "status": sourceStatus},
 			"bytecode": map[string]any{"status": bytecodeStatus, "reason": bytecode.SkipReason}},
 	}
+	if len(modelSummaries) > 0 {
+		summary["modelSummaries"] = modelSummaries
+	}
 	// Keep optional archive provenance versioned with the immutable source manifest.
 	if encoded, err := json.Marshal(manifest); err == nil {
 		var fields map[string]json.RawMessage
@@ -361,4 +449,31 @@ func javaAnalysisSummary(manifest storage.Manifest, responses []checkerResponse,
 		}
 	}
 	return summary
+}
+
+func (e *Executor) detectJavaFrameworks(ctx context.Context, project checkerProject, manifest storage.Manifest) (frameworks.Snapshot, error) {
+	input := project.input
+	if !input.blobID.Valid || !input.storageKey.Valid || !input.sizeBytes.Valid || input.blobID.String != manifest.InputBlobID ||
+		len(input.sha256) != 32 || !strings.EqualFold(hex.EncodeToString(input.sha256), manifest.InputSHA256) {
+		return frameworks.Snapshot{}, fmt.Errorf("original binary identity does not match the source manifest")
+	}
+	filename, err := e.blobPath(input.storageKey.String)
+	if err != nil {
+		return frameworks.Snapshot{}, err
+	}
+	return frameworks.Detect(ctx, filename, input.sizeBytes.Int64, input.sha256)
+}
+
+func validateFrameworkSnapshot(snapshot *frameworks.Snapshot, inputSHA256 string) error {
+	inputHash, err := hex.DecodeString(snapshot.InputSHA256)
+	if err != nil || len(inputHash) != sha256.Size || snapshot.Version != "framework-evidence-v1" ||
+		!strings.EqualFold(snapshot.InputSHA256, inputSHA256) || snapshot.Digest != frameworks.ArtifactsDigest(snapshot.Artifacts) {
+		return fmt.Errorf("framework snapshot does not match its original input and pinned versions")
+	}
+	for _, conflict := range snapshot.Conflicts {
+		if _, present := snapshot.Artifacts[conflict.Coordinate]; present {
+			return fmt.Errorf("framework snapshot contains a conflicting active version")
+		}
+	}
+	return nil
 }

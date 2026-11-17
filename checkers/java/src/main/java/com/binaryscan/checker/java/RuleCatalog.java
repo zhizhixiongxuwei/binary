@@ -29,20 +29,26 @@ final class RuleCatalog {
     }
 
     static final List<Rule> RULES = List.of(
-        rule("java-weak-message-digest", "弱消息摘要算法", "检测 MessageDigest 明确选择 MD2、MD4、MD5 或 SHA-1。", "CWE-328", "medium", "限于可解析的常量算法名，未区分安全用途与普通校验。"),
-        rule("java-weak-cipher", "弱加密算法或 ECB 模式", "检测 Cipher 选择 DES、RC4 等弱算法或 ECB 模式。", "CWE-327", "medium", "限于可解析的常量算法参数，不验证完整密码协议。"),
+        rule("java-weak-message-digest", "弱消息摘要算法", "检测 JDK 或匹配版本 Hutool 包装明确选择弱摘要算法。", "CWE-328", "medium", "算法风险需结合用途复核，文件校验和去重使用 MD5 不直接证明安全漏洞。"),
+        rule("java-weak-cipher", "弱加密算法或 ECB 模式", "检测 JDK/Hutool 弱算法、ECB 或需要复核的 AES 默认模式。", "CWE-327", "medium", "限于可解析的常量算法参数，不验证完整密码协议。"),
         rule("java-legacy-tls", "过时的 TLS 或 SSL 协议", "检测 SSLContext 明确选择旧 SSL、TLS 1.0 或 TLS 1.1。", "CWE-326", "medium", "不检查运行时配置、服务器协商结果或外部配置文件。"),
         rule("java-hardcoded-crypto-key", "硬编码加密密钥", "检测 SecretKeySpec、PBEKeySpec 使用源码中的固定密钥材料。", "CWE-321", "high", "依据局部常量事实，无法确认所有间接密钥来源。"),
         rule("java-trust-all-hostname-verifier", "无条件接受主机名", "检测始终返回 true 的主机名验证实现或 lambda。", "CWE-295", "high", "仅识别已实现的简单无条件接受形态。"),
         rule("java-trust-all-x509-manager", "空的 X.509 信任校验", "检测 X509TrustManager 中不执行校验的信任方法。", "CWE-295", "high", "不推导其他委托校验链路的有效性。"),
         rule("java-xxe-enabled", "启用 XML 外部实体", "检测显式启用外部实体或关闭 DTD 防护的 XML 配置。", "CWE-611", "high", "依赖可识别的配置调用和常量开关，不证明存在外部攻击输入。"),
         rule("java-unsafe-deserialization", "未显式过滤的对象反序列化", "检测 ObjectInputStream 的对象读取。", "CWE-502", "high", "不进行全局对象过滤器、类型白名单或输入可信度证明。"),
-        rule("java-sql-injection", "动态拼接 SQL", "检测把非固定值拼接为 SQL 并传给数据库查询接口。", "CWE-89", "high", "使用局部表达式事实，不跟踪完整参数净化或跨函数数据流。"),
+        rule("java-sql-injection", "动态拼接 SQL", "检测把非固定值拼接为 SQL 并传给数据库查询接口。", "CWE-89", "high", "项目数据流关联请求入口、跨方法 Wrapper/XML 原始片段与查询执行；参数绑定、数值和受限标识符会单独处理，不能证明所有动态 SQL 安全。"),
         rule("java-command-injection", "动态命令执行", "检测 Runtime.exec 或 ProcessBuilder 使用非编译期常量命令。", "CWE-78", "high", "非固定值不一定可被攻击者控制，需复核调用环境。"),
         rule("java-dynamic-code-execution", "动态脚本或表达式执行", "检测脚本引擎或表达式接口执行动态文本。", "CWE-94", "high", "仅覆盖可识别的脚本和表达式 API 形态。"),
         rule("java-overly-permissive-file", "宽松的文件访问权限", "检测 File 或 POSIX 权限接口授予所有用户宽泛权限。", "CWE-732", "medium", "限于局部类型和常量参数，不读取实际文件系统权限。"),
         rule("java-insecure-cookie", "关闭 Cookie Secure 属性", "检测 Cookie.setSecure(false) 的显式配置。", "CWE-614", "medium", "不检查实际 HTTP 传输、全局 Cookie 策略或其他 Cookie 属性。"),
-        rule("java-null-dereference", "空指针解引用", "检测显式空值、项目内参数与返回值传播，以及已确认 MyBatis 单条查询、Map.get 和可空注解来源的解引用。可用的原始字节码同时由 SpotBugs 检测。", "CWE-476", "medium", "项目摘要最多 16 轮、20000 方法、100000 调用边和 3 分钟；未知外部调用单独统计，不证明其返回非空。模型与可能为空的证据需要结合业务前提复核，不保证不存在空指针。")
+        rule("java-null-dereference", "空指针解引用", "检测显式空值、项目内参数与返回值传播，以及已确认 MyBatis 单条查询、Map.get 和可空注解来源的解引用。", "CWE-476", "medium", NullDereferenceAnalyzer.MODEL_VERSION + " / " + FrameworkContracts.VERSION + "：普通方法基础 8 个参数空值上下文；已出现可空摘要的饱和方法可使用项目总计 256 个定向保留上下文，单方法最多 32；泛型方法最多 64 个参数/实参类型上下文；项目摘要最多 16 轮、20000 方法、100000 调用边和 3 分钟。未知外部调用单独统计，不证明其返回非空；匹配版本的非空契约会保留有界证明记录。模型与可能为空的证据需要结合业务前提复核，不保证不存在空指针。"),
+        rule(SecurityAnalysis.JACKSON,"宽泛 Jackson 多态反序列化","检测不受限的多态类型配置进入 JSON 解码或 Redis codec 使用路径。","CWE-502","high","配置风险不等于可利用反序列化链；仍需复核原始数据可控性、对象类型和生效配置。"),
+        rule(SecurityAnalysis.JWT,"固定 JWT 签名密钥配置","检测源码和打包 YAML/properties 中固定 JWT 签名密钥或固定回退值，并关联可见 JWT 配置。","CWE-321","high","密钥值脱敏；打包默认值不证明生产配置未被覆盖，也不直接证明认证失陷。"),
+        rule(SecurityAnalysis.WEB_EXEC,"请求输入控制危险执行","检测请求数据或特殊输入分支控制命令、脚本、表达式执行的可疑远控能力。","CWE-94","high","展示有界来源与执行链，不证明恶意植入意图；固定程序的普通参数不会自动被当作任意命令执行。"),
+        rule(SecurityAnalysis.CLASS_LOAD,"不可信字节动态定义类","检测请求、可控数据经变换进入类定义的路径。","CWE-470","high","动态类定义不单独证明载荷已执行；正常插件及可信代理生成需要结合来源复核。"),
+        rule(SecurityAnalysis.WEB_IMPLANT,"可疑运行时 Web 组件注册","关联 Spring/Undertow/Servlet 组件注册与不可信类、危险处理器或输入触发条件。","CWE-912","high","合法启动注册不单独报警；静态分析不能确定所有注册发生时机或发现包外注入。"),
+        rule(SecurityAnalysis.AUTH_BYPASS,"隐藏认证成功分支","检测特殊输入分支跳过可见的普通凭据校验并返回认证成功或建立身份。","CWE-288","high","需要可见校验、分支和外部输入关系；匿名路径、固定配置及未标注权限本身不构成后门证据。")
     ).stream().sorted(Comparator.comparing(Rule::id)).toList();
 
     static final Set<String> IDS = RULES.stream().map(Rule::id).collect(Collectors.toUnmodifiableSet());

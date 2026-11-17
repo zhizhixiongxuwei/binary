@@ -23,7 +23,7 @@ final class RuleSelectionTest {
     void publishesTheActualRegistryWithACompleteMetadataFingerprint() {
         var catalog = mapper.valueToTree(controller.rules());
         assertEquals("checker-v1", catalog.get("version").asText());
-        assertEquals("java", catalog.get("language").asText()); assertEquals(14, catalog.get("rules").size());
+        assertEquals("java", catalog.get("language").asText()); assertEquals(20, catalog.get("rules").size());
         assertEquals(List.of("CWE-476"), RuleCatalog.rule("java-null-dereference").cwes());
         assertTrue(RuleCatalog.VERSION.matches("sha256:[0-9a-f]{64}")); assertEquals(RuleCatalog.IDS, JavaAnalyzer.RULE_IDS);
         for (var rule : RuleCatalog.RULES) {
@@ -41,13 +41,13 @@ final class RuleSelectionTest {
     void legacyRequestsRunAllRulesAndSelectionsAreCanonicalAndReturned() throws Exception {
         String source = """
             class Test {
-                void run(String input) { Runtime.getRuntime().exec(input); new ProcessBuilder(input); }
+                @org.springframework.web.bind.annotation.GetMapping("/fixture") void run(String input) { Runtime.getRuntime().exec(input); new ProcessBuilder(input); }
                 int size() { String text = null; return text.length(); }
             }
             """;
         var files = List.of(new Models.SourceFile("Test.java", source));
         var legacy = controller.check(new Models.CheckRequest("checker-v1", "project", "java", files, null, null));
-        assertEquals(14, legacy.appliedRuleIds().size()); assertEquals(RuleCatalog.VERSION, legacy.catalogVersion());
+        assertEquals(20, legacy.appliedRuleIds().size()); assertEquals(RuleCatalog.VERSION, legacy.catalogVersion());
         var selected = controller.check(new Models.CheckRequest("checker-v1", "project", "java", files,
             List.of("java-command-injection", "java-command-injection"), RuleCatalog.VERSION));
         assertEquals(List.of("java-command-injection"), selected.appliedRuleIds()); assertFalse(selected.findings().isEmpty());
@@ -57,7 +57,7 @@ final class RuleSelectionTest {
         assertEquals(List.of("java-null-dereference"), nullOnly.appliedRuleIds());
         assertEquals(List.of("java-null-dereference"), nullOnly.findings().stream().map(Models.Finding::ruleId).toList());
         var omitted = mapper.readTree("{\"version\":\"checker-v1\",\"projectId\":\"p\",\"language\":\"java\",\"files\":[]}");
-        assertEquals(14, controller.checkHttp(omitted).appliedRuleIds().size());
+        assertEquals(20, controller.checkHttp(omitted).appliedRuleIds().size());
     }
 
     @Test

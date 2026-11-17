@@ -10,6 +10,34 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+it('keeps configuration evidence and verified resource navigation separate from nullness', async () => {
+  const step = { path: 'resources/application/application.yml', line: 8, column: 1, kind: 'configuration', message: 'Signing key configuration; value redacted', sourceFileId: 'config-1' }
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify({ findings: [{
+      id: 20, runId: 'java-run', ruleId: 'java-jwt-hardcoded-signing-key', language: 'java', cwe: 'CWE-321', severity: 'high',
+      path: step.path, sourceFileId: 'config-1', startLine: 8, startColumn: 1, message: 'Configuration risk', createdAt: '2026-11-16T01:00:00Z',
+      evidence: { securityTrace: [step], bindingLocations: [{ ...step, path: 'Config.java', kind: 'binding', sourceFileId: 'java-1' }], certainty: 'configuration-risk', runtimeOverride: 'unknown', securityModelVersion: 'java-security-flow-v1' },
+    }] })))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ runs: [{ id: 'java-run', subjectId: 'project-1' }] }))))
+  const page = await createLiveApiClient().listJavaAnalysisFindings(taskId, 'java-run')
+  expect(page.items[0]).toMatchObject({ security_certainty: 'configuration-risk', security_runtime_override: 'unknown', security_trace: [{ path: step.path, line: 8 }], security_binding_locations: [{ path: 'Config.java' }] })
+  expect(page.items[0]?.nullness_trace).toBeUndefined()
+  expect(javaFindingSourceTarget(page.items[0]!)).toMatchObject({ sourceFileId: 'config-1', startLine: 8 })
+})
+
+it('downloads all project information through the authenticated export endpoint', async () => {
+  const fetcher = vi.fn().mockResolvedValue(new Response('ZIP bytes', { headers: { 'Content-Type': 'application/zip' } }))
+  vi.stubGlobal('fetch', fetcher)
+  const result = await createLiveApiClient().downloadProjectExport(taskId)
+  expect(fetcher).toHaveBeenCalledWith(`/api/v1/tasks/${taskId}/project-export`, expect.objectContaining({ credentials: 'include', method: 'GET' }))
+  expect(result.kind).toBe('blob')
+})
+
+it('reports export errors without downloading a JSON error document', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: 'task_not_found' }), { status: 404 })))
+  await expect(createLiveApiClient().downloadProjectExport(taskId)).rejects.toMatchObject({ status: 404, code: 'task_not_found' })
+})
+
 it('navigates only to verified Java locations and preserves SpotBugs evidence', async () => {
   const base = {
     runId: 'java-run', ruleId: 'java-null-dereference', cwe: 'CWE-476',

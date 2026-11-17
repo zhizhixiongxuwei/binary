@@ -727,6 +727,13 @@ export interface JavaAnalysisFinding {
   nullness_trace_incomplete?: boolean
   nullness_certainty?: 'definite' | 'possible'
   nullness_model_version?: string
+  security_trace?: readonly JavaNullnessTraceStep[]
+  security_binding_locations?: readonly JavaNullnessTraceStep[]
+  security_certainty?: 'possible' | 'configuration-risk'
+  security_entry_verified?: boolean
+  security_model_version?: string
+  security_trace_incomplete?: boolean
+  security_runtime_override?: string
   message: string
   snippet?: string
   snippet_start_line?: number

@@ -7,8 +7,12 @@ import type {
 export type TaskStageId =
   | 'queued'
   | 'preparing'
+  | 'uploading'
   | 'starting'
   | 'running'
+  | 'parsing'
+  | 'indexing'
+  | 'analyzing'
   | 'verifying'
   | 'database_ready'
   | 'targets_ready'
@@ -46,6 +50,7 @@ export interface TaskStageProgress {
   summary: string
   workflow: Exclude<TaskWorkflowKind, 'task'>
   workflowLabel: string
+  updatedAt?: string
 }
 
 export type TaskStageSource = Pick<
@@ -54,7 +59,7 @@ export type TaskStageSource = Pick<
   | 'current_stage'
   | 'progress'
   | 'progress_indeterminate'
-> & { input_type?: string; analysis_mode?: string }
+> & { input_type?: string; analysis_mode?: string; execution_status?: TaskDetail['execution_status'] }
 
 type AnalyzerWorkflow = Exclude<TaskWorkflowKind, 'task'>
 type StageDefinition = Pick<TaskStageItem, 'id' | 'label'>
@@ -128,6 +133,16 @@ const workflowDefinitions: Readonly<Record<AnalyzerWorkflow, readonly StageDefin
     { id: 'publishing', label: '保存结果' },
     { id: 'completed', label: '完成' },
   ],
+  'source-analysis': [
+    { id: 'queued', label: '等待调度' },
+    { id: 'preparing', label: '准备源码' },
+    { id: 'uploading', label: '上传源码' },
+    { id: 'parsing', label: '解析源码' },
+    { id: 'indexing', label: '建立索引' },
+    { id: 'analyzing', label: '源码检测' },
+    { id: 'publishing', label: '保存结果' },
+    { id: 'completed', label: '完成' },
+  ],
   'image-scan': [
     { id: 'queued', label: '等待调度' },
     { id: 'verifying', label: '校验镜像' },
@@ -156,6 +171,11 @@ function workflowFromTask(
   entries: readonly TaskExecutionLogEntry[],
 ): AnalyzerWorkflow {
   const inputType = normalizedInputType(source.input_type)
+  if (source.analysis_mode === 'source') return 'source-analysis'
+  const latestWorkflow = [...entries]
+    .reverse()
+    .find((entry) => entry.workflow !== 'task')?.workflow
+  if (latestWorkflow === 'source-analysis') return latestWorkflow
   if (source.analysis_mode === 'container') return 'image-scan'
   if (source.analysis_mode === 'binary') return 'decompile'
   if (containerFormats.has(inputType) || vmImageFormats.has(inputType)) {
@@ -163,9 +183,6 @@ function workflowFromTask(
   }
   if (decompileFormats.has(inputType)) return 'decompile'
 
-  const latestWorkflow = [...entries]
-    .reverse()
-    .find((entry) => entry.workflow !== 'task')?.workflow
   if (latestWorkflow === 'decompile' || latestWorkflow === 'image-scan') {
     return latestWorkflow
   }
@@ -176,6 +193,7 @@ function workflowLabel(
   source: TaskStageSource,
   workflow: AnalyzerWorkflow,
 ): string {
+  if (workflow === 'source-analysis') return '源码检测'
   if (workflow === 'image-scan') {
     if (vmImageFormats.has(normalizedInputType(source.input_type))) {
       return '映像漏洞扫描'
@@ -193,7 +211,25 @@ function analyzerEntries(
   entries: readonly TaskExecutionLogEntry[],
   workflow: AnalyzerWorkflow,
 ): readonly TaskExecutionLogEntry[] {
-  const matching = entries.filter((entry) => entry.workflow === workflow)
+  let matching = entries.filter((entry) => entry.workflow === workflow)
+  if (workflow === 'source-analysis' || workflow === 'decompile') {
+    const latest = matching[matching.length - 1]
+    if (latest?.runId) matching = matching.filter((entry) => entry.runId === latest.runId)
+
+    // A leased job may retry the same run ID. Elapsed time restarts for each
+    // worker attempt, so earlier attempts must not pin the new attempt's max.
+    // Equal timestamps are normal for phase changes and activity heartbeats;
+    // legacy events without elapsed time cannot identify an attempt boundary.
+    let attemptStart = 0
+    let previousElapsed: number | null = null
+    for (let index = 0; index < matching.length; index += 1) {
+      const elapsed = matching[index]?.elapsedSeconds
+      if (typeof elapsed !== 'number') continue
+      if (previousElapsed !== null && elapsed < previousElapsed) attemptStart = index
+      previousElapsed = elapsed
+    }
+    matching = matching.slice(attemptStart)
+  }
   let latestQueued = -1
   for (let index = matching.length - 1; index >= 0; index -= 1) {
     if (matching[index]?.phase === 'queued') {
@@ -208,6 +244,8 @@ function stageIndex(
   definitions: readonly StageDefinition[],
   phase: string | null,
 ): number {
+  if (phase === 'decompiling') phase = 'running'
+  if (phase === 'collecting' || phase === 'uploading' && !definitions.some((stage) => stage.id === 'uploading')) phase = 'publishing'
   if (phase === 'target_completed' || phase === 'target_failed') {
     return definitions.findIndex((stage) => stage.id === 'scanning')
   }
@@ -225,7 +263,12 @@ function ratio(entry: TaskExecutionLogEntry | undefined): number | null {
   ) {
     return null
   }
-  return entry.current / entry.total
+  const fraction = entry.current / entry.total
+  if (typeof entry.moduleTotal === 'number' && entry.moduleTotal > 0) {
+    const moduleCurrent = entry.moduleCurrent ?? 0
+    if (moduleCurrent <= entry.moduleTotal) return Math.min(1, (moduleCurrent + fraction) / entry.moduleTotal)
+  }
+  return fraction
 }
 
 function progressFor(
@@ -234,11 +277,28 @@ function progressFor(
   entry: TaskExecutionLogEntry | undefined,
 ): number {
   const fraction = ratio(entry)
+  if (workflow === 'source-analysis') {
+    if (phase === 'preparing' || phase === 'starting') return 5
+    if (phase === 'uploading') return Math.round(5 + 5 * (fraction ?? 0))
+    if (phase === 'parsing') return Math.round(10 + 20 * (fraction ?? 0))
+    if (phase === 'indexing') return Math.round(30 + 10 * (fraction ?? 0))
+    if (phase === 'analyzing' || phase === 'running') return Math.round(40 + 50 * (fraction ?? 0))
+    if (phase === 'publishing' || phase === 'collecting') return 95
+    if (phase === 'completed') return 100
+    return 0
+  }
   if (workflow === 'decompile') {
-    if (phase === 'preparing') return 10
-    if (phase === 'starting') return 20
-    if (phase === 'running') return Math.round(30 + 50 * (fraction ?? 0))
-    if (phase === 'publishing') return 90
+    const moduleTotal = entry?.moduleTotal
+    const moduleCurrent = entry?.moduleCurrent ?? (typeof moduleTotal === 'number' && moduleTotal > 0 ? 0 : null)
+    if (typeof moduleCurrent === 'number' && typeof moduleTotal === 'number' && moduleTotal > 0 && moduleCurrent <= moduleTotal) {
+      if (phase === 'preparing' || phase === 'starting') return Math.round(30 + 50 * moduleCurrent / moduleTotal)
+      if (phase === 'collecting' || phase === 'uploading' || phase === 'publishing') return Math.round(30 + 50 * Math.min(1, (moduleCurrent + 1) / moduleTotal))
+      if (phase === 'running' || phase === 'decompiling') return Math.round(30 + 50 * (fraction ?? moduleCurrent / moduleTotal))
+    }
+    if (phase === 'preparing') return Math.round(5 + 20 * (fraction ?? 0))
+    if (phase === 'starting') return 25
+    if (phase === 'running' || phase === 'decompiling') return Math.round(30 + 50 * (fraction ?? 0))
+    if (phase === 'publishing' || phase === 'collecting' || phase === 'uploading') return 90
     if (phase === 'completed') return 100
     return 0
   }
@@ -278,6 +338,8 @@ function waitingModel(
     indeterminate: false,
     summary: workflow === 'decompile'
       ? '尚未收到反编译执行日志，可从文件结构中手动发起'
+      : workflow === 'source-analysis'
+        ? '等待源码检测进度更新'
       : '尚未收到镜像漏洞检测日志，等待检测任务开始',
     workflow,
     workflowLabel: workflowLabel(source, workflow),
@@ -294,14 +356,20 @@ export function deriveTaskStageProgress(
   const latest = relevant[relevant.length - 1]
   if (!latest) return waitingModel(source, workflow)
 
-  const failed = latest.phase === 'failed' || latest.phase === 'target_failed'
-  const completed = latest.phase === 'completed'
-  const cancelled = source.status.toUpperCase() === 'CANCELLED'
+  const executionFailed = source.execution_status === 'FAILED'
+    || workflow === 'source-analysis' && source.execution_status === 'SCAN_FAILED'
+    || workflow === 'decompile' && source.execution_status === 'DECOMPILE_FAILED'
+  const failed = latest.phase === 'failed' || latest.phase === 'target_failed' || executionFailed || source.status.toUpperCase() === 'FAILED'
+  const cancelled = latest.phase === 'cancelled' || source.status.toUpperCase() === 'CANCELLED' || source.execution_status === 'CANCELLED'
+  const completed = latest.phase === 'completed' && !failed && !cancelled
   let currentIndex = stageIndex(definitions, latest.phase)
-  if (latest.phase === 'failed') {
+  if ((failed || cancelled) && latest.phase === 'completed') {
+    currentIndex = definitions.findIndex((stage) => stage.id === (workflow === 'source-analysis' ? 'analyzing' : workflow === 'decompile' ? 'running' : 'scanning'))
+  }
+  if (latest.phase === 'failed' || latest.phase === 'cancelled') {
     const previous = [...relevant]
       .reverse()
-      .find((entry) => entry.phase !== 'failed')
+      .find((entry) => entry.phase !== 'failed' && entry.phase !== 'cancelled')
     currentIndex = Math.max(stageIndex(definitions, previous?.phase ?? null), 0)
   }
 
@@ -315,9 +383,10 @@ export function deriveTaskStageProgress(
       outcome: 'succeeded',
       progress: 100,
       indeterminate: false,
-      summary: workflow === 'decompile' ? '反编译结果已保存' : '镜像漏洞扫描已完成',
+      summary: workflow === 'decompile' ? '反编译结果已保存' : workflow === 'source-analysis' ? '源码检测已结束' : '镜像漏洞扫描已完成',
       workflow,
       workflowLabel: workflowLabel(source, workflow),
+      updatedAt: latest.createdAt,
     }
   }
 
@@ -326,23 +395,28 @@ export function deriveTaskStageProgress(
     : cancelled
       ? 'cancelled'
       : 'current'
+  if (workflow === 'source-analysis' && (latest.phase === 'running' || latest.phase === 'starting')) {
+    currentIndex = definitions.findIndex((stage) => stage.id === (latest.phase === 'running' ? 'analyzing' : 'preparing'))
+  }
   const currentLabel = definitions[currentIndex]?.label ?? '当前'
-  const progress = progressFor(workflow, latest.phase, latest)
+  const progressEntry = failed || cancelled ? [...relevant].reverse().find((entry) => entry.phase !== 'failed' && entry.phase !== 'cancelled') ?? latest : latest
+  const progress = workflow === 'decompile' || workflow === 'source-analysis'
+    ? Math.max(...relevant.map((entry) => progressFor(workflow, entry.phase, entry)))
+    : progressFor(workflow, progressEntry.phase, progressEntry)
   return {
     stages: buildStages(definitions, Math.max(currentIndex, 0), currentState),
     outcome: failed ? 'failed' : cancelled ? 'cancelled' : latest.phase === 'queued' ? 'queued' : 'active',
     progress,
-    indeterminate: latest.phase === 'running' || latest.phase === 'scanning'
-      ? ratio(latest) === null
-      : false,
+    indeterminate: !failed && !cancelled && latest.phase !== 'queued' && ratio(latest) === null,
     summary: failed
       ? `${currentLabel}阶段失败`
       : cancelled
         ? `已在${currentLabel}阶段取消`
         : latest.phase === 'queued'
           ? `${currentLabel}，等待 Worker 接收任务`
-          : `${currentLabel}阶段进行中`,
+          : `${currentLabel}阶段进行中${latest.detailLabel ? ' · ' + latest.detailLabel : ''}`,
     workflow,
     workflowLabel: workflowLabel(source, workflow),
+    updatedAt: latest.createdAt,
   }
 }

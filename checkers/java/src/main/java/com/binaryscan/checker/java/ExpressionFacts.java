@@ -130,6 +130,9 @@ final class ExpressionFacts {
         if (expression instanceof NameExpr name) {
             return resolveName(name.getNameAsString(), callable, use, resolving, depth + 1);
         }
+        if (expression instanceof com.github.javaparser.ast.expr.FieldAccessExpr field) {
+            return resolveField(field.getNameAsString(),field.getScope().toString(),use,resolving,depth+1);
+        }
         if (expression instanceof ArrayInitializerExpr initializer) {
             boolean allConstant = true;
             StringBuilder literals = new StringBuilder();
@@ -169,7 +172,8 @@ final class ExpressionFacts {
     }
 
     private static Fact resolveName(String name, Node callable, Node use, Set<String> resolving, int depth) {
-        if (callable == null || !resolving.add(name)) return Fact.unknown();
+        if(callable==null)return resolveField(name,"",use,resolving,depth+1);
+        if (!resolving.add(name)) return Fact.unknown();
         try {
             for (Parameter parameter : callable.findAll(Parameter.class)) {
                 if (parameter.getNameAsString().equals(name) && sameCallable(parameter, callable)) return Fact.unknown();
@@ -192,10 +196,22 @@ final class ExpressionFacts {
             return definitions.stream().max(Comparator.comparing(definition -> begin(definition.node())))
                 // 只使用当前位置之前最近的一次定义，近似顺序执行下的局部值传播。
                 .map(definition -> inspect(definition.value(), callable, definition.node(), resolving, depth + 1))
-                .orElseGet(Fact::unknown);
+                .orElseGet(() -> resolveField(name,"",use,resolving,depth+1));
         } finally {
             resolving.remove(name);
         }
+    }
+
+    private static Fact resolveField(String name,String scope,Node use,Set<String> resolving,int depth){
+        if(depth>24)return Fact.unknown();
+        com.github.javaparser.ast.body.TypeDeclaration<?> owner=use.findAncestor(com.github.javaparser.ast.body.TypeDeclaration.class).orElse(null);
+        if(!scope.isEmpty()&&!scope.equals("this")&&(owner==null||!owner.getNameAsString().equals(scope))){
+            var unit=use.findCompilationUnit();if(unit.isEmpty())return Fact.unknown();
+            owner=unit.get().findAll(com.github.javaparser.ast.body.TypeDeclaration.class).stream().filter(t->t.getNameAsString().equals(scope)).findFirst().orElse(null);
+        }
+        if(owner==null)return Fact.unknown();String key="field:"+owner.getNameAsString()+"."+name;if(!resolving.add(key))return Fact.unknown();
+        try{for(var field:owner.getFields())if(field.isFinal())for(var variable:field.getVariables())if(variable.getNameAsString().equals(name)&&variable.getInitializer().isPresent()&&(variable.getType().isPrimitiveType()||variable.getTypeAsString().equals("String")||variable.getTypeAsString().equals("java.lang.String")))return inspect(variable.getInitializer().get(),enclosingCallable(variable),variable,resolving,depth+1);return Fact.unknown();}
+        finally{resolving.remove(key);}
     }
 
     private static Node enclosingCallable(Node node) {

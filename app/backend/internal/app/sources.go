@@ -143,6 +143,7 @@ func (s *taskService) listProjectSourceFiles(c *gin.Context) {
 		JOIN source_projects p ON p.id = sf.source_project_id AND p.state = 'ready'
 		JOIN tasks t ON t.id = p.task_id AND t.deleted_at IS NULL
 		WHERE p.id = ? AND p.task_id = ? AND sf.state = 'ready'
+		AND sf.logical_path NOT LIKE '.binaryscan/%'
 		ORDER BY sf.logical_path, sf.id LIMIT ?`, project.id, c.Param("taskID"), limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source_file_query_failed"})
@@ -311,7 +312,7 @@ func sourceFiles(root string) ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if cleaned != "project.json" {
+		if cleaned != "project.json" && !strings.HasPrefix(cleaned, ".binaryscan/") {
 			files = append(files, cleaned)
 		}
 		return nil

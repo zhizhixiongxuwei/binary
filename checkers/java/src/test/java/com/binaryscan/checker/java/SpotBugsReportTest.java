@@ -103,4 +103,24 @@ final class SpotBugsReportTest {
     private SpotBugsReport.Result parse(String report) throws IOException {
         return SpotBugsReport.parse(Files.writeString(temp.resolve("report.xml"), report));
     }
+
+    @Test void preservesExactReturnValueProducerForProofReview() throws IOException {
+        String report = """
+            <BugCollection version="4.10.4">
+              <BugInstance type="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" priority="2">
+                <Method classname="sample.Factory" name="run" signature="()V" primary="true"/>
+                <Method classname="vendor.Factory" name="getObject" signature="()Ljava/util/Properties;" role="METHOD_CALLED"/>
+                <SourceLine classname="sample.Factory" primary="true" role="SOURCE_LINE_INVOKED" startBytecode="78" endBytecode="78"/>
+                <SourceLine classname="sample.Factory" role="SOURCE_LINE_KNOWN_NULL" startBytecode="75" endBytecode="75"/>
+                %s
+              </BugInstance><Errors errors="0" missingClasses="0"/>
+            </BugCollection>
+            """;
+        var finding = parse(report.formatted("")).findings().getFirst();
+        assertEquals(new SpotBugsReport.MethodIdentity("vendor.Factory", "getObject", "()Ljava/util/Properties;"), finding.returnValueSource());
+        assertEquals(75, finding.nullSourceBytecodeOffset());
+        assertEquals(78, finding.bytecodeOffset());
+        finding = parse(report.formatted("<SourceLine classname=\"sample.Factory\" role=\"SOURCE_LINE_KNOWN_NULL\" startBytecode=\"70\" endBytecode=\"70\"/>")).findings().getFirst();
+        assertNull(finding.nullSourceBytecodeOffset());
+    }
 }

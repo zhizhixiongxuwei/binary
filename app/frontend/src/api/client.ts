@@ -1323,6 +1323,8 @@ export const httpApi: ApiClient = {
     request<DecompileSourceChunk>(
       `/tasks/${encodeURIComponent(taskId)}/decompile-results/${encodeURIComponent(resultId)}/source${buildDecompileSourceQuery(query)}`,
     ),
+  downloadProjectExport: (taskId: string) =>
+    Promise.resolve(sameOriginReportDownload(`/tasks/${encodeURIComponent(taskId)}/project-export`)),
   downloadDecompileSources: (
     taskId: string,
     includeCombined = false,
@@ -1553,6 +1555,7 @@ export const api: ApiClient = {
     activeApi.getDecompileSource(taskId, resultId, query),
   downloadDecompileSources: (taskId, includeCombined) =>
     activeApi.downloadDecompileSources(taskId, includeCombined),
+  downloadProjectExport: (taskId) => activeApi.downloadProjectExport(taskId),
   listTaskVulnerabilities: (taskId, query) =>
     activeApi.listTaskVulnerabilities(taskId, query),
   getTaskVulnerability: (taskId, findingId) =>

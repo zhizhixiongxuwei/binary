@@ -123,6 +123,9 @@ func Run(role string, kinds []job.Kind, factory Factory) error {
 		} else {
 			executionCtx, executionCancel := executionContext(ctx, *claim)
 			err = executeWithHeartbeat(executionCtx, repository, workerID, *claim, cfg.Worker.Lease, cfg.Worker.Heartbeat, executor)
+			if err != nil {
+				repository.RecordExecutionDiagnostic(executionCtx, *claim, err)
+			}
 			executionCancel()
 			if err != nil {
 				// 执行器可能在事务提交后才因网络或上下文取消返回错误，以提交标记作为最终事实来源。
@@ -199,6 +202,8 @@ func executeWithHeartbeat(
 ) error {
 	executionCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	executionCtx, stopProgress := repository.TrackProgress(executionCtx, claim)
+	defer stopProgress()
 	done := make(chan error, 1)
 	go func() { done <- executor.Execute(executionCtx, claim) }()
 	ticker := time.NewTicker(heartbeat)

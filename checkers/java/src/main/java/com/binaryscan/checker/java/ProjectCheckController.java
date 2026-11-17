@@ -31,6 +31,8 @@ final class ProjectCheckController {
     private static final class Session {
         String id, projectId, runId, manifestSha256;
         List<String> rules;
+        Map<String,String> frameworks;
+        String frameworksSha256, inputSha256;
         LinkedHashMap<String, Models.ProjectFile> expected = new LinkedHashMap<>();
         Map<String, Path> uploaded = new HashMap<>();
         Path root;
@@ -40,6 +42,7 @@ final class ProjectCheckController {
         volatile boolean cancelled;
         Thread thread;
         Models.CheckResponse result;
+        volatile ProjectAnalyzer.Progress progress = new ProjectAnalyzer.Progress("java-project-v1", "uploading", 0, 1, 0);
     }
     @PostMapping("/v2/java/projects")
     Models.ProjectSession create(@RequestBody Models.ProjectRequest request) {
@@ -53,16 +56,20 @@ final class ProjectCheckController {
         if (request.files().size() > 20_000) throw large();
         Session session = new Session(); session.id = UUID.randomUUID().toString().replace("-", "");
         session.projectId = request.projectId(); session.runId = request.runId(); session.manifestSha256 = request.manifestSha256(); session.rules = rules;
+        session.frameworks = validateFrameworks(request);
+        session.frameworksSha256 = request.frameworksSha256(); session.inputSha256 = request.inputSha256();
         for (var file : request.files()) {
             if (file == null || !safePath(file.path()) || file.sha256() == null || !file.sha256().matches("[a-f0-9]{64}")
-                || file.sizeBytes() < 0 || file.sizeBytes() > 4L << 20 || session.expected.putIfAbsent(file.path(), file) != null) throw bad("invalid or duplicate source manifest entry");
+                || file.sizeBytes() < 0 || file.sizeBytes() > (file.path().equals(DependencyIndex.PATH)?24L:4L) << 20 || session.expected.putIfAbsent(file.path(), file) != null) throw bad("invalid or duplicate source manifest entry");
             session.bytes += file.sizeBytes();
             if (session.bytes > PROJECT_BYTES) throw large();
         }
         synchronized (this) {
         for (Session existing : sessions.values()) if (existing.projectId.equals(session.projectId) && existing.runId.equals(session.runId)
             && existing.manifestSha256.equals(session.manifestSha256)) {
-            if (!existing.rules.equals(session.rules) || !existing.expected.equals(session.expected)) throw conflict("pinned project session identity cannot be changed");
+            if (!existing.rules.equals(session.rules) || !existing.expected.equals(session.expected)
+                || !existing.frameworks.equals(session.frameworks) || !Objects.equals(existing.frameworksSha256, session.frameworksSha256)
+                || !Objects.equals(existing.inputSha256, session.inputSha256)) throw conflict("pinned project session identity cannot be changed");
             existing.touched = System.currentTimeMillis();
             return new Models.ProjectSession("java-project-v1", existing.id);
         }
@@ -99,6 +106,12 @@ final class ProjectCheckController {
             return Map.of("uploadedFiles", session.uploaded.size());
         }
     }
+    @GetMapping("/v2/java/projects/{sessionId}/progress")
+    ProjectAnalyzer.Progress progress(@PathVariable("sessionId") String id) {
+        Session session = get(id);
+        session.touched = System.currentTimeMillis();
+        return session.progress;
+    }
     @PostMapping("/v2/java/projects/{sessionId}/analyze")
     Models.CheckResponse analyze(@PathVariable("sessionId") String id) {
         Session session = get(id);
@@ -112,7 +125,7 @@ final class ProjectCheckController {
         try {
             List<ProjectAnalyzer.Input> files = session.expected.keySet().stream().sorted()
                 .map(path -> new ProjectAnalyzer.Input(path, session.uploaded.get(path))).toList();
-            var result = ProjectAnalyzer.analyze(session.projectId, files, session.rules, analyzer);
+            var result = ProjectAnalyzer.analyze(session.projectId, files, session.rules, analyzer, new FrameworkContracts(session.frameworks), progress -> session.progress = progress,session.inputSha256);
             synchronized (session) { session.result = result; }
             return result;
         } catch (IOException failure) {
@@ -171,6 +184,22 @@ final class ProjectCheckController {
         remaining.forEach(this::cancel);
     }
     private static boolean identity(String value) { return value != null && !value.isBlank() && value.length() <= 64 && value.chars().noneMatch(Character::isISOControl); }
+    private static Map<String,String> validateFrameworks(Models.ProjectRequest request) {
+        Map<String,String> frameworks = request.frameworks() == null ? Map.of() : request.frameworks();
+        if (frameworks.size() > 512) throw bad("too many framework coordinates");
+        for (var item : frameworks.entrySet()) if (item.getKey() == null || item.getValue() == null
+            || item.getKey().length() > 256 || !item.getKey().matches("[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+")
+            || item.getValue().length() > 128 || !item.getValue().matches("[A-Za-z0-9_.+\\-]+")) throw bad("invalid framework coordinate");
+        if (request.inputSha256() != null && !request.inputSha256().matches("[a-f0-9]{64}")) throw bad("invalid original input identity");
+        if (!frameworks.isEmpty() && (request.inputSha256() == null || request.frameworksSha256() == null)) throw bad("framework evidence is not bound to the original input");
+        if (request.frameworksSha256() != null) {
+            try {
+                byte[] canonical = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(new TreeMap<>(frameworks));
+                if (!sha256(canonical).equals(request.frameworksSha256())) throw bad("framework evidence digest mismatch");
+            } catch (com.fasterxml.jackson.core.JsonProcessingException invalid) { throw bad("invalid framework evidence"); }
+        }
+        return Map.copyOf(frameworks);
+    }
     static boolean safePath(String path) {
         return path != null && !path.isBlank() && path.length() <= 1024 && !path.startsWith("/") && !path.contains("\\") && !path.contains(":")
             && path.chars().noneMatch(Character::isISOControl) && Arrays.stream(path.split("/", -1)).noneMatch(p -> p.isEmpty() || p.equals(".") || p.equals(".."));

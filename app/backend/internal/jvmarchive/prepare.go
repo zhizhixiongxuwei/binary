@@ -58,6 +58,11 @@ type Options struct {
 	// nil derives the application groups from the outer Maven metadata.
 	// A non-nil slice freezes an earlier project's selection, including empty.
 	ApplicationGroups []string
+	// OnProgress observes completed archive normalization work after a Boot
+	// layout is confirmed. Total includes the root and every nested library,
+	// including dependencies that will not be selected for decompilation.
+	// Ordinary JARs do not invoke it. Nil preserves the existing behavior.
+	OnProgress func(done, total int)
 }
 
 type Unit struct {
@@ -85,10 +90,11 @@ func (p *Prepared) SameInputs(expected *Scope) bool {
 }
 
 type budget struct {
-	bytes       int64
-	entries     int
-	diagnostics []string
-	truncated   bool
+	classDigests map[string]map[string]string
+	bytes        int64
+	entries      int
+	diagnostics  []string
+	truncated    bool
 }
 
 func (b *budget) diagnostic(message string) {
@@ -182,6 +188,26 @@ func Prepare(ctx context.Context, filename, dir string, options Options) (*Prepa
 	if !boot {
 		return nil, nil
 	}
+	seen := make(map[string]bool)
+	var libraries []*zip.File
+	for _, entry := range outer.File {
+		if !safeEntry(entry.Name) || seen[entry.Name] {
+			return nil, fmt.Errorf("unsafe or duplicate JAR entry %q", entry.Name)
+		}
+		seen[entry.Name] = true
+		if strings.HasPrefix(entry.Name, "BOOT-INF/lib/") && strings.HasSuffix(entry.Name, ".jar") {
+			libraries = append(libraries, entry)
+		}
+	}
+	if len(libraries) > MaxModules {
+		return nil, fmt.Errorf("nested JAR module limit exceeded")
+	}
+	reportProgress := func(done int) {
+		if options.OnProgress != nil {
+			options.OnProgress(done, len(libraries)+1)
+		}
+	}
+	reportProgress(0)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -227,20 +253,7 @@ func Prepare(ctx context.Context, filename, dir string, options Options) (*Prepa
 	root := Module{EntryPath: "BOOT-INF/classes/", SHA256: fileDigest(rootFile), Role: "application", GroupIDs: groups, ClassCount: count, SourcePrefix: "application"}
 	result.Targets = append(result.Targets, Unit{Module: root, Path: rootFile})
 	result.Scope.Modules = append(result.Scope.Modules, root)
-	seen := make(map[string]bool)
-	var libraries []*zip.File
-	for _, entry := range outer.File {
-		if !safeEntry(entry.Name) || seen[entry.Name] {
-			return nil, fmt.Errorf("unsafe or duplicate JAR entry %q", entry.Name)
-		}
-		seen[entry.Name] = true
-		if strings.HasPrefix(entry.Name, "BOOT-INF/lib/") && strings.HasSuffix(entry.Name, ".jar") {
-			libraries = append(libraries, entry)
-		}
-	}
-	if len(libraries) > MaxModules {
-		return nil, fmt.Errorf("nested JAR module limit exceeded")
-	}
+	reportProgress(1)
 	libraries, result.Scope.ClasspathOrder, result.Scope.ClasspathIndexSHA256, err = orderLibraries(ctx, outer.File, libraries, b)
 	if err != nil {
 		return nil, err
@@ -280,6 +293,7 @@ func Prepare(ctx context.Context, filename, dir string, options Options) (*Prepa
 		}
 		module := Module{EntryPath: entry.Name, SHA256: digest, Role: role, GroupIDs: childGroups, ClassCount: classCount, SourcePrefix: prefix}
 		result.Scope.Modules = append(result.Scope.Modules, module)
+		reportProgress(index + 2)
 		if classCount == 0 {
 			continue
 		}
@@ -297,40 +311,29 @@ func Prepare(ctx context.Context, filename, dir string, options Options) (*Prepa
 	classes := make(map[string]definition)
 	units := append(append([]Unit{}, result.Targets...), result.Dependencies...)
 	for _, unit := range units {
-		jar, err := zip.OpenReader(unit.Path)
-		if err != nil {
-			return nil, err
+		// Hashes were computed over exactly the normalized bytes while writing
+		// them. Reuse those pinned digests rather than inflating every dependency
+		// a second time just to compare duplicate class identities.
+		names := make([]string, 0, len(b.classDigests[unit.Path]))
+		for name := range b.classDigests[unit.Path] {
+			names = append(names, name)
 		}
-		for _, entry := range jar.File {
-			source, err := entry.Open()
-			if err != nil {
-				_ = jar.Close()
+		sort.Strings(names)
+		for _, name := range names {
+			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
-			hash := sha256.New()
-			written, copyErr := boundedCopy(ctx, hash, source, MaxExpandedBytes-b.bytes)
-			b.bytes += written
-			closeErr := source.Close()
-			if copyErr != nil {
-				_ = jar.Close()
-				return nil, copyErr
-			}
-			if closeErr != nil {
-				_ = jar.Close()
-				return nil, closeErr
-			}
-			digest := hex.EncodeToString(hash.Sum(nil))
-			if previous, ok := classes[entry.Name]; ok {
+			digest := b.classDigests[unit.Path][name]
+			if previous, ok := classes[name]; ok {
 				if previous.role == "application" && unit.Role == "application" {
-					b.diagnostic("Duplicate application class " + entry.Name + " in " + previous.module + " and " + unit.EntryPath)
+					b.diagnostic("Duplicate application class " + name + " in " + previous.module + " and " + unit.EntryPath)
 				} else if previous.digest != digest {
-					b.diagnostic("Conflicting effective class " + entry.Name + " in " + previous.module + " and " + unit.EntryPath + "; class-loader resolution is not verified")
+					b.diagnostic("Conflicting effective class " + name + " in " + previous.module + " and " + unit.EntryPath + "; class-loader resolution is not verified")
 				}
 			} else {
-				classes[entry.Name] = definition{unit.EntryPath, digest, unit.Role}
+				classes[name] = definition{unit.EntryPath, digest, unit.Role}
 			}
 		}
-		_ = jar.Close()
 	}
 	result.Scope.Diagnostics = append([]string{}, b.diagnostics...)
 	result.Scope.DiagnosticsTruncated = b.truncated
@@ -409,6 +412,10 @@ func orderLibraries(ctx context.Context, entries, libraries []*zip.File, b *budg
 }
 
 func classJar(ctx context.Context, entries []*zip.File, prefix, filename string, b *budget) (int, error) {
+	if b.classDigests == nil {
+		b.classDigests = map[string]map[string]string{}
+	}
+	b.classDigests[filename] = map[string]string{}
 	if len(entries) > MaxEntries-b.entries {
 		return 0, fmt.Errorf("cumulative JAR entry limit exceeded")
 	}
@@ -513,7 +520,8 @@ func classJar(ctx context.Context, entries []*zip.File, prefix, filename string,
 			source.Close()
 			return 0, err
 		}
-		written, copyErr := boundedCopy(ctx, destination, io.MultiReader(strings.NewReader(string(magic)), source), MaxExpandedBytes-b.bytes)
+		hash := sha256.New()
+		written, copyErr := boundedCopy(ctx, io.MultiWriter(destination, hash), io.MultiReader(strings.NewReader(string(magic)), source), MaxExpandedBytes-b.bytes)
 		closeErr := source.Close()
 		b.bytes += written
 		if copyErr != nil {
@@ -525,6 +533,7 @@ func classJar(ctx context.Context, entries []*zip.File, prefix, filename string,
 		if uint64(written) != entry.UncompressedSize64 {
 			return 0, fmt.Errorf("class entry size mismatch")
 		}
+		b.classDigests[filename][name] = hex.EncodeToString(hash.Sum(nil))
 		count++
 	}
 	if err := writer.Close(); err != nil {

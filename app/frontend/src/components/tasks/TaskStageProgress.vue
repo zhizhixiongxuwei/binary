@@ -19,6 +19,7 @@ import type { Component } from 'vue'
 
 import type { TaskExecutionLogEntry } from '@/components/tasks/taskExecutionLog'
 import type { TaskStageSource } from '@/utils/taskStages'
+import { formatDateTime } from '@/utils/formatters'
 import {
   deriveTaskStageProgress,
   type TaskStageId,
@@ -32,16 +33,18 @@ const props = defineProps<{
 
 const model = computed(() => deriveTaskStageProgress(props.task, props.entries ?? []))
 const progressAriaAttributes = computed<Readonly<Record<string, string>>>(() =>
-  model.value.indeterminate
-    ? {}
-    : { 'aria-valuenow': String(model.value.progress) },
+  ({ 'aria-valuenow': String(model.value.progress) }),
 )
 
 const stageIcons: Readonly<Record<TaskStageId, Component>> = {
   queued: Timer,
   preparing: FileCheck2,
+  uploading: FileCheck2,
   starting: ServerCog,
   running: CodeXml,
+  parsing: FileCheck2,
+  indexing: Database,
+  analyzing: ScanSearch,
   verifying: PackageCheck,
   database_ready: Database,
   targets_ready: FileCheck2,
@@ -72,12 +75,14 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
           <span>{{ model.workflowLabel }}</span>
         </div>
         <p role="status" aria-live="polite">{{ model.summary }}</p>
+        <small v-if="model.updatedAt" class="task-stages__updated">最近更新 {{ formatDateTime(model.updatedAt) }}</small>
       </div>
       <strong
         class="task-stages__percentage"
-        :aria-label="model.indeterminate ? '任务总进度计算中' : `任务总进度 ${model.progress}%`"
+        :aria-label="`按阶段统计的任务进度 ${model.progress}%`"
       >
-        {{ model.indeterminate ? '计算中' : `${model.progress}%` }}
+        {{ model.progress }}%
+        <small>{{ model.indeterminate ? '阶段估算 · 正在运行' : '按阶段统计' }}</small>
       </strong>
     </header>
 
@@ -86,13 +91,13 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
       :class="{ 'task-stages__meter--indeterminate': model.indeterminate }"
       role="progressbar"
       :data-progress-mode="model.indeterminate ? 'indeterminate' : 'determinate'"
-      aria-label="任务总进度"
+      aria-label="按阶段统计的任务进度"
       aria-valuemin="0"
       aria-valuemax="100"
       v-bind="progressAriaAttributes"
     >
       <span
-        :style="{ width: model.indeterminate ? '36%' : `${model.progress}%` }"
+        :style="{ width: `${model.progress}%` }"
       />
     </div>
 
@@ -187,6 +192,9 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
   font-size: 20px;
 }
 
+.task-stages__percentage small { display: block; margin-top: 3px; color: var(--ink-500); font: 11px sans-serif; text-align: right; }
+.task-stages__updated { display: block; margin-top: 3px; color: var(--ink-400); font-size: 11px; }
+
 .task-stages--partial .task-stages__percentage {
   color: var(--warning);
 }
@@ -210,7 +218,6 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 }
 
 .task-stages__meter--indeterminate span {
-  width: 36%;
   background: repeating-linear-gradient(
     90deg,
     var(--primary) 0,
@@ -218,15 +225,16 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
     var(--primary-border) 8px,
     var(--primary-border) 16px
   );
-  animation: task-progress-indeterminate 1.2s ease-in-out infinite alternate;
+  background-size: 32px 100%;
+  animation: task-progress-indeterminate 1.2s linear infinite;
 }
 
 @keyframes task-progress-indeterminate {
   from {
-    transform: translateX(-30%);
+    background-position: 0 0;
   }
   to {
-    transform: translateX(210%);
+    background-position: 32px 0;
   }
 }
 
@@ -358,7 +366,6 @@ const stateIcons: Readonly<Record<TaskStageState, Component>> = {
 
   .task-stages__meter--indeterminate span {
     animation: none;
-    transform: translateX(90%);
   }
 }
 </style>

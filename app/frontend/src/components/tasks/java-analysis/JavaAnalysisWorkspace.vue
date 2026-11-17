@@ -5,6 +5,8 @@ import { onScopeDispose, watch } from 'vue'
 
 import type { SourceNavigationTarget, UserRole } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
+import SourceAnalysisProgress from '@/components/tasks/SourceAnalysisProgress.vue'
+import type { TaskExecutionLogEntry } from '@/components/tasks/taskExecutionLog'
 import RuleSelectionDialog from '@/components/tasks/analysis-rules/RuleSelectionDialog.vue'
 import JavaAnalysisFindingDrawer from '@/components/tasks/java-analysis/JavaAnalysisFindingDrawer.vue'
 import JavaAnalysisFindingFilters from '@/components/tasks/java-analysis/JavaAnalysisFindingFilters.vue'
@@ -18,6 +20,7 @@ import { useAnalysisRuleSelection } from '@/composables/useAnalysisRuleSelection
 const props = withDefaults(
   defineProps<{
     taskId: string
+    executionEntries?: readonly TaskExecutionLogEntry[]
     userRole: UserRole | null
     enabled?: boolean
   }>(),
@@ -137,7 +140,8 @@ defineExpose({
     </div>
 
     <template v-if="analysis.selectedRun.value">
-      <JavaAnalysisSummary :run="analysis.selectedRun.value" @open-source="emit('openSource', $event)" />
+      <SourceAnalysisProgress :run-id="analysis.selectedRun.value.id" :status="analysis.selectedRun.value.status" :entries="executionEntries" />
+      <JavaAnalysisSummary :run="analysis.selectedRun.value" />
 
       <template
         v-if="['succeeded', 'partial'].includes(analysis.selectedRun.value.status)"

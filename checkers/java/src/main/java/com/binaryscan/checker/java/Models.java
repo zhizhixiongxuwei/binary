@@ -15,7 +15,14 @@ final class Models {
                          List<Finding> findings, List<String> diagnostics,
                          String catalogVersion, List<String> appliedRuleIds,
                          Coverage coverage, List<Diagnostic> diagnosticDetails,
-                         boolean findingsTruncated, boolean diagnosticsTruncated) {
+                         boolean findingsTruncated, boolean diagnosticsTruncated, Map<String,Object> modelSummary) {
+        CheckResponse(String version, String projectId, String status, List<Finding> findings,
+                      List<String> diagnostics, String catalogVersion, List<String> appliedRuleIds,
+                      Coverage coverage, List<Diagnostic> diagnosticDetails,
+                      boolean findingsTruncated, boolean diagnosticsTruncated) {
+            this(version, projectId, status, findings, diagnostics, catalogVersion, appliedRuleIds,
+                coverage, diagnosticDetails, findingsTruncated, diagnosticsTruncated, Map.of());
+        }
         CheckResponse(String version, String projectId, String status, List<Finding> findings,
                       List<String> diagnostics, String catalogVersion, List<String> appliedRuleIds) {
             this(version, projectId, status, findings, diagnostics, catalogVersion, appliedRuleIds,
@@ -29,7 +36,13 @@ final class Models {
     record Diagnostic(String code, String path, int line, int column, String message) {}
     record ProjectFile(String path, String sha256, long sizeBytes) {}
     record ProjectRequest(String version, String projectId, String runId, String manifestSha256,
-                          String catalogVersion, List<String> ruleIds, List<ProjectFile> files) {}
+                          String catalogVersion, List<String> ruleIds, List<ProjectFile> files,
+                          Map<String,String> frameworks, String frameworksSha256, String inputSha256) {
+        ProjectRequest(String version, String projectId, String runId, String manifestSha256,
+                       String catalogVersion, List<String> ruleIds, List<ProjectFile> files) {
+            this(version, projectId, runId, manifestSha256, catalogVersion, ruleIds, files, Map.of(), null, null);
+        }
+    }
     record ProjectSession(String version, String sessionId) {}
     record ProjectUpload(List<SourceFile> files) {}
 }

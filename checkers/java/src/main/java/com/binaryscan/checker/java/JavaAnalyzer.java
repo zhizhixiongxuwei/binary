@@ -89,19 +89,21 @@ final class JavaAnalyzer {
             Emitter emitter = new Emitter(file.path(), findings, enabledRules);
             // 固定遍历顺序和最终排序，使相同源码在不同运行中生成稳定、可复核的 Finding。
             for (MethodCallExpr call : sorted(unit.findAll(MethodCallExpr.class))) {
+                var wrapper=WrapperCrypto.call(call,project,unit);if(wrapper!=null&&enabledRules.contains(wrapper.rule()))emitter.emit(RuleCatalog.rule(wrapper.rule()),call,wrapper.message());
                 if (emitter.enabled(WEAK_DIGEST) || emitter.enabled(WEAK_CIPHER) || emitter.enabled(LEGACY_TLS)) evaluateCrypto(unit, call, emitter);
                 if (emitter.enabled(XXE)) evaluateXxe(call, emitter);
                 if (emitter.enabled(DESERIALIZATION)) evaluateDeserialization(call, emitter);
-                if (emitter.enabled(SQL_INJECTION)) evaluateSql(call, emitter);
-                if (emitter.enabled(COMMAND_INJECTION)) evaluateCommand(call, emitter);
-                if (emitter.enabled(DYNAMIC_CODE)) evaluateDynamicCode(call, emitter);
+                if (emitter.enabled(SQL_INJECTION) && (project == null || project.security == null)) evaluateSql(call, emitter);
+                if (emitter.enabled(COMMAND_INJECTION) && (project == null || project.security == null)) evaluateCommand(call, emitter);
+                if (emitter.enabled(DYNAMIC_CODE) && (project == null || project.security == null)) evaluateDynamicCode(call, emitter);
                 if (emitter.enabled(BROAD_PERMISSION)) evaluatePermissions(call, emitter);
                 if (emitter.enabled(INSECURE_COOKIE)) evaluateCookie(call, emitter);
                 if (emitter.enabled(TRUST_HOSTNAME)) evaluateHostnameCall(call, emitter);
             }
             for (ObjectCreationExpr creation : sorted(unit.findAll(ObjectCreationExpr.class))) {
+                var wrapper=WrapperCrypto.creation(creation,project,unit);if(wrapper!=null&&enabledRules.contains(wrapper.rule()))emitter.emit(RuleCatalog.rule(wrapper.rule()),creation,wrapper.message());
                 if (emitter.enabled(HARDCODED_KEY)) evaluateHardcodedKey(creation, emitter);
-                if (emitter.enabled(COMMAND_INJECTION)) evaluateProcessBuilder(creation, emitter);
+                if (emitter.enabled(COMMAND_INJECTION) && (project == null || project.security == null)) evaluateProcessBuilder(creation, emitter);
             }
             if (emitter.enabled(TRUST_HOSTNAME)) evaluateHostnameImplementations(unit, emitter);
             if (emitter.enabled(TRUST_X509)) evaluateTrustManagers(unit, emitter);
@@ -110,7 +112,7 @@ final class JavaAnalyzer {
                     Map.of("ruleFamily", NULL_DEREFERENCE.id(), "dereferenceKind", finding.kind(),
                         "dereferenceMember", finding.member(), "uniqueDereferenceOnLine", finding.uniqueOnLine(),
                         "nullnessTrace", finding.trace(), "nullnessCertainty", finding.certainty(),
-                        "nullnessModelVersion", "java-nullness-v2", "nullnessTraceTruncated", finding.trace().size() >= ProjectContext.TRACE_LIMIT)), project, file.path());
+                        "nullnessModelVersion", NullDereferenceAnalyzer.MODEL_VERSION, "nullnessTraceTruncated", finding.trace().size() >= ProjectContext.TRACE_LIMIT)), project, file.path());
             }
             findings.sort(Comparator.comparingInt(Models.Finding::line)
                 .thenComparingInt(Models.Finding::column).thenComparing(Models.Finding::ruleId));

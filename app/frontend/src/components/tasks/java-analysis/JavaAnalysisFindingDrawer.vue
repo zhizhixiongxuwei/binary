@@ -88,6 +88,7 @@ const sourceTarget = computed(() =>
 )
 
 const traceLabels: Record<string, string> = { 'nullable-source': '可空来源', 'return-source': '返回值来源', return: '返回传递', argument: '参数传递', branch: '分支条件', sink: '解引用' }
+const securityLabels: Record<string, string> = { source: '输入来源', propagation: '数据传递', call: '方法调用', return: '返回传递', validation: '校验条件', execution: '危险执行点', 'class-definition': '动态类定义', registration: '组件注册', trigger: '分支触发条件', authentication: '认证成功分支', configuration: '配置来源', binding: '源码用途', codec: '编解码器构造', 'codec-use': '编解码器使用', deserialization: '反序列化', 'raw-sql': '原始 SQL 片段', 'sql-template': 'SQL 模板', 'sql-execution': 'SQL 执行' }
 function openTrace(step: JavaNullnessTraceStep): void {
   const projectId = props.finding?.source_project_id || props.finding?.file.result_id
   if (!projectId) return
@@ -153,7 +154,6 @@ function openSource(): void {
         </div>
       </dl>
 
-      <p v-if="finding.nullness_trace_incomplete" class="trace-warning" role="status">空值传播路径不完整：部分位置无法验证，已省略；请结合本次运行诊断复核。</p>
       <section v-if="finding.nullness_trace?.length" class="nullness-trace">
         <h3>空值传播路径 · {{ finding.nullness_certainty === 'definite' ? '确定为空' : '条件性风险' }}</h3>
         <ol>
@@ -165,6 +165,22 @@ function openSource(): void {
         <small v-if="finding.nullness_model_version">模型 {{ finding.nullness_model_version }} · 位置为反编译源码位置</small>
       </section>
 
+      <section v-if="finding.security_trace?.length" class="nullness-trace">
+        <h3>安全行为证据 · {{ finding.security_certainty === 'configuration-risk' ? '配置风险待核验' : '条件性风险' }}</h3>
+        <p v-if="finding.security_runtime_override === 'unknown'">打包配置的运行时覆盖情况尚未确认，密钥值已脱敏。</p>
+        <ol>
+          <li v-for="(step, index) in finding.security_trace" :key="index">
+            <strong>{{ securityLabels[step.kind] ?? step.kind }}</strong>：{{ step.message }}
+            <button type="button" @click="openTrace(step)">{{ step.path }}:{{ step.line }}:{{ step.column }}</button>
+          </li>
+        </ol>
+        <p v-if="finding.security_entry_verified === false && finding.security_certainty !== 'configuration-risk'">此路径的 HTTP 入口可达性仍需复核。</p>
+        <small>证据描述可疑能力或配置风险，尚未证明恶意植入或完整可利用链。</small>
+      </section>
+      <section v-if="finding.security_binding_locations?.length" class="nullness-trace">
+        <h3>关联源码用途</h3>
+        <ol><li v-for="(step,index) in finding.security_binding_locations" :key="index">{{ step.message }}<button type="button" @click="openTrace(step)">{{ step.path }}:{{ step.line }}</button></li></ol>
+      </section>
       <section v-if="finding.location" class="snippet-section">
         <div class="snippet-heading">
           <h3><Code2 :size="15" aria-hidden="true" />检测片段</h3>
@@ -209,7 +225,6 @@ function openSource(): void {
 </template>
 
 <style scoped>
-.trace-warning { color: var(--warning); background: var(--warning-soft); padding: 10px; border-radius: 6px; }
 .nullness-trace ol { padding-left: 22px; }
 .nullness-trace li { margin-bottom: 12px; overflow-wrap: anywhere; }
 .nullness-trace button { display: block; border: 0; padding: 4px 0; color: var(--primary); background: transparent; cursor: pointer; text-align: left; }

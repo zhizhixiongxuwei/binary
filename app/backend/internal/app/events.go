@@ -94,6 +94,12 @@ func (s *taskService) writeTaskEvents(c *gin.Context, taskID string, afterID uin
 		if err := rows.Scan(&id, &eventType, &message, &current, &total, &created); err != nil {
 			return lastID, err
 		}
+		if eventType == "decompile.diagnostics" || eventType == "analysis.diagnostics" {
+			// Full tool transcripts belong to the project information export;
+			// never send them to a result page or the live progress log.
+			lastID = id
+			continue
+		}
 		progress, indeterminate := eventProgress(current, total)
 		normalizedType, payload := normalizeTaskEvent(eventType, message.String)
 		record := taskEventRecord{
@@ -120,6 +126,14 @@ func (s *taskService) writeTaskEvents(c *gin.Context, taskID string, afterID uin
 func normalizeTaskEvent(eventType, message string) (string, map[string]any) {
 	payload := map[string]any{}
 	switch eventType {
+	case "decompile.progress", "analysis.progress", "decompile.completed", "analysis.completed",
+		"decompile.failed", "analysis.failed", "decompile.cancelled", "analysis.cancelled":
+		// Worker progress is persisted as structured JSON, preserving counters
+		// across reconnects and page reloads instead of deriving them from text.
+		if err := json.Unmarshal([]byte(message), &payload); err != nil || payload == nil {
+			return "task.status_changed", map[string]any{}
+		}
+		return eventType, payload
 	case "upload.complete":
 		return "task.created", payload
 	case "scan.detected":
@@ -139,6 +153,19 @@ func normalizeTaskEvent(eventType, message string) (string, map[string]any) {
 		payload["total"] = count
 		payload["completeness"] = "complete"
 		return "decompile.completed", payload
+	case "check.complete":
+		language := "java"
+		upper := strings.ToUpper(strings.TrimSpace(message))
+		if strings.HasPrefix(upper, "PYTHON") {
+			language = "python"
+		} else if strings.HasPrefix(upper, "C ") {
+			language = "c"
+		}
+		payload["analyzer"] = language + "-checker"
+		payload["phase"] = "completed"
+		payload["current"], payload["total"] = 1, 1
+		payload["finding_count"] = firstMessageNumber(message)
+		return "analysis.completed", payload
 	case "run.queued":
 		if strings.Contains(message, "decompile") {
 			payload["analyzer"] = decompileAnalyzer(message)
@@ -198,7 +225,7 @@ func eventStage(eventType string) any {
 		return "REPORTING"
 	case strings.HasPrefix(eventType, "scan"):
 		return "IDENTIFYING"
-	case strings.HasPrefix(eventType, "trivy"), strings.HasPrefix(eventType, "run"), strings.HasPrefix(eventType, "decompile"), strings.HasPrefix(eventType, "check"):
+	case strings.HasPrefix(eventType, "trivy"), strings.HasPrefix(eventType, "run"), strings.HasPrefix(eventType, "decompile"), strings.HasPrefix(eventType, "check"), strings.HasPrefix(eventType, "analysis"):
 		return "SCANNING"
 	default:
 		return nil

@@ -5,6 +5,8 @@ import { onScopeDispose, watch } from 'vue'
 
 import type { SourceNavigationTarget, UserRole } from '@/api/types'
 import StatePanel from '@/components/common/StatePanel.vue'
+import SourceAnalysisProgress from '@/components/tasks/SourceAnalysisProgress.vue'
+import type { TaskExecutionLogEntry } from '@/components/tasks/taskExecutionLog'
 import RuleSelectionDialog from '@/components/tasks/analysis-rules/RuleSelectionDialog.vue'
 import PythonAnalysisFindingDrawer from '@/components/tasks/python-analysis/PythonAnalysisFindingDrawer.vue'
 import PythonAnalysisFindingFilters from '@/components/tasks/python-analysis/PythonAnalysisFindingFilters.vue'
@@ -18,6 +20,7 @@ import { useAnalysisRuleSelection } from '@/composables/useAnalysisRuleSelection
 const props = withDefaults(
   defineProps<{
     taskId: string
+    executionEntries?: readonly TaskExecutionLogEntry[]
     userRole: UserRole | null
     enabled?: boolean
   }>(),
@@ -137,6 +140,7 @@ defineExpose({
     </div>
 
     <template v-if="analysis.selectedRun.value">
+      <SourceAnalysisProgress :run-id="analysis.selectedRun.value.id" :status="analysis.selectedRun.value.status" :entries="executionEntries" />
       <PythonAnalysisSummary :run="analysis.selectedRun.value" />
 
       <template

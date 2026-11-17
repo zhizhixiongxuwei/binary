@@ -4,6 +4,10 @@ export type ReadOnlyCodeLanguage =
   | 'c'
   | 'java'
   | 'python'
+  | 'yaml'
+  | 'xml'
+  | 'json'
+  | 'plaintext'
   | 'jvm-bytecode'
   | 'smali'
   | 'python-bytecode'
@@ -18,6 +22,10 @@ const languageIds: Readonly<Record<ReadOnlyCodeLanguage, string>> = {
   c: 'cpp',
   java: 'java',
   python: 'python',
+  yaml: 'yaml',
+  xml: 'xml',
+  json: 'json',
+  plaintext: 'plaintext',
   'jvm-bytecode': 'jvm-bytecode',
   smali: 'smali',
   'python-bytecode': 'python-bytecode',
@@ -51,6 +59,7 @@ function registerLanguage(
 }
 
 function registerBinaryAnalysisLanguages(monaco: MonacoModule): void {
+  registerLanguage(monaco, 'json', { tokenizer: { root: [[/"(?:[^"\\]|\\.)*"(?=\s*:)/, 'key'], [/"(?:[^"\\]|\\.)*"/, 'string'], [/-?\d+(?:\.\d+)?/, 'number'], [/\b(?:true|false|null)\b/, 'constant'], [/[{}[\]]/, 'delimiter.bracket'], [/[,:]/, 'delimiter']] } })
   registerLanguage(monaco, 'jvm-bytecode', {
     defaultToken: '',
     tokenPostfix: '.jvm-bytecode',

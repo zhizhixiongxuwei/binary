@@ -16,8 +16,10 @@ import (
 	"time"
 
 	"binaryscan.local/backend/internal/checkrules"
+	"binaryscan.local/backend/internal/frameworks"
 	"binaryscan.local/backend/internal/identity"
 	"binaryscan.local/backend/internal/job"
+	"binaryscan.local/backend/internal/jvmarchive"
 	"binaryscan.local/backend/internal/storage"
 )
 
@@ -40,6 +42,7 @@ type checkerProject struct {
 	manifestSHA256 []byte
 	selection      *checkrules.Selection
 	input          spotBugsInput
+	frameworks     *frameworks.Snapshot
 }
 
 type checkerSource struct {
@@ -80,6 +83,7 @@ type checkerResponse struct {
 	DiagnosticDetails    []checkerDiagnostic `json:"diagnosticDetails,omitempty"`
 	FindingsTruncated    bool                `json:"findingsTruncated,omitempty"`
 	DiagnosticsTruncated bool                `json:"diagnosticsTruncated,omitempty"`
+	ModelSummary         map[string]any      `json:"modelSummary,omitempty"`
 }
 
 type checkerSourceEvidence struct {
@@ -122,6 +126,14 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	if err != nil {
 		return err
 	}
+	totalFiles := int64(0)
+	for _, file := range manifest.Files {
+		if file.Language == project.language {
+			totalFiles++
+		}
+	}
+	job.ReportProgress(ctx, "preparing", 0, totalFiles, "files")
+	processedFiles := int64(0)
 	client := &http.Client{Timeout: 20 * time.Minute}
 	allFindings := make([]checkerFinding, 0)
 	responses := make([]checkerResponse, 0)
@@ -130,6 +142,21 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	partial := project.quality != "source"
 	var javaSession *javaProjectSession
 	if project.language == "java" {
+		snapshot, detectErr := e.detectJavaFrameworks(ctx, project, manifest)
+		if detectErr != nil {
+			partial = true
+			diagnostics = append(diagnostics, "Java framework evidence unavailable; non-null framework assumptions were disabled: "+truncate(detectErr.Error(), 768))
+		} else {
+			project.frameworks = &snapshot
+			for _, message := range snapshot.Diagnostics {
+				partial = true
+				diagnostics = append(diagnostics, "Java framework evidence: "+truncate(message, 768))
+			}
+			if len(snapshot.Conflicts) > 0 {
+				partial = true
+				diagnostics = append(diagnostics, "Java framework metadata contains conflicting versions; affected non-null contracts were disabled")
+			}
+		}
 		javaSession, err = createJavaProject(ctx, client, url, project, manifest, claim.RunID)
 		if errors.Is(err, errJavaProjectLimit) {
 			partial = true
@@ -139,6 +166,18 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		}
 		if javaSession != nil {
 			defer javaSession.close()
+			if manifest.JavaTypeIndex != nil {
+				body, readErr := storage.ReadJavaTypeIndex(projectRoot, manifest)
+				if readErr != nil {
+					return readErr
+				}
+				if err := javaSession.upload(ctx, []checkerSource{{Path: manifest.JavaTypeIndex.Path, Content: string(body)}}); err != nil {
+					return err
+				}
+			} else if project.sourceKind == "jvm" {
+				partial = true
+				diagnostics = append(diagnostics, "Java type and resource context is absent in this historical project; decompile the original again to enable dependency/configuration/XML analysis")
+			}
 		}
 	}
 	batch := make([]checkerSource, 0, checkerBatchFiles)
@@ -152,6 +191,8 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			if err := javaSession.upload(ctx, batch); err != nil {
 				return err
 			}
+			processedFiles += int64(len(batch))
+			job.ReportProgress(ctx, "uploading", processedFiles, totalFiles, "files")
 			batch = make([]checkerSource, 0, checkerBatchFiles)
 			batchBytes = 0
 			return nil
@@ -170,6 +211,8 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		if response.Status == "partial" {
 			partial = true
 		}
+		processedFiles += int64(len(batch))
+		job.ReportProgress(ctx, "analyzing", processedFiles, totalFiles, "files")
 		responses = append(responses, response)
 		diagnostics = append(diagnostics, response.Diagnostics...)
 		batch = make([]checkerSource, 0, checkerBatchFiles)
@@ -197,7 +240,11 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("project source is not a regular file: %s", cleaned)
 		}
-		if info.Size() > 4<<20 {
+		fileLimit := int64(4 << 20)
+		if project.language == "java" && cleaned == jvmarchive.TypeIndexPath {
+			fileLimit = 24 << 20
+		}
+		if info.Size() > fileLimit {
 			partial = true
 			diagnostics = append(diagnostics, cleaned+": source exceeds checker file limit")
 			continue
@@ -206,9 +253,9 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		if err != nil {
 			return err
 		}
-		body, readErr := io.ReadAll(io.LimitReader(file, (4<<20)+1))
+		body, readErr := io.ReadAll(io.LimitReader(file, fileLimit+1))
 		closeErr := file.Close()
-		if readErr != nil || closeErr != nil || len(body) > 4<<20 {
+		if readErr != nil || closeErr != nil || int64(len(body)) > fileLimit {
 			return fmt.Errorf("read project source %s: read=%v close=%v", cleaned, readErr, closeErr)
 		}
 		if int64(len(body)) != source.SizeBytes || !strings.EqualFold(
@@ -233,19 +280,25 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 		return err
 	}
 	if javaSession != nil {
+		job.ReportProgress(ctx, "indexing", 0, totalFiles, "files")
 		response, err := javaSession.analyze(ctx)
 		if err != nil {
 			return err
+		}
+		if !verifyJavaModelSummary(response.ModelSummary, project.frameworks, sources) {
+			response.ModelSummary = nil
+			partial = true
+			diagnostics = append(diagnostics, "Java checker returned unverifiable framework proof metadata; invalid model evidence was omitted")
 		}
 		partial = partial || response.Status == "partial"
 		responses = append(responses, response)
 		diagnostics = append(diagnostics, response.Diagnostics...)
 		allFindings = append(allFindings, response.Findings...)
-		// Source files are no longer needed remotely. Release their tmpfs budget
-		// before the same checker starts bytecode extraction in its shared slot.
+		// Release the remote project as soon as source analysis completes.
 		javaSession.close()
 	}
 
+	job.ReportProgress(ctx, "publishing", 0, 1, "steps")
 	validated := make([]validatedCheckerFinding, 0, len(allFindings))
 	for _, finding := range allFindings {
 		cleaned, cleanErr := storage.CleanRelativePath(finding.Path)
@@ -272,6 +325,10 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			continue
 		}
 		snippet, snippetStart := sourceSnippet(source.lines, line, 2)
+		if finding.Evidence["redactSnippet"] == true {
+			snippet = "[配置密钥值已脱敏；请在受控源码视图中核对原文件]"
+			snippetStart = line
+		}
 		if project.language == "java" && !verifyJavaNullnessTrace(finding.Evidence, sources) {
 			partial = true
 			diagnostics = append(diagnostics, cleaned+": checker returned an unverifiable nullness trace; invalid steps were omitted")
@@ -290,35 +347,13 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	metadata := map[string]any{
 		"projectId": project.id, "language": project.language, "batchCount": len(responses),
 	}
-	var bytecode spotBugsResponse
-	var bytecodeSources spotBugsSourceCorrelation
-	if format := project.spotBugsFormat(); format != "" {
-		bytecode = e.checkSpotBugs(ctx, client, url, project.input, manifest, format, checkerFindingLimit-len(validated))
-		partial = partial || bytecode.Status == "partial" || bytecode.Status == "skipped"
-		diagnostics = append(diagnostics, bytecode.Diagnostics...)
-		artifact["bytecodeResponse"] = bytecode
-		metadata["bytecodeStatus"] = bytecode.Status
-		metadata["bytecodeFindingCount"] = len(bytecode.Findings)
-		if bytecode.SkipReason != "" {
-			metadata["bytecodeSkipReason"] = bytecode.SkipReason
-		}
-		if bytecode.ToolVersion != "" {
-			metadata["spotbugsVersion"] = bytecode.ToolVersion
-		}
-		if len(bytecode.Findings) != 0 {
-			locations, mapErr := storage.ReadJVMSourceMap(projectRoot, manifest)
-			if mapErr != nil {
-				diagnostics = append(diagnostics, "Java: bytecode-to-source mapping could not be verified")
-			} else {
-				bytecodeSources = correlateSpotBugsFindings(validated, bytecode, locations)
-			}
-		}
-		artifact["mergedFindingCount"] = bytecodeSources.mergedCount
-		metadata["mergedFindingCount"] = bytecodeSources.mergedCount
-		metadata["sourceFindingCount"] = len(validated)
+	if project.frameworks != nil {
+		artifact["frameworkEvidence"] = project.frameworks
+		metadata["frameworkEvidence"] = project.frameworks
 	}
-	validatedCount := len(validated) + len(bytecode.Findings)
-	findingCount := validatedCount - bytecodeSources.mergedCount
+	// Java analysis is source-only. Historical bytecode artifacts remain readable.
+	validatedCount := len(validated)
+	findingCount := validatedCount
 	if project.language == "java" && manifest.JVMArchive != nil {
 		for _, diagnostic := range manifest.JVMArchive.Diagnostics {
 			partial = true
@@ -327,13 +362,13 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 	}
 	artifact["diagnostics"] = diagnostics
 	artifact["validatedFindingCount"] = validatedCount
-	if bytecode.Status != "" {
-		artifact["publishedFindingCount"] = findingCount
-	}
 	metadata["diagnosticCount"] = len(diagnostics)
 	metadata["findingCount"] = findingCount
 	if project.language == "java" {
-		summary := javaAnalysisSummary(manifest, responses, diagnostics, bytecode, partial)
+		summary := javaAnalysisSummary(manifest, responses, diagnostics, spotBugsResponse{}, partial)
+		if project.frameworks != nil {
+			summary["frameworkEvidence"] = project.frameworks
+		}
 		artifact["analysisSummary"] = summary
 		metadata["analysisSummary"] = summary
 	}
@@ -402,19 +437,6 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 				return fmt.Errorf("insert checker finding: %w", err)
 			}
 		}
-		for index, finding := range bytecode.Findings {
-			if bytecodeSources.merged != nil && bytecodeSources.merged[index] {
-				continue
-			}
-			details := finding.evidence(bytecode.ToolVersion)
-			bytecodeSources.addDecompiledLocation(details, index, sources)
-			evidence, _ := json.Marshal(details)
-			if _, err := statement.ExecContext(ctx, project.taskID, claim.RunID, project.id, nil,
-				"java", "medium", javaNullDereferenceRuleID, "CWE-476", finding.ClassName,
-				nil, nil, nil, nil, "空指针解引用", finding.Message, nil, nil, evidence); err != nil {
-				return fmt.Errorf("insert SpotBugs finding: %w", err)
-			}
-		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO run_artifacts
 			(id, task_id, run_id, artifact_kind, media_type, storage_key, size_bytes,
 			 sha256, schema_version, state, metadata)
@@ -440,12 +462,6 @@ func (e *Executor) check(ctx context.Context, claim job.Claim) error {
 			return fmt.Errorf("record checker runtime: %w", err)
 		}
 		message := fmt.Sprintf("%s 源码检查完成，发现 %d 条问题", strings.ToUpper(project.language), findingCount)
-		switch bytecode.Status {
-		case "skipped":
-			message = fmt.Sprintf("Java 源码检查完成，发现 %d 条问题。JAR 超过输入上限，已跳过 SpotBugs", findingCount)
-		case "complete", "partial":
-			message = fmt.Sprintf("Java 源码与字节码检查完成，发现 %d 条问题", findingCount)
-		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO task_events
             (task_id, event_type, message) VALUES (?, 'check.complete', ?)`, project.taskID, message); err != nil {
 			return fmt.Errorf("record checker completion: %w", err)
@@ -659,6 +675,12 @@ func decodeCheckerResponse(responseBody []byte, request checkerRequest) (checker
 	}
 	if result.Coverage != nil && !result.Coverage.valid() {
 		return checkerResponse{}, fmt.Errorf("checker response contains invalid coverage statistics")
+	}
+	if result.ModelSummary != nil {
+		encoded, err := json.Marshal(result.ModelSummary)
+		if err != nil || len(encoded) > 1<<20 {
+			return checkerResponse{}, fmt.Errorf("checker framework model evidence exceeds the supported limit")
+		}
 	}
 	for _, diagnostic := range result.Diagnostics {
 		if len(diagnostic) > 8192 || strings.ContainsRune(diagnostic, '\x00') {

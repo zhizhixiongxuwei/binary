@@ -394,7 +394,7 @@ function findingValue(value: unknown, field: string): JavaAnalysisFinding {
       'location',
       'message',
     ],
-    ['snippet', 'snippet_start_line', 'created_at', 'nullness_trace', 'nullness_trace_incomplete', 'nullness_certainty', 'nullness_model_version'],
+    ['snippet', 'snippet_start_line', 'created_at', 'nullness_trace', 'nullness_trace_incomplete', 'nullness_certainty', 'nullness_model_version', 'security_trace', 'security_binding_locations', 'security_certainty', 'security_entry_verified', 'security_model_version', 'security_trace_incomplete', 'security_runtime_override'],
     field,
   )
   const file = record(finding.file, `${field}.file`)
@@ -518,6 +518,18 @@ function findingValue(value: unknown, field: string): JavaAnalysisFinding {
   if (finding.nullness_trace_incomplete !== undefined) parsed.nullness_trace_incomplete = booleanValue(finding.nullness_trace_incomplete, `${field}.nullness_trace_incomplete`)
   if (finding.nullness_certainty !== undefined) parsed.nullness_certainty = enumValue(finding.nullness_certainty, new Set(['definite', 'possible'] as const), `${field}.nullness_certainty`)
   if (finding.nullness_model_version !== undefined) parsed.nullness_model_version = textValue(finding.nullness_model_version, `${field}.nullness_model_version`, 128)
+  for (const key of ['security_trace', 'security_binding_locations'] as const) {
+    if (finding[key] !== undefined) {
+      const trace = parseJavaNullnessTrace(finding[key])
+      if (!trace || trace.length !== (finding[key] as unknown[]).length) throw new JavaAnalysisContractError(`${field}.${key}`)
+      parsed[key] = trace
+    }
+  }
+  if (finding.security_certainty !== undefined) parsed.security_certainty = enumValue(finding.security_certainty, new Set(['possible', 'configuration-risk'] as const), `${field}.security_certainty`)
+  if (finding.security_entry_verified !== undefined) parsed.security_entry_verified = booleanValue(finding.security_entry_verified, `${field}.security_entry_verified`)
+  if (finding.security_trace_incomplete !== undefined) parsed.security_trace_incomplete = booleanValue(finding.security_trace_incomplete, `${field}.security_trace_incomplete`)
+  if (finding.security_model_version !== undefined) parsed.security_model_version = textValue(finding.security_model_version, `${field}.security_model_version`, 128)
+  if (finding.security_runtime_override !== undefined) parsed.security_runtime_override = enumValue(finding.security_runtime_override, new Set(['unknown'] as const), `${field}.security_runtime_override`)
   if (finding.created_at !== undefined) {
     parsed.created_at = timestamp(finding.created_at, `${field}.created_at`)
   }

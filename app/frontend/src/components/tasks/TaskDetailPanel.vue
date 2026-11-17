@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { analysisMessage } from '@/utils/analysisPresentation'
 import {
-  AlertTriangle,
   ArrowLeft,
   FileCode2,
   ShieldAlert,
@@ -59,6 +58,7 @@ import type {
 import { taskResultTabsForInputType } from '@/components/tasks/taskResultProfile'
 import { useTaskLifecycleActions } from '@/composables/useTaskLifecycleActions'
 import { useTaskEvents } from '@/composables/useTaskEvents'
+import { useReportDownload } from '@/composables/useReportDownload'
 import { useSampleRetentionClock } from '@/composables/useSampleRetentionClock'
 import { useSessionStore } from '@/stores/session'
 import { formatBytes, formatDateTime } from '@/utils/formatters'
@@ -246,10 +246,7 @@ const lifecycleActions = useTaskLifecycleActions({
 const taskDeleting = computed(
   () => task.value?.status.toUpperCase() === 'DELETING',
 )
-const partialResult = computed(() => {
-  const status = task.value?.status.toUpperCase()
-  return status === 'PARTIAL_SUCCEEDED' || status === 'PARTIAL'
-})
+const projectExport = useReportDownload({ taskId: () => props.taskId, enabled: () => !isDemoMode })
 const sampleClock = useSampleRetentionClock(
   () => [task.value?.sample_expires_at],
   { now: () => props.now },
@@ -1021,14 +1018,6 @@ function handleReportState(state: TaskResultState): void {
       </template>
 
       <template #results>
-        <section v-if="partialResult" class="partial-band" role="status">
-          <AlertTriangle :size="18" />
-          <div>
-            <strong>检测结果不完整</strong>
-            <span>部分内容因安全限制、文件损坏或格式暂不支持而未完成处理。</span>
-          </div>
-        </section>
-
         <section v-if="sampleDeleted" class="expired-band" role="status">
           <TimerReset :size="18" />
           <div>
@@ -1090,6 +1079,7 @@ function handleReportState(state: TaskResultState): void {
           </template>
           <template #c-analysis>
             <LiveCAnalysisResult
+              :execution-entries="executionLogEntries"
               v-if="!isDemoMode"
               ref="liveCAnalysisResult"
               :task-id="task.id"
@@ -1101,6 +1091,7 @@ function handleReportState(state: TaskResultState): void {
           </template>
           <template #java-analysis>
             <LiveJavaAnalysisResult
+              :execution-entries="executionLogEntries"
               v-if="!isDemoMode"
               ref="liveJavaAnalysisResult"
               :task-id="task.id"
@@ -1112,6 +1103,7 @@ function handleReportState(state: TaskResultState): void {
           </template>
           <template #python-analysis>
             <LivePythonAnalysisResult
+              :execution-entries="executionLogEntries"
               v-if="!isDemoMode"
               ref="livePythonAnalysisResult"
               :task-id="task.id"
@@ -1162,6 +1154,9 @@ function handleReportState(state: TaskResultState): void {
           :is-creator="isCreator"
           :now="sampleClock.now.value"
           :pending-action="lifecycleActions.pendingAction.value"
+          :exporting="Boolean(projectExport.pendingKey.value)"
+          :export-error="projectExport.error.value"
+          @export-project="projectExport.downloadProjectInfo"
           @cancel="handleCancel"
           @retry="handleRetry"
           @delete="handleDelete"

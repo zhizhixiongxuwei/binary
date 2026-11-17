@@ -11,9 +11,7 @@ import { computed, shallowRef, type Component } from 'vue'
 
 import ReadOnlyCodeEditor from '@/components/code-editor/ReadOnlyCodeEditor.vue'
 import type { ReadOnlyCodeLanguage } from '@/components/code-editor/monacoLoader'
-import BytecodeAnalyzerSummary from '@/components/tasks/results/BytecodeAnalyzerSummary.vue'
 import BytecodeMethodIndexPanel from '@/components/tasks/results/BytecodeMethodIndexPanel.vue'
-import { parseAnalyzerSummary } from '@/components/tasks/results/analyzerSummary'
 import type { ParsedBytecodeMethodIndex } from '@/components/tasks/results/jvmMethodIndex'
 import {
   type DemoCodeUnit,
@@ -38,9 +36,6 @@ const selectedUnitId = shallowRef('')
 const selectedBytecodeMethodKey = shallowRef('')
 
 const view = computed(() => resolveDemoDecompileView(props.inputType))
-const analyzerSummary = computed(() =>
-  parseAnalyzerSummary(view.value.analyzerDiagnostics),
-)
 const normalizedQuery = computed(() => query.value.trim().toLocaleLowerCase('zh-CN'))
 const filteredUnits = computed(() => {
   if (!normalizedQuery.value) return view.value.units
@@ -224,7 +219,6 @@ function selectBytecodeMethod(methodKey: string): void {
         class="code-panel"
         :class="{
           'code-panel--method-index': view.kind === 'jvm' && demoMethodIndex.present,
-          'code-panel--analyzer-summary': analyzerSummary.present,
         }"
         :aria-label="`${view.title}只读代码`"
       >
@@ -249,11 +243,6 @@ function selectBytecodeMethod(methodKey: string): void {
           </span>
           <span class="code-panel__task mono">task: {{ props.taskId }}</span>
         </div>
-        <BytecodeAnalyzerSummary
-          v-if="analyzerSummary.present"
-          :summary="analyzerSummary"
-          example
-        />
         <BytecodeMethodIndexPanel
           v-if="view.kind === 'jvm' && demoMethodIndex.present"
           :key="selectedUnit.id"

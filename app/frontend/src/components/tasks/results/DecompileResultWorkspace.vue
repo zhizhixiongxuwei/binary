@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronRight, Copy, FileCode2, FolderTree, Info, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, Search, Sparkles, TriangleAlert, Workflow, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
-import type { DecompileResult, DecompileSourceFile, DecompileSourceFileContent, JsonValue, SourceNavigationTarget } from '@/api/types'
+import type { DecompileResult, DecompileSourceFile, DecompileSourceFileContent, SourceNavigationTarget } from '@/api/types'
 import ReadOnlyCodeEditor from '@/components/code-editor/ReadOnlyCodeEditor.vue'
 import type { CodeSelection } from '@/components/code-editor/readingState'
 import type { ReadOnlyCodeLanguage } from '@/components/code-editor/monacoLoader'
@@ -11,11 +11,8 @@ import type { FunctionMatch } from '@/api/insights'
 import { listProjectSourceFunctions } from '@/api/insights'
 import type { SourceFunction } from './sourceFunctions'
 import SourceProjectExplorer from './SourceProjectExplorer.vue'
-import BytecodeAnalyzerSummary from './BytecodeAnalyzerSummary.vue'
 import BytecodeMethodIndexPanel from './BytecodeMethodIndexPanel.vue'
-import { parseAnalyzerSummary } from './analyzerSummary'
-import { neutralizeUnsafeDisplayCharacters } from './displayText'
-import { analysisEngineLabel, analysisMessage } from '@/utils/analysisPresentation'
+import { analysisEngineLabel } from '@/utils/analysisPresentation'
 import { parseBytecodeMethodIndex } from './jvmMethodIndex'
 import { adjacentSourceTab, rememberSourceTab, sourceTabKey, sourceWorkbenchLayout, type SourceTab } from './sourceWorkspaceState'
 
@@ -85,14 +82,18 @@ const aiVisible = computed(() => aiOpen.value && (layout.value.docked || activeP
 const directoryVisible = computed(() => directoryOpen.value && (!layout.value.compact || activePane.value === 'code'))
 const directoryMaximum = computed(() => Math.max(180, Math.min(360, workspaceWidth.value - 400)))
 const pathParts = computed(() => (selectedSourceFile.value?.logicalPath || '').replace(/\\/g, '/').split('/').filter(Boolean))
-const statusLabels: Record<string, string> = { complete: '已完成', partial: '部分输出', bytecode_only: '字节码', unsupported: '暂不支持', failed: '失败', cancelled: '已取消', queued: '排队中', running: '处理中' }
+const statusLabels: Record<string, string> = { complete: '已完成', partial: '已结束', bytecode_only: '字节码', unsupported: '暂不支持', failed: '失败', cancelled: '已取消', queued: '排队中', running: '处理中' }
 const statusLabel = computed(() => statusLabels[selectedResult.value?.status || ''] || '未选择')
 const editorModelUri = computed(() => 'binaryscan-source:///' + [props.taskId, props.selectedId || 'project', props.selectedSourceFileId || 'file'].map(encodeURIComponent).join('/'))
 const bytecodeMethodIndex = computed(() => parseBytecodeMethodIndex(selectedResult.value?.diagnostics))
-const analyzerSummary = computed(() => parseAnalyzerSummary(selectedResult.value?.diagnostics))
 const activeBytecodeMethodKey = computed(() => bytecodeMethodIndex.value.methods.some(method => method.key === selectedBytecodeMethodKey.value) ? selectedBytecodeMethodKey.value : bytecodeMethodIndex.value.methods[0]?.key ?? '')
 const isJvmBytecodeResult = computed(() => /java.*bytecode/i.test(selectedResult.value?.language ?? ''))
 const editorLanguage = computed<ReadOnlyCodeLanguage>(() => {
+  const path = (selectedSourceFile.value?.logicalPath ?? '').toLowerCase()
+  if (/\.ya?ml$/.test(path)) return 'yaml'
+  if (/\.(?:xml|jsp|jspx)$/.test(path)) return 'xml'
+  if (path.endsWith('.json')) return 'json'
+  if (/\.(?:properties|mf|imports)$/.test(path) || path.includes('/meta-inf/services/')) return 'plaintext'
   const language = (selectedSourceFile.value?.language ?? selectedResult.value?.language ?? '').trim().toLowerCase()
   if (language.includes('java') && language.includes('bytecode')) return 'jvm-bytecode'
   if (language.includes('java')) return 'java'
@@ -101,32 +102,20 @@ const editorLanguage = computed<ReadOnlyCodeLanguage>(() => {
   if (language.includes('python') || language === 'py') return 'python'
   return 'c'
 })
-const languageLabel = computed(() => ({ 'jvm-bytecode': 'JVM 字节码', java: 'Java', smali: 'Smali', 'python-bytecode': 'Python 字节码', python: 'Python', c: '伪 C' })[editorLanguage.value])
+const languageLabel = computed(() => ({ 'jvm-bytecode': 'JVM 字节码', java: 'Java', smali: 'Smali', 'python-bytecode': 'Python 字节码', python: 'Python', c: '伪 C', yaml: 'YAML 配置', xml: 'XML 资源', json: 'JSON 元数据', plaintext: '配置文本' })[editorLanguage.value])
 const capabilityMessage = computed(() => {
   switch (selectedResult.value?.status) {
-    case 'partial': return '仅生成部分输出，符号、类型或控制流可能缺失。'
+    case 'partial': return ''
     case 'bytecode_only': return '当前为字节码视图，未恢复为高层语言。'
     case 'unsupported': return '当前分析器暂不支持该输入。'
-    case 'failed': return '反编译失败，请展开详情查看分析器诊断。'
+    case 'failed': return '反编译失败，可在任务信息中导出项目全部信息查看详情。'
     case 'cancelled': return '反编译已取消，已保存的输出仍可阅读。'
     case 'queued': return '反编译排队中，暂时没有源码输出。'
     case 'running': return '反编译处理中，结果可能继续更新。'
     default: return '反编译输出不是原始源码；变量名、类型和控制流可能失真。'
   }
 })
-const diagnosticMessage = computed(() => {
-  const value: JsonValue | undefined = selectedResult.value?.diagnostics
-  let text = typeof value === 'string' ? value : ''
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Readonly<Record<string, JsonValue>>
-    for (const field of ['message', 'warning', 'limitation', 'detail']) {
-      const candidate = record[field]
-      if (typeof candidate === 'string' && candidate.trim()) { text = candidate; break }
-    }
-  }
-  return neutralizeUnsafeDisplayCharacters(text.slice(0, 4096)).trim() + (text.length > 4096 ? '…' : '')
-})
-const showNotice = computed(() => Boolean(selectedResult.value && selectedResult.value.status !== 'complete'))
+const showNotice = computed(() => Boolean(selectedResult.value && !['complete', 'partial'].includes(selectedResult.value.status)))
 
 let resizeObserver: ResizeObserver | undefined
 let dragging = false
@@ -348,11 +337,8 @@ onScopeDispose(() => {
     <details class="workbench-details">
       <summary><Info :size="14" /><span>{{ isJvmBytecodeResult && bytecodeMethodIndex.present ? '详情与方法索引' : '反编译详情' }}</span><span class="details-hint">{{ analysisEngineLabel(selectedResult?.engine_name) }}</span></summary>
       <div class="workbench-details__content">
-        <p>{{ capabilityMessage }}</p>
-        <dl><div><dt>项目</dt><dd>{{ selectedResult?.display_name || '未选择' }}</dd></div><div><dt>引擎</dt><dd>{{ analysisEngineLabel(selectedResult?.engine_name) }}</dd></div><div><dt>签名 / 说明</dt><dd>{{ selectedResult?.signature || analysisMessage(selectedResult?.detail) || '暂无' }}</dd></div><div><dt>任务</dt><dd>{{ taskId }}</dd></div></dl>
-        <details><summary>技术诊断（原始组件信息）</summary><p>{{ selectedResult?.engine_name }} {{ selectedResult?.engine_version }}</p><p>{{ selectedResult?.detail }}</p></details>
-        <p v-if="diagnosticMessage" class="workbench-diagnostic"><TriangleAlert :size="14" />{{ diagnosticMessage }}</p>
-        <BytecodeAnalyzerSummary v-if="analyzerSummary.present" :summary="analyzerSummary" />
+        <p v-if="capabilityMessage">{{ capabilityMessage }}</p>
+        <dl><div><dt>项目</dt><dd>{{ selectedResult?.display_name || '未选择' }}</dd></div><div><dt>引擎</dt><dd>{{ analysisEngineLabel(selectedResult?.engine_name) }}</dd></div><div><dt>签名 / 说明</dt><dd>{{ selectedResult?.signature || '暂无' }}</dd></div><div><dt>任务</dt><dd>{{ taskId }}</dd></div></dl>
         <BytecodeMethodIndexPanel v-if="isJvmBytecodeResult && bytecodeMethodIndex.present" :key="selectedId" :index="bytecodeMethodIndex" :selected-key="activeBytecodeMethodKey" @select="selectedBytecodeMethodKey = $event" />
       </div>
     </details>

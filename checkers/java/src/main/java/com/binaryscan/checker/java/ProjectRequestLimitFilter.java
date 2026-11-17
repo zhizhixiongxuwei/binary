@@ -20,8 +20,8 @@ import java.util.concurrent.Semaphore;
 final class ProjectRequestLimitFilter extends OncePerRequestFilter {
     static final long BODY_LIMIT = 64L << 20;
     private final Semaphore bodies = new Semaphore(1);
-    private static final JsonFactory JSON = JsonFactory.builder().streamReadConstraints(StreamReadConstraints.builder()
-        .maxNestingDepth(32).maxStringLength(4 << 20).maxNumberLength(100).build()).build();
+    static StreamReadConstraints constraints(){return StreamReadConstraints.builder().maxNestingDepth(32).maxStringLength(24 << 20).maxNumberLength(100).build();}
+    private static final JsonFactory JSON = JsonFactory.builder().streamReadConstraints(constraints()).build();
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
         return !request.getRequestURI().startsWith("/v2/java/projects") || request.getMethod().equals("DELETE") || request.getMethod().equals("GET");
     }

@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** Parses only the null dereference evidence emitted by the pinned SpotBugs release. */
 final class SpotBugsReport {
@@ -167,8 +168,24 @@ final class SpotBugsReport {
         Element messageNode = child(bug, "LongMessage", "", "");
         String message = messageNode == null ? pattern : messageNode.getTextContent().strip();
         if (message.isEmpty()) message = pattern;
+        MethodIdentity sourceMethod = null;
+        Integer nullSourceOffset = null;
+        if ("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE".equals(pattern)) {
+            Element called = child(bug, "Method", "role", "METHOD_CALLED");
+            if (called != null) {
+                String owner = required(called.getAttribute("classname"), 1024), name = required(called.getAttribute("name"), 512), signature = required(called.getAttribute("signature"), 1024);
+                if (owner != null && name != null && signature != null) sourceMethod = new MethodIdentity(owner, name, signature);
+            }
+            for (Node node = bug.getFirstChild(); node != null; node = node.getNextSibling()) {
+                if (!(node instanceof Element line) || !"SourceLine".equals(line.getTagName()) || !className.equals(line.getAttribute("classname"))
+                    || !"SOURCE_LINE_KNOWN_NULL".equals(line.getAttribute("role"))) continue;
+                Integer start = integer(line.getAttribute("startBytecode"), 0), end = integer(line.getAttribute("endBytecode"), 0);
+                if (start == null || !start.equals(end) || nullSourceOffset != null && !nullSourceOffset.equals(start)) { nullSourceOffset = null; break; }
+                nullSourceOffset = start;
+            }
+        }
         return new Finding(pattern, className, methodName, descriptor, sourcePath, originalLine, bytecodeOffset, locationRole,
-            message.substring(0, Math.min(message.length(), 4096)), priority);
+            message.substring(0, Math.min(message.length(), 4096)), priority, sourceMethod, nullSourceOffset);
     }
 
     private static boolean preciseDereference(Element bug, Element location, String className, Integer offset) {
@@ -216,9 +233,22 @@ final class SpotBugsReport {
             List.copyOf(findings), List.copyOf(bounded));
     }
 
-    record Result(String version, String status, String toolVersion, List<Finding> findings, List<String> diagnostics) {}
+    record Result(String version, String status, String toolVersion, List<Finding> findings, List<String> diagnostics,
+                  List<SuppressedFinding> suppressedFindings, @JsonInclude(JsonInclude.Include.NON_EMPTY) Map<String,Object> modelSummary) {
+        Result(String version, String status, String toolVersion, List<Finding> findings, List<String> diagnostics) {
+            this(version, status, toolVersion, findings, diagnostics, List.of(), Map.of());
+        }
+    }
+    record SuppressedFinding(Finding finding, Map<String,Object> proof) {}
+    record MethodIdentity(String className, String methodName, String methodDescriptor) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Finding(String pattern, String className, String methodName, String methodDescriptor, String sourcePath,
-                   Integer originalLine, Integer bytecodeOffset, String locationRole, String message, int priority) {}
+                   Integer originalLine, Integer bytecodeOffset, String locationRole, String message, int priority,
+                   MethodIdentity returnValueSource, Integer nullSourceBytecodeOffset) {
+        Finding(String pattern, String className, String methodName, String methodDescriptor, String sourcePath,
+                Integer originalLine, Integer bytecodeOffset, String locationRole, String message, int priority) {
+            this(pattern, className, methodName, methodDescriptor, sourcePath, originalLine, bytecodeOffset, locationRole, message, priority, null, null);
+        }
+    }
 }

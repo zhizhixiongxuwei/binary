@@ -49,6 +49,14 @@ final class SpotBugsAnalyzer {
     }
 
     SpotBugsReport.Result analyze(String format, InputStream body) {
+        return analyze(format, body, null, "");
+    }
+
+    SpotBugsReport.Result analyze(String format, InputStream body, FrameworkContracts contracts) {
+        return analyze(format, body, contracts, "");
+    }
+
+    SpotBugsReport.Result analyze(String format, InputStream body, FrameworkContracts contracts, String inputSha256) {
         if (!AnalysisSlot.HEAVY.tryAcquire()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "bytecode analyzer is busy");
         }
@@ -65,16 +73,17 @@ final class SpotBugsAnalyzer {
             Path filter = work.resolve("null-dereferences.xml");
             Files.writeString(filter, SpotBugsReport.filter());
             Path report = work.resolve("report.xml");
-            return run(work, prepared, filter, report);
+            var raw = run(work, prepared, filter, report);
+            return contracts == null ? raw : new FrameworkBytecodeVerifier().review(raw, prepared, contracts, inputSha256);
         } catch (LimitExceeded limit) {
             throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "bytecode input exceeds analysis limits");
         } catch (FileSystemException failure) {
-            return SpotBugsReport.partial("bytecode temporary storage is unavailable or full");
+            return failure("bytecode temporary storage is unavailable or full", contracts, inputSha256);
         } catch (IOException failure) {
-            return SpotBugsReport.partial("bytecode analyzer could not process the input");
+            return failure("bytecode analyzer could not process the input", contracts, inputSha256);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            return SpotBugsReport.partial("bytecode analysis was interrupted");
+            return failure("bytecode analysis was interrupted", contracts, inputSha256);
         } finally {
             try {
                 if (work != null) deleteWork(work);
@@ -82,6 +91,11 @@ final class SpotBugsAnalyzer {
                 AnalysisSlot.HEAVY.release();
             }
         }
+    }
+
+    private static SpotBugsReport.Result failure(String diagnostic, FrameworkContracts contracts, String inputSha256) {
+        var raw = SpotBugsReport.partial(diagnostic);
+        return contracts == null ? raw : new FrameworkBytecodeVerifier().review(raw, new PreparedInput(List.of(), List.of()), contracts, inputSha256);
     }
 
     static long inputLimit(String format) { return "bundle".equals(format) ? BUNDLE_LIMIT : INPUT_LIMIT; }

@@ -37,7 +37,7 @@ const selectedProject = computed(() => props.items.find(item => item.id === prop
 const projects = computed(() => props.items.filter(item => matchesProjectCapability(item, capability.value) && matchesProjectQuery(item, projectQuery.value)))
 const counts = computed(() => ({ all: props.items.length, source: props.items.filter(item => matchesProjectCapability(item, 'source')).length, bytecode: props.items.filter(item => matchesProjectCapability(item, 'bytecode')).length, issues: props.items.filter(item => matchesProjectCapability(item, 'issues')).length }))
 const filters: { value: ProjectCapabilityFilter; label: string }[] = [{ value: 'all', label: '全部' }, { value: 'source', label: '源码' }, { value: 'bytecode', label: '字节码' }, { value: 'issues', label: '异常' }]
-const statusLabels: Record<string, string> = { complete: '已完成', partial: '部分完成', bytecode_only: '仅字节码', unsupported: '不支持', failed: '失败', cancelled: '已取消', queued: '排队中', running: '处理中' }
+const statusLabels: Record<string, string> = { complete: '已完成', partial: '已结束', bytecode_only: '仅字节码', unsupported: '不支持', failed: '失败', cancelled: '已取消', queued: '排队中', running: '处理中' }
 const safe = (value: string) => neutralizeUnsafeDisplayCharacters(value)
 const projectLabel = (item: DecompileResult) => `${safe(item.display_name || item.symbol_key || '未命名项目')} · ${safe(item.language || '文本')}`
 const treeTabKey = computed(() => visibleRows.value.some(row => row.node.key === focusedKey.value) ? focusedKey.value : visibleRows.value.find(row => row.node.kind === 'file' && row.node.file.id === props.selectedSourceFileId)?.node.key ?? visibleRows.value[0]?.node.key)
