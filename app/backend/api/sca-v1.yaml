@@ -1,0 +1,274 @@
+openapi: 3.1.0
+info:
+  title: BinaryScan SBOM and Java impact API
+  version: sca-v1
+  description: >-
+    All endpoints require an existing authenticated session. Mutations require
+    operator or administrator role and X-CSRF-Token. The reader role is read-only.
+    Unknown/partial analysis never implies no vulnerabilities. Imported VEX and
+    SWID links are declarations, not automatic disposition evidence.
+servers: [{url: /api/v1}]
+security: [{sessionCookie: []}]
+paths:
+  /analysis-capabilities:
+    get:
+      security: [{sessionCookie: []}]
+      summary: Installed format matrix and reviewed rule coverage
+      responses:
+        '200': {description: 'schemaVersion, formats, javaFormats, javaReleases, rules, runtimeVerification; operational probes are in /admin/system'}
+  /tasks/{taskID}/inventories:
+    parameters: [{$ref: '#/components/parameters/Task'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Latest 100 immutable inventory summaries and latest 100 analysis runs
+      responses:
+        '200': {description: 'items include id/runId/componentCount/dependencyCount/document with standard/specVersion/encoding/fingerprint/quality/diagnostics. runs include id/kind/status/quality/error/inventoryId. Full component graphs are paginated separately.'}
+  /tasks/{taskID}/inventories/{inventoryID}/components:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Inventory'}, {$ref: '#/components/parameters/Offset'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: A fixed inventory's component instances, 100 per page
+      responses:
+        '200': {description: 'items, total, nextOffset, hasMore; component identity, original sourceRef and instance path remain distinct'}
+  /tasks/{taskID}/inventories/{inventoryID}/dependencies:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Inventory'}, {$ref: '#/components/parameters/Offset'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Original dependency relations, 200 per page
+      responses:
+        '200': {description: 'items [{from,to,type}], total, nextOffset, hasMore; dangling references remain diagnostics'}
+  /tasks/{taskID}/sca-scans:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Idempotency'}, {$ref: '#/components/parameters/CSRF'}]
+    post:
+      security: [{sessionCookie: []}]
+      summary: Queue a new parse/scan snapshot for an existing sbom or java_sca task
+      responses:
+        '201': {description: Run created; parsing transaction enqueues the scan child}
+        '200': {description: Idempotent previous run}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tasks/{taskID}/sbom-links:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/CSRF'}]
+    post:
+      security: [{sessionCookie: []}]
+      summary: Compare exact identities between an existing task and SBOM task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [sbomTaskId], properties: {sbomTaskId: {type: string, format: uuid}}}
+      responses:
+        '200': {description: 'identity_comparison_only, artifactBindingVerified:false, matchedPurls, unmatchedRefs, sbomFingerprint, javaFingerprint; does not trust the imported SBOM as binary proof'}
+  /tasks/{taskID}/swid-collections:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Idempotency'}, {$ref: '#/components/parameters/CSRF'}]
+    post:
+      security: [{sessionCookie: []}]
+      summary: Build an explicit local SWID collection on a SWID task and scan it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [swidMembers]
+              properties:
+                swidMembers:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items:
+                    type: object
+                    required: [taskId, inventoryId, fingerprint, logicalPath]
+                    properties:
+                      taskId: {type: string, format: uuid}
+                      inventoryId: {type: string, format: uuid}
+                      fingerprint: {type: string, pattern: '^[a-f0-9]{64}$'}
+                      logicalPath: {type: string, description: 'Unique relative collection path; no traversal, absolute path or network access'}
+                identityMappings: {type: object, maxProperties: 100, additionalProperties: {type: string}, description: 'Explicit tagId -> exact PURL operator declarations, retained in source references'}
+      responses:
+        '202': {description: Immutable parse run queued; validates only explicitly supplied single-tag inventory snapshots}
+        '400': {$ref: '#/components/responses/Invalid'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /environment-profiles:
+    get:
+      security: [{sessionCookie: []}]
+      summary: Latest immutable version of each environment profile
+      responses:
+        '200': {description: 'items: [{id,profileId,revision,fingerprint,config}]'}
+    post:
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/CSRF'}]
+      summary: Create a target environment profile
+      requestBody: {$ref: '#/components/requestBodies/EnvironmentChange'}
+      responses:
+        '201': {description: 'item: EnvironmentVersion'}
+        '400': {$ref: '#/components/responses/Invalid'}
+  /environment-profiles/{profileID}:
+    parameters: [{name: profileID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Latest environment version
+      responses:
+        '200': {description: 'item: EnvironmentVersion'}
+    patch:
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/CSRF'}]
+      summary: Append an immutable version and invalidate previous environmental assumptions
+      requestBody: {$ref: '#/components/requestBodies/EnvironmentChange'}
+      responses:
+        '201': {description: 'item: new EnvironmentVersion; old version remains available to historical runs'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tasks/{taskID}/analysis-policies:
+    parameters: [{$ref: '#/components/parameters/Task'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: List immutable policy versions
+      responses:
+        '200': {description: 'items: [{id,taskId,fingerprint,config}]'}
+    post:
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/CSRF'}]
+      summary: Create a policy version; suggest is the UI default
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/Policy'}}}
+      responses:
+        '201': {description: 'item: PolicyVersion'}
+  /tasks/{taskID}/impact-analyses:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Idempotency'}, {$ref: '#/components/parameters/CSRF'}]
+    post:
+      security: [{sessionCookie: []}]
+      summary: Queue one environment-specific, snapshot-bound three-dimensional analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [scaRunId, inventoryId, environmentVersionId, policyId]
+              properties:
+                scaRunId: {type: string, format: uuid}
+                inventoryId: {type: string, format: uuid}
+                environmentVersionId: {type: string, format: uuid}
+                policyId: {type: string, format: uuid}
+      responses:
+        '202': {description: 'run: {id,status,created}; knowledge digest and disposition generations are server-managed'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tasks/{taskID}/impact-analyses/{runID}:
+    parameters: [{$ref: '#/components/parameters/Task'}, {name: runID, in: path, required: true, schema: {type: string, format: uuid}}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Frozen request, run status and per-occurrence evidence
+      responses:
+        '200': {description: 'status, request, items: Assessment[]; code diagnostics and input/view digests explain proof coverage'}
+  /tasks/{taskID}/vulnerability-occurrences:
+    parameters: [{$ref: '#/components/parameters/Task'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Stable raw vulnerability instances with current effective disposition and analysis history
+      parameters:
+        - {name: cursor, in: query, schema: {type: string}, description: 'Last occurrence ID; 100 rows per page'}
+        - {name: status, in: query, schema: {type: string, enum: [open, ignored]}}
+        - {name: severity, in: query, schema: {type: string}}
+        - {name: reachability, in: query, schema: {type: string, enum: [reachable, not_reachable, unknown, not_analyzed]}}
+        - {name: environment, in: query, schema: {type: string, enum: [applicable, not_applicable, unknown, not_analyzed]}}
+        - {name: attack, in: query, schema: {type: string, enum: [satisfied, not_satisfied, unknown, not_analyzed]}}
+        - {name: source, in: query, schema: {type: string, enum: [manual, policy]}}
+        - {name: environmentProfileId, in: query, schema: {type: string, format: uuid}, description: 'Scopes dimension/source filters; overall status and summary still aggregate all target environments'}
+      responses:
+        '200': {description: 'items, hasMore, nextCursor, summary {total,uniqueVulnerabilities,open,ignored,unknown}; unknown overlaps open. Filters execute before pagination. All environments must be validly ignored for aggregate ignored.'}
+  /tasks/{taskID}/vulnerability-occurrences/{occurrenceID}:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Occurrence'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: One occurrence with original CVSS/source and up to 100 recent assessments
+      responses:
+        '200': {description: 'item: Occurrence with vulnerability, assessments, dispositions and effective aggregate status'}
+  /tasks/{taskID}/vulnerability-occurrences/{occurrenceID}/disposition:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Occurrence'}, {$ref: '#/components/parameters/Idempotency'}, {$ref: '#/components/parameters/CSRF'}]
+    post:
+      security: [{sessionCookie: []}]
+      summary: Manually ignore or restore in a specific environment, with optimistic concurrency
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [environmentVersionId,status,reason,expectedRevision]
+              properties:
+                environmentVersionId: {type: string, format: uuid}
+                status: {type: string, enum: [open,ignored]}
+                reason: {type: string, minLength: 1, maxLength: 1024}
+                expectedRevision: {type: integer, minimum: 0}
+                expiresAt: {type: [string,'null'], format: date-time}
+                overrideUntil: {type: [string,'null'], format: date-time, description: 'Required future timestamp for restore; prevents immediate automatic re-ignore'}
+      responses:
+        '200': {description: 'item: {status,revision,source}'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /tasks/{taskID}/vulnerability-occurrences/{occurrenceID}/history:
+    parameters: [{$ref: '#/components/parameters/Task'}, {$ref: '#/components/parameters/Occurrence'}]
+    get:
+      security: [{sessionCookie: []}]
+      summary: Immutable disposition and launch events
+      responses:
+        '200': {description: 'items of event details, newest first, latest 200; analysis history is also on the occurrence'}
+components:
+  securitySchemes:
+    sessionCookie: {type: apiKey, in: cookie, name: binary_session}
+  parameters:
+    Task: {name: taskID, in: path, required: true, schema: {type: string, format: uuid}}
+    Inventory: {name: inventoryID, in: path, required: true, schema: {type: string, format: uuid}}
+    Occurrence: {name: occurrenceID, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}
+    Offset: {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    Idempotency: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+    CSRF: {name: X-CSRF-Token, in: header, required: true, schema: {type: string}}
+  responses:
+    Invalid: {description: '400 invalid request or unsupported mode; JSON {error: stable_reason}'}
+    Conflict: {description: '409 stale revision, snapshot or idempotency conflict; refresh before retry; JSON {error: stable_reason}'}
+  requestBodies:
+    EnvironmentChange:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [expectedRevision,config]
+            properties:
+              expectedRevision: {type: integer, minimum: 0}
+              config: {$ref: '#/components/schemas/Environment'}
+  schemas:
+    Environment:
+      type: object
+      required: [name,javaRelease,applicationType,entryPoints,externalDependencies,facts]
+      properties:
+        name: {type: string, maxLength: 255}
+        javaRelease: {type: integer, enum: [8,11,17,21]}
+        applicationType: {type: string, enum: [java,spring,war]}
+        entryPoints: {type: array, maxItems: 1000, items: {type: string}, description: 'InternalClassName#method(JVMDescriptor)ReturnType'}
+        externalDependencies: {type: array, maxItems: 100, items: {type: string, format: uuid}, description: 'Already uploaded JAR/WAR task IDs; their actual digest is verified'}
+        facts:
+          type: object
+          maxProperties: 200
+          additionalProperties:
+            type: object
+            required: [value,verified,evidence]
+            properties:
+              value: {type: string}
+              verified: {type: boolean}
+              evidence: {type: string, description: 'A verified fact must include auditable evidence; saving a profile does not verify production'}
+              expiresAt: {type: [string,'null'], format: date-time}
+    Policy:
+      type: object
+      additionalProperties: false
+      required: [mode,validHours,reachability,environment,attack]
+      properties:
+        mode: {type: string, enum: [suggest,automatic]}
+        validHours: {type: integer, minimum: 1, maximum: 2160}
+        reachability: {type: boolean}
+        environment: {type: boolean}
+        attack: {type: boolean}

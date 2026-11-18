@@ -1,0 +1,80 @@
+[
+  {
+    "file": "spdx-2.3.json",
+    "url": "https://raw.githubusercontent.com/spdx/spdx-spec/v2.3/schemas/spdx-schema.json",
+    "upstreamSha256": "239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b",
+    "sha256": "239208b7ac287b3cf5d9a9af23f9d69863971102a5e1587a27a398b43490b89b"
+  },
+  {
+    "file": "swid.xsd",
+    "url": "https://standards.iso.org/iso/19770/-2/2015-current/schema.xsd",
+    "upstreamSha256": "6af9d0554932102ace5c696f723c1dc4a4b1a9846908cddec67ccc0518c0e5d4",
+    "sha256": "11a6dfc074dea763dd58d0574daf0fdecd6c3c8e95b925ccf7758135a4189a73"
+  },
+  {
+    "file": "xmldsig-core-schema.xsd",
+    "url": "https://www.w3.org/TR/xmldsig-core/xmldsig-core-schema.xsd",
+    "upstreamSha256": "d102ad3df7664c307e0c2c776ba4a90513b1969974d8a940bae1a77f9f21e15d",
+    "sha256": "d102ad3df7664c307e0c2c776ba4a90513b1969974d8a940bae1a77f9f21e15d"
+  },
+  {
+    "file": "xml.xsd",
+    "url": "https://www.w3.org/2001/xml.xsd",
+    "upstreamSha256": "61960fb3131e38022caad5360e2f33a3382578ab3c80cd58bd74320ede61b20c",
+    "sha256": "eda76d013e3dd8e32a0fccf6ce975b0ed0b52379d080e81f312a67fa83329818"
+  },
+  {
+    "file": "bom-1.4.schema.json",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.4/schema/bom-1.4.schema.json",
+    "upstreamSha256": "51b79463558376e6397802cce4fd792037a941cda89f9a7cc0abd1b5cbeb67b7",
+    "sha256": "51b79463558376e6397802cce4fd792037a941cda89f9a7cc0abd1b5cbeb67b7"
+  },
+  {
+    "file": "bom-1.4.xsd",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.4/schema/bom-1.4.xsd",
+    "upstreamSha256": "d2c58c5964fd4c9ccdd59f08fd102bb7ee8f7ea956c99b7834d8d45ca2fba938",
+    "sha256": "4a93a3d1fa412712b2bbeb2f5ddf4e96e615487965eb158afc1ca7a6cf9cb182"
+  },
+  {
+    "file": "bom-1.5.schema.json",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.5/schema/bom-1.5.schema.json",
+    "upstreamSha256": "067f7824b08653839ea050ae9e09ca48375eadc2652b0e2a299476e7db90335b",
+    "sha256": "067f7824b08653839ea050ae9e09ca48375eadc2652b0e2a299476e7db90335b"
+  },
+  {
+    "file": "bom-1.5.xsd",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.5/schema/bom-1.5.xsd",
+    "upstreamSha256": "ef27af4cbc6dc7dd7e7211b77d9768394be8f54514cc99e9b13b07c305502eb8",
+    "sha256": "09a7c6f151054bb6ba37cecea41d20ce34b24a0674e59f23de1b24486a61017d"
+  },
+  {
+    "file": "bom-1.6.schema.json",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.6/schema/bom-1.6.schema.json",
+    "upstreamSha256": "3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93",
+    "sha256": "3e92dddbc30cf7f6a02b80f0942b1a4cfd4fb1c26f1dfc4310afa9d613cafb93"
+  },
+  {
+    "file": "bom-1.6.xsd",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.6/schema/bom-1.6.xsd",
+    "upstreamSha256": "cec528b86a638c8aebb0c326648d40d6f24813e61db4204f47cb82ac93d856a9",
+    "sha256": "23a9f33197e4fef21ce146aff8949fb4a8a36698f49a0f4c4558f05a795ed9ea"
+  },
+  {
+    "file": "spdx.schema.json",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.6/schema/spdx.schema.json",
+    "upstreamSha256": "baa9d3bd1ed57b6751b0887edead6b5063ff53ff7429cf85d476c6c94af0166e",
+    "sha256": "baa9d3bd1ed57b6751b0887edead6b5063ff53ff7429cf85d476c6c94af0166e"
+  },
+  {
+    "file": "jsf-0.82.schema.json",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.6/schema/jsf-0.82.schema.json",
+    "upstreamSha256": "8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae",
+    "sha256": "8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae"
+  },
+  {
+    "file": "spdx.xsd",
+    "url": "https://raw.githubusercontent.com/CycloneDX/specification/1.6/schema/spdx.xsd",
+    "upstreamSha256": "325de578eea28fcf02453c904ed0e06007cb61294003e24408a65c9f79c0d148",
+    "sha256": "325de578eea28fcf02453c904ed0e06007cb61294003e24408a65c9f79c0d148"
+  }
+]

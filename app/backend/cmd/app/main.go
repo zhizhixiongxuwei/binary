@@ -56,6 +56,7 @@ func main() {
 	}
 	errCh := make(chan error, 1)
 	go server.CleanupDeletedTasks(ctx)
+	go server.MaintainSCA(ctx)
 	go func() { errCh <- server.Run() }()
 	select {
 	case <-ctx.Done():

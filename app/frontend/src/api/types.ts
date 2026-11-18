@@ -1093,8 +1093,8 @@ export interface AuditLogPage {
   next_cursor?: string
 }
 
-export type InputCategory = 'binary' | 'archive' | 'container'
-export type AnalysisMode = InputCategory
+export type InputCategory = 'binary' | 'archive' | 'container' | 'sbom'
+export type AnalysisMode = InputCategory | 'java_sca'
 
 export type UploadValidationStatus =
   | 'pending'

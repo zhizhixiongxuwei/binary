@@ -121,6 +121,7 @@ export function taskResultTabsForInputType(
   analysisMode?: string,
 ): readonly TaskResultTab[] {
   const normalized = normalizeInputType(inputType)
+  if (analysisMode === 'sbom' || analysisMode === 'java_sca') return CONTAINER_RESULT_TABS
   if (analysisMode === 'container') return CONTAINER_RESULT_TABS
   if (analysisMode === 'archive') return ARCHIVE_RESULT_TABS
   if (CONTAINER_IMAGE_FORMATS.has(normalized)) return CONTAINER_RESULT_TABS

@@ -110,6 +110,7 @@ const LiveVulnerabilityResult =
     : defineAsyncComponent(
         () => import('@/components/tasks/results/LiveVulnerabilityResult.vue'),
       )
+const ScaWorkspace = defineAsyncComponent(() => import('@/components/tasks/sca/ScaWorkspace.vue'))
 const LiveReportResult =
   import.meta.env.VITE_APP_MODE === 'demo'
     ? null
@@ -1035,6 +1036,7 @@ function handleReportState(state: TaskResultState): void {
         </section>
 
         <TaskResultTabs
+          :sca="task.analysis_mode === 'sbom' || task.analysis_mode === 'java_sca'"
           v-model:active-tab="activeResultTab"
           :task-id="task.id"
           :mode="isDemoMode ? 'preview' : 'live'"
@@ -1119,6 +1121,14 @@ function handleReportState(state: TaskResultState): void {
               :task-id="task.id"
               :task-name="task.original_filename || task.name"
             />
+            <ScaWorkspace
+              v-else-if="task.analysis_mode === 'sbom' || task.analysis_mode === 'java_sca'"
+              :task-id="task.id"
+              :mode="task.analysis_mode"
+              :input-type="task.input_type"
+              :user-role="session.user?.role ?? null"
+              @state-change="handleVulnerabilityState"
+            />
             <LiveVulnerabilityResult
               v-else
               ref="liveVulnerabilityResult"
@@ -1168,7 +1178,7 @@ function handleReportState(state: TaskResultState): void {
             <dl>
               <div><dt>文件名</dt><dd>{{ task.original_filename || task.name }}</dd></div>
               <div><dt>输入类型</dt><dd>{{ task.input_type }}</dd></div>
-              <div><dt>分析模式</dt><dd>{{ task.analysis_mode === 'binary' ? '二进制分析' : task.analysis_mode === 'archive' ? '压缩包分析' : task.analysis_mode === 'container' ? '容器/映像分析' : '历史任务' }}</dd></div>
+              <div><dt>分析模式</dt><dd>{{ task.analysis_mode === 'sbom' ? 'SBOM 清单扫描' : task.analysis_mode === 'java_sca' ? 'Java 组件漏洞分析' : task.analysis_mode === 'binary' ? '二进制分析' : task.analysis_mode === 'archive' ? '压缩包分析' : task.analysis_mode === 'container' ? '容器/映像分析' : '历史任务' }}</dd></div>
               <div><dt>文件大小</dt><dd>{{ formatBytes(task.size_bytes) }}</dd></div>
               <div><dt>SHA-256</dt><dd class="mono hash">{{ task.sha256 || '—' }}</dd></div>
             </dl>

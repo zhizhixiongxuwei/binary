@@ -3,6 +3,38 @@ info:
   title: BinaryScan API
   version: 0.1.0
 paths:
+  /api/v1/analysis-capabilities:
+    $ref: './sca-v1.yaml#/paths/~1analysis-capabilities'
+  /api/v1/tasks/{taskID}/inventories:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1inventories'
+  /api/v1/tasks/{taskID}/inventories/{inventoryID}/components:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1inventories~1{inventoryID}~1components'
+  /api/v1/tasks/{taskID}/inventories/{inventoryID}/dependencies:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1inventories~1{inventoryID}~1dependencies'
+  /api/v1/tasks/{taskID}/sca-scans:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1sca-scans'
+  /api/v1/tasks/{taskID}/sbom-links:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1sbom-links'
+  /api/v1/tasks/{taskID}/swid-collections:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1swid-collections'
+  /api/v1/environment-profiles:
+    $ref: './sca-v1.yaml#/paths/~1environment-profiles'
+  /api/v1/environment-profiles/{profileID}:
+    $ref: './sca-v1.yaml#/paths/~1environment-profiles~1{profileID}'
+  /api/v1/tasks/{taskID}/analysis-policies:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1analysis-policies'
+  /api/v1/tasks/{taskID}/impact-analyses:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1impact-analyses'
+  /api/v1/tasks/{taskID}/impact-analyses/{runID}:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1impact-analyses~1{runID}'
+  /api/v1/tasks/{taskID}/vulnerability-occurrences:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1vulnerability-occurrences'
+  /api/v1/tasks/{taskID}/vulnerability-occurrences/{occurrenceID}:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1vulnerability-occurrences~1{occurrenceID}'
+  /api/v1/tasks/{taskID}/vulnerability-occurrences/{occurrenceID}/disposition:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1vulnerability-occurrences~1{occurrenceID}~1disposition'
+  /api/v1/tasks/{taskID}/vulnerability-occurrences/{occurrenceID}/history:
+    $ref: './sca-v1.yaml#/paths/~1tasks~1{taskID}~1vulnerability-occurrences~1{occurrenceID}~1history'
   /healthz:
     get:
       responses:

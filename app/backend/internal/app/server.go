@@ -78,6 +78,8 @@ func NewServer(cfg config.Config, db *sql.DB) (*Server, error) {
 	protected.GET("/tasks/:taskID/children", tasks.listTaskChildren)
 	protected.GET("/tasks/:taskID/events", tasks.events)
 	protected.GET("/tasks/:taskID/findings", tasks.findings)
+	registerSCARoutes(protected, tasks, auth)
+	registerImpactRoutes(protected, tasks, auth)
 	protected.GET("/tasks/:taskID/reports", tasks.listReports)
 	protected.GET("/tasks/:taskID/runs/:runID/artifacts", tasks.listRunArtifacts)
 	protected.GET("/tasks/:taskID/artifacts/:artifactID/content", tasks.downloadRunArtifact)

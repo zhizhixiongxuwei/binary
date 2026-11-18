@@ -28,6 +28,8 @@ const modes: readonly {
   label: string
   description: string
 }[] = [
+  { value: 'sbom', label: 'SBOM 清单扫描', description: '解析 SPDX、SWID、CycloneDX 并匹配组件漏洞' },
+  { value: 'java_sca', label: 'Java 组件漏洞分析', description: '扫描 JAR/WAR，结合目标环境进行三维分析' },
   {
     value: 'binary',
     label: '二进制分析',

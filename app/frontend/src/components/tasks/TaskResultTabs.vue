@@ -37,6 +37,7 @@ const props = withDefaults(
     commands?: TaskResultCommandStates
     managedTabs?: readonly TaskResultTab[]
     visibleTabs?: readonly TaskResultTab[]
+    sca?: boolean
   }>(),
   {
     mode: 'live',
@@ -106,7 +107,7 @@ const tabDefinitions: readonly TabDefinition[] = [
   { id: 'c-analysis', label: 'C 源码检测', icon: ScanSearch },
   { id: 'java-analysis', label: 'Java 源码检测', icon: FileCode2 },
   { id: 'python-analysis', label: 'Python 源码检测', icon: FileCode2 },
-  { id: 'vulnerabilities', label: '容器漏洞', icon: ShieldCheck },
+  { id: 'vulnerabilities', label: '漏洞分析', icon: ShieldCheck },
   { id: 'reports', label: '报告', icon: FileJson2 },
 ]
 
@@ -238,7 +239,7 @@ const actions = computed<Readonly<Record<TaskResultTab, readonly TaskResultPaneA
   'python-analysis': [
     action('refresh-python-analysis', '刷新 Python 源码检测结果', 'refresh'),
   ],
-  vulnerabilities: [
+  vulnerabilities: props.sca ? [] : [
     action('refresh-vulnerabilities', '刷新容器漏洞结果', 'refresh'),
     action('export-vulnerabilities', '导出容器漏洞结果', 'download', {
       requiresReady: true,

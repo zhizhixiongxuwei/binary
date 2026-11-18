@@ -67,6 +67,9 @@ var analyzerRoles = []struct {
 	{"c-checker", "scanner", "C 源码检测", []string{"c_check"}},
 	{"java-checker", "scanner", "Java 源码检测", []string{"java_check"}},
 	{"python-checker", "scanner", "Python 源码检测", []string{"python_check"}},
+	{"sbom-normalizer", "scanner", "SPDX / SWID / CycloneDX 清单校验", []string{"sbom_parse"}},
+	{"java-impact", "scanner", "Java 字节码可达性分析", []string{"impact_analysis"}},
+	{"impact-rules", "scanner", "已审校的漏洞影响规则包", []string{"impact_analysis"}},
 }
 
 func (s *systemService) status(c *gin.Context) {

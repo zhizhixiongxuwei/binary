@@ -200,7 +200,7 @@ function expandedChanged(task: ScanTask, expandedRows: ScanTask[]): void {
         <el-table-column label="分析模式" min-width="12" align="center">
           <template #default="{ row }: { row: ScanTask }">
             <span class="table-token">
-              {{ row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '归档导入' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
+              {{ row.analysis_mode === 'sbom' ? 'SBOM 清单' : row.analysis_mode === 'java_sca' ? 'Java 组件漏洞' : row.analysis_mode === 'binary' ? '二进制' : row.analysis_mode === 'archive' ? '归档导入' : row.analysis_mode === 'container' ? '容器/映像' : '历史任务' }}
             </span>
           </template>
         </el-table-column>

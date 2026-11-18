@@ -9,6 +9,7 @@ const props = defineProps<{
 }>()
 
 const groups = [
+  {category:'sbom',icon:CodeXml,title:'SBOM 与 Java 组件漏洞',formats:'SPDX 2.3 JSON/Tag-Value；CycloneDX 1.4–1.6 JSON/XML；SWID 2015 XML；JAR/WAR 三维分析'},
   {
     category: 'binary',
     icon: CodeXml,
@@ -61,7 +62,7 @@ const visibleGroups = computed(() =>
 <style scoped>
 .supported-types {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
   margin-bottom: 14px;
   border-block: 1px solid var(--line);

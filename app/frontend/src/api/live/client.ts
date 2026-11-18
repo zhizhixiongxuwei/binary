@@ -237,7 +237,7 @@ function errorMessage(code: string, status: number): string {
     chunk_sha256_mismatch: '上传分片校验失败，请重试',
     input_category_mismatch: '文件实际类别与所选上传入口不一致',
     unsupported_input_format: '服务端无法识别或暂不支持该文件格式',
-    invalid_analysis_mode: '请选择二进制、压缩包或容器/映像分析模式',
+    invalid_analysis_mode: '请选择受支持的分析模式',
     task_creation_failed: '分析任务创建失败，请重试',
     archive_import_not_found: '归档导入不存在或已删除',
     invalid_archive_import_query: '归档查询条件无效，请刷新后重试',
@@ -379,7 +379,7 @@ function stageForRun(kind: string): string {
   if (kind === 'scan') return 'IDENTIFYING'
   if (kind === 'archive_import') return 'EXTRACTING'
   if (kind.endsWith('_decompile')) return 'SCANNING'
-  if (kind.endsWith('_check') || kind === 'trivy_scan') return 'SCANNING'
+  if (kind.endsWith('_check') || ['trivy_scan', 'sbom_parse', 'sca_scan', 'impact_analysis'].includes(kind)) return 'SCANNING'
   return 'SCANNING'
 }
 

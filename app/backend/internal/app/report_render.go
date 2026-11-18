@@ -85,7 +85,7 @@ func buildHTMLReport(snapshot map[string]any) []byte {
 	output.WriteString(`</style></head><body><main>`)
 	output.WriteString(`<header class="masthead"><p class="eyebrow">BINARYSCAN · STATIC ANALYSIS</p><h1>二进制安全分析报告</h1><p class="subtitle">`)
 	output.WriteString(html.EscapeString(reportDisplayText(task["displayName"])))
-	output.WriteString(` · 生成于 ` + html.EscapeString(generatedAt) + ` · ` + reportSchemaVersion + `</p></header>`)
+	output.WriteString(` · 生成于 ` + html.EscapeString(generatedAt) + ` · ` + html.EscapeString(reportText(snapshot["schema"])) + `</p></header>`)
 
 	output.WriteString(`<section class="panel"><h2>执行摘要</h2><div class="summary">`)
 	writeHTMLMetric(&output, "全部问题", reportText(summary["findingCount"]), "")
@@ -102,7 +102,7 @@ func buildHTMLReport(snapshot map[string]any) []byte {
 	writeHTMLMetadata(&output, "输入 SHA-256", task["inputSha256"], true)
 	writeHTMLMetadata(&output, "任务创建时间", reportTimeText(task["createdAt"]), false)
 	writeHTMLMetadata(&output, "报告生成时间", generatedAt, false)
-	writeHTMLMetadata(&output, "Schema", reportSchemaVersion, true)
+	writeHTMLMetadata(&output, "Schema", snapshot["schema"], true)
 	output.WriteString(`</dl></section>`)
 
 	output.WriteString(`<section class="panel"><h2>检测运行（` + strconv.Itoa(len(runs)) + `）</h2>`)
@@ -134,7 +134,11 @@ func buildHTMLReport(snapshot map[string]any) []byte {
 	for index, finding := range findings {
 		writeHTMLFinding(&output, index+1, finding)
 	}
-	output.WriteString(`</section></main></body></html>`)
+	output.WriteString(`</section>`)
+	if scaText := reportSCAText(snapshot["sca"]); scaText != "" {
+		output.WriteString(`<section class="panel"><h2>组件漏洞与三维影响分析</h2><pre>` + html.EscapeString(scaText) + `</pre></section>`)
+	}
+	output.WriteString(`</main></body></html>`)
 	return []byte(output.String())
 }
 
@@ -222,7 +226,7 @@ func docxDocumentXML(snapshot map[string]any) string {
 	var body strings.Builder
 	body.WriteString(docxParagraph("BINARYSCAN  /  STATIC ANALYSIS", "Eyebrow"))
 	body.WriteString(docxParagraph("二进制安全分析报告", "Title"))
-	body.WriteString(docxParagraph(reportDisplayText(task["displayName"])+"  ·  生成于 "+reportTimeText(snapshot["generatedAt"])+"  ·  "+reportSchemaVersion, "Subtitle"))
+	body.WriteString(docxParagraph(reportDisplayText(task["displayName"])+"  ·  生成于 "+reportTimeText(snapshot["generatedAt"])+"  ·  "+reportDisplayText(snapshot["schema"]), "Subtitle"))
 	body.WriteString(docxParagraph("本报告汇总所选检测运行在生成时刻的结果。报告为不可变快照，源码位置以文件路径、行号和列号记录。", "BodyText"))
 
 	body.WriteString(docxParagraph("执行摘要", "Heading1"))
@@ -243,7 +247,7 @@ func docxDocumentXML(snapshot map[string]any) string {
 		{"输入 SHA-256", reportDisplayText(task["inputSha256"])},
 		{"任务创建时间", reportTimeText(task["createdAt"])},
 		{"报告生成时间", reportTimeText(snapshot["generatedAt"])},
-		{"Schema", reportSchemaVersion},
+		{"Schema", reportDisplayText(snapshot["schema"])},
 	}))
 
 	body.WriteString(docxParagraph("检测运行（"+strconv.Itoa(len(runs))+"）", "Heading1"))
@@ -274,6 +278,10 @@ func docxDocumentXML(snapshot map[string]any) string {
 	}
 	for index, finding := range findings {
 		body.WriteString(docxFindingXML(index+1, finding))
+	}
+	if scaText := reportSCAText(snapshot["sca"]); scaText != "" {
+		body.WriteString(docxParagraph("组件漏洞与三维影响分析", "Heading1"))
+		body.WriteString(docxCodeParagraph(scaText))
 	}
 	body.WriteString(`<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/><w:cols w:space="708"/><w:docGrid w:linePitch="360"/></w:sectPr>`)
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` + body.String() + `</w:body></w:document>`

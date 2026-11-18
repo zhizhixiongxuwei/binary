@@ -92,6 +92,12 @@ func (e *Executor) Execute(ctx context.Context, claim job.Claim) error {
 		return e.scan(ctx, claim)
 	case job.KindTrivyScan:
 		return e.trivy(ctx, claim)
+	case job.KindSBOMParse:
+		return e.parseSBOM(ctx, claim)
+	case job.KindSCAScan:
+		return e.scanSCA(ctx, claim)
+	case job.KindImpactAnalysis:
+		return e.analyzeImpact(ctx, claim)
 	case job.KindArchiveImport:
 		return e.archive(ctx, claim)
 	case job.KindCCheck, job.KindJavaCheck, job.KindPythonCheck:

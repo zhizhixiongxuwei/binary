@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"binaryscan.local/backend/internal/containerarchive"
+	"binaryscan.local/backend/internal/sbom"
 )
 
 type Category string
@@ -26,10 +27,13 @@ const (
 	CategoryBinary    Category = "binary"
 	CategoryArchive   Category = "archive"
 	CategoryContainer Category = "container"
+	CategorySBOM      Category = "sbom"
 
 	AnalysisModeBinary    AnalysisMode = "binary"
 	AnalysisModeArchive   AnalysisMode = "archive"
 	AnalysisModeContainer AnalysisMode = "container"
+	AnalysisModeSBOM      AnalysisMode = "sbom"
+	AnalysisModeJavaSCA   AnalysisMode = "java_sca"
 )
 
 type Result struct {
@@ -49,6 +53,8 @@ func ParseCategory(value string) (Category, bool) {
 		return CategoryArchive, true
 	case CategoryContainer:
 		return CategoryContainer, true
+	case CategorySBOM:
+		return CategorySBOM, true
 	default:
 		return "", false
 	}
@@ -62,6 +68,10 @@ func ParseAnalysisMode(value string) (AnalysisMode, bool) {
 		return AnalysisModeArchive, true
 	case AnalysisModeContainer:
 		return AnalysisModeContainer, true
+	case AnalysisModeSBOM:
+		return AnalysisModeSBOM, true
+	case AnalysisModeJavaSCA:
+		return AnalysisModeJavaSCA, true
 	default:
 		return "", false
 	}
@@ -72,6 +82,10 @@ func ParseAnalysisMode(value string) (AnalysisMode, bool) {
 func SupportsAnalysisMode(format string, mode AnalysisMode) bool {
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch mode {
+	case AnalysisModeSBOM:
+		return format == "spdx-json" || format == "spdx-tag-value" || format == "cyclonedx-json" || format == "cyclonedx-xml" || format == "swid-xml"
+	case AnalysisModeJavaSCA:
+		return format == "jar" || format == "war"
 	case AnalysisModeBinary:
 		switch format {
 		case "pe32", "pe32+", "elf32", "elf64", "macho-thin", "macho-fat", "java-class",
@@ -104,6 +118,8 @@ func ArchiveFormat(format string) (string, bool) {
 
 func CategoryForFormat(format string) (Category, bool) {
 	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "spdx-json", "spdx-tag-value", "cyclonedx-json", "cyclonedx-xml", "swid-xml":
+		return CategorySBOM, true
 	case "pe32", "pe32+", "elf32", "elf64", "macho-thin", "macho-fat", "java-class", "jar", "dex", "apk", "pyc",
 		"pe", "elf", "mach-o", "macho", "class", "war", "ear":
 		return CategoryBinary, true
@@ -136,6 +152,9 @@ func Detect(filename, logicalPath string) (Result, error) {
 	}
 	header = header[:count]
 	extension := strings.ToLower(filepath.Ext(logicalPath))
+	if format := sbom.Detect(header); format != "" {
+		return result(format), nil
+	}
 
 	if peFormat, ok := detectPE(file, header); ok {
 		return result(peFormat), nil

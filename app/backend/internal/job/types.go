@@ -18,6 +18,9 @@ const (
 	KindCCheck          Kind = "c_check"
 	KindJavaCheck       Kind = "java_check"
 	KindPythonCheck     Kind = "python_check"
+	KindSBOMParse       Kind = "sbom_parse"
+	KindSCAScan         Kind = "sca_scan"
+	KindImpactAnalysis  Kind = "impact_analysis"
 )
 
 var ErrFenceLost = errors.New("job lease or fencing token is no longer valid")
@@ -59,10 +62,12 @@ type Completion struct {
 // 三个反编译工具及三种源码检查分别限流，避免一种重任务耗尽整个系统。
 func PoolForKind(kind Kind) (string, bool) {
 	switch kind {
-	case KindScan, KindArchiveImport:
+	case KindScan, KindArchiveImport, KindSBOMParse:
 		return "scanner", true
-	case KindTrivyScan:
+	case KindTrivyScan, KindSCAScan:
 		return "trivy", true
+	case KindImpactAnalysis:
+		return "impact", true
 	case KindNativeDecompile:
 		return "native", true
 	case KindJVMDecompile:

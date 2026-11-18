@@ -1,4 +1,5 @@
 import type {
+  AnalysisMode,
   CompletedUpload,
   InputCategory,
   UploadAnalysisOption,
@@ -13,7 +14,9 @@ const inputCategories = new Set<InputCategory>([
   'binary',
   'archive',
   'container',
+  'sbom',
 ])
+const analysisModes = new Set<AnalysisMode>([...inputCategories, 'java_sca'])
 const validationStatuses = new Set<UploadValidationStatus>([
   'pending',
   'valid',
@@ -148,7 +151,7 @@ function analysisOption(value: unknown, field: string): UploadAnalysisOption {
   const option = record(value, field)
   exactKeys(option, ['mode', 'supported'], ['reason'], field)
   return {
-    mode: enumValue(option.mode, inputCategories, `${field}.mode`),
+    mode: enumValue(option.mode, analysisModes, `${field}.mode`),
     supported: boolean(option.supported, `${field}.supported`),
     ...(option.reason !== undefined
       ? { reason: text(option.reason, `${field}.reason`, 2_048) }
@@ -172,7 +175,7 @@ function analysisTask(value: unknown, field: string): UploadAnalysisTask {
     task_id: taskId,
     analysis_mode: enumValue(
       task.analysis_mode,
-      inputCategories,
+      analysisModes,
       `${field}.analysis_mode`,
     ),
     status: text(task.status, `${field}.status`, 64),
@@ -299,7 +302,7 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
     parsed.sha256 = sha256
   }
   if (session.analysis_options !== undefined) {
-    if (!Array.isArray(session.analysis_options) || session.analysis_options.length > 3) {
+    if (!Array.isArray(session.analysis_options) || session.analysis_options.length > 5) {
       throw new UploadIntakeContractError('data.analysis_options')
     }
     parsed.analysis_options = session.analysis_options.map((option, index) =>
@@ -307,7 +310,7 @@ function sessionValue(value: unknown, completed: boolean): UploadSession {
     )
   }
   if (session.tasks !== undefined) {
-    if (!Array.isArray(session.tasks) || session.tasks.length > 3) {
+    if (!Array.isArray(session.tasks) || session.tasks.length > 5) {
       throw new UploadIntakeContractError('data.tasks')
     }
     parsed.tasks = session.tasks.map((task, index) =>

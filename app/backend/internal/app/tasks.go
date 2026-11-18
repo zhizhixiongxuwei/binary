@@ -322,7 +322,7 @@ func parseTaskListOptions(values url.Values) (taskListOptions, error) {
 	}
 	options.InputType = strings.ToLower(options.InputType)
 	options.AnalysisMode = strings.ToLower(strings.TrimSpace(values.Get("analysis_mode")))
-	if options.AnalysisMode != "" && options.AnalysisMode != "binary" && options.AnalysisMode != "archive" && options.AnalysisMode != "container" {
+	if options.AnalysisMode != "" && options.AnalysisMode != "binary" && options.AnalysisMode != "archive" && options.AnalysisMode != "container" && options.AnalysisMode != "sbom" && options.AnalysisMode != "java_sca" {
 		return taskListOptions{}, fmt.Errorf("invalid analysis mode")
 	}
 	if options.Creator, err = taskListText(values.Get("creator"), 128); err != nil {
@@ -663,6 +663,9 @@ func (s *taskService) enqueueRun(
 		return queuedRun{}, false, err
 	}
 	created := actual.ID == runID
+	if !created && (kind == job.KindSBOMParse || kind == job.KindSCAScan || kind == job.KindImpactAnalysis) && !sameJSONIntent(request, storedRequest) {
+		return queuedRun{}, false, errRunIntentConflict
+	}
 	if kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck {
 		selection, err := checkrules.FromRequest(request)
 		if err != nil {

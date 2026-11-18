@@ -7,3 +7,6 @@
 *.env text eol=lf
 Dockerfile text eol=lf
 *.Dockerfile text eol=lf
+
+# Vendored SBOM schemas retain the bytes recorded in their SHA-256 manifest.
+app/backend/internal/sbom/schemas/* -text whitespace=-blank-at-eol,-blank-at-eof

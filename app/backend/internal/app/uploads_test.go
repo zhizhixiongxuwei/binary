@@ -17,15 +17,16 @@ func TestAnalysisOptionsExposeSupportedAndNotApplicableModes(t *testing.T) {
 		format    string
 		supported map[string]bool
 	}{
-		{format: "jar", supported: map[string]bool{"binary": true, "archive": true, "container": false}},
+		{format: "jar", supported: map[string]bool{"binary": true, "archive": true, "container": false, "java_sca": true}},
+		{format: "cyclonedx-json", supported: map[string]bool{"sbom": true}},
 		{format: "docker-tar", supported: map[string]bool{"binary": false, "archive": true, "container": true}},
 		{format: "iso9660", supported: map[string]bool{"binary": false, "archive": true, "container": false}},
 		{format: "ext4", supported: map[string]bool{"binary": false, "archive": true, "container": false}},
 	}
 	for _, test := range tests {
 		options := analysisOptions(test.format)
-		if len(options) != 3 {
-			t.Fatalf("analysisOptions(%q) returned %d options, want 3", test.format, len(options))
+		if len(options) != 5 {
+			t.Fatalf("analysisOptions(%q) returned %d options, want 5", test.format, len(options))
 		}
 		for _, option := range options {
 			want := test.supported[option.Mode]

@@ -18,6 +18,8 @@ import (
 
 	"binaryscan.local/backend/internal/checkrules"
 	"binaryscan.local/backend/internal/config"
+	"binaryscan.local/backend/internal/impact"
+	"binaryscan.local/backend/internal/sbom"
 )
 
 var versionPattern = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?(?:\.\d+)?`)
@@ -27,6 +29,41 @@ func Collect(ctx context.Context, cfg config.Config) Report {
 	report := Report{Analyzers: []Analyzer{}, Databases: []Database{}}
 	switch cfg.Role {
 	case "scanner":
+		schemaProbe := base("sbom-normalizer", "SPDX / SWID / CycloneDX 离线解析与校验", "libxml2", now)
+		if _, err := sbom.Parse(ctx, []byte(`{"bomFormat":"CycloneDX","specVersion":"1.6","version":1}`), ""); err == nil {
+			if output, err := run(ctx, "xmllint", "--version"); err == nil {
+				schemaProbe.Status = "available"
+				schemaProbe.Version = sbom.Version
+				schemaProbe.RuntimeVersion = versionPattern.FindString(string(output))
+				schemaProbe.Detail = "嵌入 schema 与 XML 校验工具探测通过；未运行完整清单扫描"
+			}
+		}
+		report.Analyzers = append(report.Analyzers, schemaProbe)
+		knowledge := base("impact-rules", "已审校漏洞代码与触发条件规则", "embedded", now)
+		if bundle, err := impact.Rules(); err == nil {
+			knowledge.Status = "available"
+			knowledge.Version = bundle.Version
+			knowledge.Detail = fmt.Sprintf("%d 条已审校规则，摘要 %s；规则外漏洞保留未知", len(bundle.Rules), bundle.Digest)
+		} else {
+			knowledge.Detail = err.Error()
+		}
+		report.Analyzers = append(report.Analyzers, knowledge)
+		javaImpact := base("java-impact", "Java 字节码可达性与保守运行库模型", "java", now)
+		if request, err := http.NewRequestWithContext(ctx, http.MethodGet, checkrules.BaseURL(cfg.Worker.JavaCheckerURL)+"/v1/java-impact/capabilities", nil); err == nil {
+			client := &http.Client{Timeout: 5 * time.Second}
+			if response, err := client.Do(request); err == nil {
+				var info struct {
+					EngineVersion string `json:"engineVersion"`
+				}
+				if response.StatusCode == 200 && json.NewDecoder(io.LimitReader(response.Body, 16384)).Decode(&info) == nil && info.EngineVersion != "" {
+					javaImpact.Status = "available"
+					javaImpact.Version = info.EngineVersion
+					javaImpact.Detail = "内部字节码协议可用；未解析的运行库或动态行为会阻止不可达证明"
+				}
+				response.Body.Close()
+			}
+		}
+		report.Analyzers = append(report.Analyzers, javaImpact)
 		report.Databases = []Database{ProbeDatabase(cfg.Worker.TrivyCacheRoot, "db", "trivy.db", "trivy-db", 2), ProbeDatabase(cfg.Worker.TrivyCacheRoot, "java-db", "trivy-java.db", "trivy-java-db", 1)}
 		a := base("scanner", "归档解析、容器漏洞检测", "trivy", now)
 		output, err := run(ctx, cfg.Worker.TrivyPath, "--version", "--format", "json")

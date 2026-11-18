@@ -122,6 +122,7 @@ func Load(role string) (Config, error) {
 			SlotCounts: map[string]int{
 				"scanner":      intValue("BINARY_SLOT_SCANNER", 1),
 				"trivy":        intValue("BINARY_SLOT_TRIVY", 1),
+				"impact":       intValue("BINARY_SLOT_IMPACT", 1),
 				"native":       intValue("BINARY_SLOT_NATIVE", 1),
 				"jvm":          intValue("BINARY_SLOT_JVM", 1),
 				"pyc":          intValue("BINARY_SLOT_PYC", 1),

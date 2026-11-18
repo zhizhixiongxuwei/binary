@@ -16,6 +16,7 @@ FROM ${TRIVY_RUNTIME_DB_IMAGE} AS trivy
 FROM ${SCANNER_RUNTIME_IMAGE}
 ARG BINARY_VERSION=0.1.0-dev
 USER root
+RUN apk add --no-cache libxml2-utils
 COPY --from=build --chmod=0555 /out/binary-scanner /usr/local/bin/binary-scanner
 COPY --from=trivy --chmod=0555 /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=trivy --chown=10001:10001 /opt/trivy-cache /opt/trivy-cache

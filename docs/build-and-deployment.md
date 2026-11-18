@@ -98,6 +98,8 @@ release/
 
 导出 MySQL、App、scanner、native-decompiler、jvm-decompiler、pyc-decompiler、c-checker、java-checker、python-checker。最终镜像已包含反编译工具、Trivy 主库与 Java 库，不必交付 Go / Node / Maven 构建镜像。
 
+`yanshou` 的 scanner 镜像还包含 `xmllint` 和嵌入的 SBOM 校验 schema，Java checker 镜像包含字节码影响分析。两个包都可在 `.env` 中设置 `SLOT_IMPACT` 控制影响分析并发，默认值为 `1`。从 `main` 切到 `yanshou` 后，首次打包请运行默认构建，以更新这些镜像。
+
 构建先写临时目录，成功后才发布最终目录；目标已存在时拒绝覆盖，避免清空旧 `data/`。生成目录、缓存和测试样例被 Git 与 Docker 构建上下文排除。打包失败不会留下看似可交付的目标目录。
 
 ## 客户安装

@@ -9,6 +9,9 @@ const engineLabels: Readonly<Record<string, string>> = {
   'pyc-decompiler': 'Python 字节码反编译引擎',
   'c-checker': 'C/C++ 源码检测引擎', 'java-checker': 'Java 源码检测引擎',
   'python-checker': 'Python 源码检测引擎',
+  'sbom-normalizer': '软件清单解析与校验',
+  'java-impact': 'Java 漏洞可达性分析',
+  'impact-rules': '漏洞影响规则包',
 }
 
 export function analysisEngineLabel(value: string | null | undefined, fallback = '分析引擎'): string {

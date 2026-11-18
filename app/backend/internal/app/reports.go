@@ -159,7 +159,7 @@ func (s *taskService) createReport(c *gin.Context) {
 		 size_bytes, selected_run_ids, snapshot)
 		VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE id = id`,
-		reportID, taskID, user.ID, idempotencyKey, request.Format, reportSchemaVersion, storageKey,
+		reportID, taskID, user.ID, idempotencyKey, request.Format, reportText(snapshot["schema"]), storageKey,
 		digest[:], sizeBytes, selected, snapshotBody); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "report_creation_failed"})
 		return
@@ -393,14 +393,26 @@ func (s *taskService) buildReportSnapshot(ctx *gin.Context, taskID string, runID
 	if findingsTruncated {
 		findings = findings[:50000]
 	}
-	return map[string]any{
+	snapshot := map[string]any{
 		"schema": reportSchemaVersion, "generatedAt": time.Now().UTC(),
 		"task": map[string]any{"id": taskID, "displayName": displayName, "status": taskStatus,
 			"detectedFormat": nullableString(detected), "inputSha256": strings.ToLower(inputSHA256),
 			"createdAt": taskCreated},
 		"summary": buildReportSummary(runs, findings),
 		"runs":    runs, "findings": findings, "findingsTruncated": findingsTruncated,
-	}, nil
+	}
+	for _, run := range runs {
+		if kind := reportText(run["kind"]); kind == "sbom_parse" || kind == "sca_scan" || kind == "impact_analysis" {
+			data, e := s.scaReportSnapshot(ctx, taskID, runIDs)
+			if e != nil {
+				return nil, e
+			}
+			snapshot["schema"] = "binaryscan-report-v5"
+			snapshot["sca"] = data
+			break
+		}
+	}
+	return snapshot, nil
 }
 
 func (s *taskService) listReports(c *gin.Context) {

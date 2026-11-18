@@ -215,13 +215,14 @@ class PackagingTests(unittest.TestCase):
         for old, new in replacements.items():
             self.assertIn(old, custom)
             custom = custom.replace(old, new)
-        custom += "\nJAVA_APPLICATION_GROUPS=com.ruoyi,com.example.customer\n"
+        custom += "\nJAVA_APPLICATION_GROUPS=com.ruoyi,com.example.customer\nSLOT_IMPACT=3\n"
         env_file.write_text(custom, encoding="utf-8")
         template = self.repo / "deploy/delivery/common/manage.sh"
         template.write_text(template.read_text(encoding="utf-8") + "\n# delivery-template-marker\n", encoding="utf-8")
         bundle = self.build()
         generated = BUILD.load_env(bundle / ".env")
         self.assertEqual(generated["JAVA_APPLICATION_GROUPS"], "com.ruoyi,com.example.customer")
+        self.assertEqual(generated["SLOT_IMPACT"], "3")
         for entry in replacements.values():
             key, expected = entry.split("=", 1)
             if key != "INITIAL_ADMIN_USERNAME":

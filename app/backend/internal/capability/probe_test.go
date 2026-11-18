@@ -124,6 +124,7 @@ func TestJarVersionReadsActualManifestAndRejectsMissingVersion(t *testing.T) {
 
 func TestMissingToolsCannotReportAvailability(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("PATH", root)
 	for _, role := range []string{"scanner", "native-decompiler", "jvm-decompiler", "pyc-decompiler"} {
 		cfg := config.Config{Role: role, Worker: config.Worker{TrivyPath: filepath.Join(root, "missing"), TrivyCacheRoot: root, GhidraPath: filepath.Join(root, "missing"), JavaPath: filepath.Join(root, "missing"), VineflowerJar: filepath.Join(root, "missing.jar"), CFRJar: filepath.Join(root, "missing.jar"), JADXJar: filepath.Join(root, "missing.jar"), PYCDCPath: filepath.Join(root, "missing")}}
 		report := Collect(context.Background(), cfg)
@@ -131,6 +132,12 @@ func TestMissingToolsCannotReportAvailability(t *testing.T) {
 			t.Fatal("missing report")
 		}
 		for _, analyzer := range report.Analyzers {
+			if analyzer.Name == "impact-rules" {
+				if analyzer.RuntimeName != "embedded" || analyzer.Version == "" {
+					t.Fatal("embedded rules have no verified version")
+				}
+				continue
+			}
 			if analyzer.Status == "available" {
 				t.Fatalf("missing tool reported available: %+v", analyzer)
 			}

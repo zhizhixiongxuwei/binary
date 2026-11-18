@@ -206,7 +206,7 @@ export function parseTaskDetail(value: unknown): TaskDetail {
   if (executionStatus !== undefined && !TASK_EXECUTION_STATUSES.includes(executionStatus as TaskExecutionStatus)) {
     throw new TaskContractError('execution_status')
   }
-  if (analysisMode !== undefined && !['binary', 'archive', 'container'].includes(analysisMode)) {
+  if (analysisMode !== undefined && !['binary', 'archive', 'container','sbom','java_sca'].includes(analysisMode)) {
     throw new TaskContractError('analysis_mode')
   }
 

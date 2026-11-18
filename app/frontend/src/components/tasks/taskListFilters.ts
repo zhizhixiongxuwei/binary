@@ -6,6 +6,8 @@ import { taskExecutionStatusLabels } from '@/components/tasks/taskExecutionPrese
 export const TASK_PAGE_SIZES = [10, 20, 50] as const
 
 export const ANALYSIS_MODE_OPTIONS = [
+  { value:'sbom',label:'SBOM 清单' },
+  { value:'java_sca',label:'Java 组件漏洞' },
   { value: 'binary', label: '二进制' },
   { value: 'archive', label: '归档导入' },
   { value: 'container', label: '容器/映像' },

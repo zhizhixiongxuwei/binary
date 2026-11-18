@@ -33,6 +33,7 @@ const emit = defineEmits<{
 const canOperate = computed(
   () => props.userRole === 'administrator' || props.userRole === 'operator',
 )
+const scaTask = computed(() => ['sbom', 'java_sca'].includes(props.task.analysis_mode ?? ''))
 const containerTask = computed(() =>
   isContainerImageInputType(props.task.input_type, props.task.analysis_mode),
 )
@@ -68,7 +69,7 @@ const selectedNodeLabel = computed(
 
 <template>
   <section
-    v-if="canOperate"
+    v-if="canOperate && !scaTask"
     class="analysis-actions surface-panel"
     aria-labelledby="analysis-actions-title"
   >

@@ -289,7 +289,7 @@ def source_state(repo: Path, skip_build: bool) -> dict:
 
 
 def runtime_config(config: dict[str, str], keys: set[str], mode: str) -> dict[str, str]:
-    result = {key: value for key, value in config.items() if key in keys or key == "JAVA_APPLICATION_GROUPS"}
+    result = {key: value for key, value in config.items() if key in keys}
     result.update(COMPOSE_PROJECT_NAME=f"binary-{mode}", BINARY_DATA_ROOT="./data",
                   INITIAL_ADMIN_USERNAME="admin", INITIAL_ADMIN_PASSWORD="admin123")
     for key in ("MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD"):
@@ -416,9 +416,11 @@ def build_bundle(repo: Path, mode: str, skip_build: bool = False) -> Path:
         raise BuildError(f"refusing to overwrite {output}; preserve or move the existing directory first")
     compose_path = repo / "docker-compose.yml"
     compose_text = compose_path.read_text(encoding="utf-8-sig")
-    keys = set(re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*):\?[^}]*\}", compose_text))
+    variables = re.findall(r"(?<!\$)\$\{([A-Za-z_][A-Za-z0-9_]*):([?-])[^}]*\}", compose_text)
+    runtime_keys = {key for key, _ in variables}
+    required_keys = {key for key, operator in variables if operator == "?"}
     config = load_env(repo / ".env")
-    require_values(config, keys | set(IMAGE_KEYS) | {"BINARY_VERSION", "BINARY_PLATFORM", "PRODUCT_UID", "PRODUCT_GID"})
+    require_values(config, required_keys | set(IMAGE_KEYS) | {"BINARY_VERSION", "BINARY_PLATFORM", "PRODUCT_UID", "PRODUCT_GID"})
     if config["BINARY_PLATFORM"] != "linux/amd64":
         raise BuildError("only linux/amd64 is supported by the pinned offline tools")
     if not all(re.fullmatch(r"[1-9][0-9]*", config[key]) for key in ("PRODUCT_UID", "PRODUCT_GID")):
@@ -437,7 +439,7 @@ def build_bundle(repo: Path, mode: str, skip_build: bool = False) -> Path:
         build_images(repo, build_config)
     images = [inspect_image(config[key], config["BINARY_PLATFORM"]) for key in IMAGE_KEYS]
     stage = Path(tempfile.mkdtemp(prefix=f".{mode}-build-", dir=repo))
-    runtime = runtime_config(config, keys, mode)
+    runtime = runtime_config(config, runtime_keys, mode)
     try:
         write_text(stage / "docker-compose.yml", compose_text)
         write_text(stage / ".env", "# Generated from repository .env; keep credentials private.\n" +

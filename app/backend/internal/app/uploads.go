@@ -803,11 +803,15 @@ func (s *taskService) persistUploadAnalysisTask(
 	if status != "complete" || validationStatus != "valid" || blobID == "" || detectedFormat == "" {
 		return uploadTaskResponse{}, fmt.Errorf("upload is not ready for analysis")
 	}
+	inputCategory := string(mode)
+	if mode == filetype.AnalysisModeJavaSCA {
+		inputCategory = string(filetype.CategoryBinary)
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO tasks
 		(id, created_by, upload_id, blob_id, display_name, input_category, analysis_mode,
 		 detected_category, detected_format, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)`, taskID, record.CreatedBy, record.ID,
-		blobID, record.OriginalName, mode, mode, detectedCategory.String, detectedFormat, taskStatus); err != nil {
+		blobID, record.OriginalName, inputCategory, mode, detectedCategory.String, detectedFormat, taskStatus); err != nil {
 		return uploadTaskResponse{}, fmt.Errorf("create analysis task: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO file_nodes
@@ -819,7 +823,19 @@ func (s *taskService) persistUploadAnalysisTask(
 
 	response := uploadTaskResponse{TaskID: taskID, AnalysisMode: string(mode), Status: taskStatus, Supported: supported}
 	message := "已按" + analysisModeLabel(mode) + "创建任务"
-	if mode == filetype.AnalysisModeArchive && supported {
+	if supported && (mode == filetype.AnalysisModeSBOM || mode == filetype.AnalysisModeJavaSCA) {
+		kind := job.KindSCAScan
+		if mode == filetype.AnalysisModeSBOM {
+			kind = job.KindSBOMParse
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO runs(id,kind,status,task_id,subject_type,subject_id,created_by,idempotency_key,request) VALUES(?,?,'queued',?,'file_node',?,?,?,JSON_OBJECT('source','analysis-mode'))`, runID, kind, taskID, fileID, record.CreatedBy, idempotencyKey); err != nil {
+			return uploadTaskResponse{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO jobs(run_id,kind,status,max_attempts) VALUES(?,?,'queued',3)`, runID, kind); err != nil {
+			return uploadTaskResponse{}, err
+		}
+		message += "，组件漏洞扫描已排队"
+	} else if mode == filetype.AnalysisModeArchive && supported {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO runs
 			(id, kind, status, task_id, subject_type, subject_id, created_by, idempotency_key, request)
 			VALUES (?, 'archive_import', 'queued', ?, 'file_node', ?, ?, ?,
@@ -909,6 +925,10 @@ func analysisModeLabel(mode filetype.AnalysisMode) string {
 		return "压缩包模式"
 	case filetype.AnalysisModeContainer:
 		return "容器/映像模式"
+	case filetype.AnalysisModeSBOM:
+		return "SBOM 扫描"
+	case filetype.AnalysisModeJavaSCA:
+		return "Java 组件漏洞分析"
 	default:
 		return "所选模式"
 	}
@@ -932,6 +952,8 @@ func analysisOptions(format string) []uploadAnalysisOption {
 		filetype.AnalysisModeBinary,
 		filetype.AnalysisModeArchive,
 		filetype.AnalysisModeContainer,
+		filetype.AnalysisModeSBOM,
+		filetype.AnalysisModeJavaSCA,
 	}
 	options := make([]uploadAnalysisOption, 0, len(modes))
 	for _, mode := range modes {

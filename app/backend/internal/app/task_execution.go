@@ -30,16 +30,16 @@ func taskExecutionStatusSQL(taskAlias string) string {
 	 WHEN ` + taskAlias + `.status = 'deleting' THEN 'DELETING'
 	 WHEN ` + taskAlias + `.status = 'deleted' THEN 'DELETED'
 	 ELSE COALESCE((SELECT CASE MAX(CASE
-	  WHEN execution_run.status IN ('queued', 'running') AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check') THEN 150
+	  WHEN execution_run.status IN ('queued', 'running') AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis') THEN 150
 	  WHEN execution_run.status IN ('queued', 'running') AND execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile') THEN 140
 	  WHEN execution_run.status IN ('queued', 'running') AND execution_run.kind = 'scan' THEN 130
-	  WHEN execution_run.status = 'failed' AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check') THEN 120
+	  WHEN execution_run.status = 'failed' AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis') THEN 120
 	  WHEN execution_run.status = 'failed' AND execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile') THEN 110
 	  WHEN execution_run.status = 'failed' THEN 100
 	  WHEN execution_run.status = 'cancelled' THEN 90
 	  WHEN execution_run.status = 'unsupported' THEN 80
-	  WHEN execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check')
-	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND (execution_run.result_quality IN ('partial_source', 'bytecode_only')
+	  WHEN execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis')
+	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND (execution_run.result_quality IN ('partial_source', 'bytecode_only', 'partial')
 	     OR (execution_run.kind='java_check' AND EXISTS (SELECT 1 FROM run_artifacts execution_evidence
 	       WHERE execution_evidence.run_id=execution_run.id AND execution_evidence.task_id=execution_run.task_id
 	       AND execution_evidence.artifact_kind='checker-response-json' AND execution_evidence.state='ready'
@@ -47,7 +47,7 @@ func taskExecutionStatusSQL(taskAlias string) string {
 	       AND JSON_UNQUOTE(JSON_EXTRACT(execution_evidence.metadata, '$.bytecodeStatus')) IN ('partial','skipped')))))) THEN 70
 	  WHEN execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile')
 	   AND (execution_run.status = 'partial' OR (execution_run.status = 'complete' AND COALESCE(execution_run.result_quality, '') <> 'source')) THEN 60
-	  WHEN execution_run.status = 'complete' AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check') THEN 50
+	  WHEN execution_run.status = 'complete' AND execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis') THEN 50
 	  WHEN execution_run.status = 'complete' AND execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile') THEN 40
 	  ELSE 10 END)
 	 WHEN 150 THEN 'SCANNING'
@@ -59,7 +59,7 @@ func taskExecutionStatusSQL(taskAlias string) string {
 	 WHEN 90 THEN 'CANCELLED'
 	 WHEN 80 THEN 'UNSUPPORTED'
 	 WHEN 70 THEN 'SCAN_PARTIAL'
-	 WHEN 60 THEN CASE WHEN MAX(execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check')) = 1 THEN 'SCAN_PARTIAL' ELSE 'DECOMPILE_PARTIAL' END
+	 WHEN 60 THEN CASE WHEN MAX(execution_run.kind IN ('trivy_scan', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis')) = 1 THEN 'SCAN_PARTIAL' ELSE 'DECOMPILE_PARTIAL' END
 	 WHEN 50 THEN CASE WHEN MAX(execution_run.kind IN ('c_check', 'java_check', 'python_check')) = 1
 	  AND MAX(CASE WHEN execution_run.kind IN ('native_decompile', 'jvm_decompile', 'pyc_decompile')
 	   AND execution_run.status = 'complete' AND execution_run.result_quality = 'source'
@@ -73,7 +73,7 @@ func taskExecutionStatusSQL(taskAlias string) string {
 	 WHEN 10 THEN 'UPLOADED' END
 	 FROM runs execution_run
 	 WHERE execution_run.task_id = ` + taskAlias + `.id
-	 AND execution_run.kind IN ('scan', 'trivy_scan', 'native_decompile', 'jvm_decompile', 'pyc_decompile', 'c_check', 'java_check', 'python_check')
+	 AND execution_run.kind IN ('scan', 'trivy_scan', 'native_decompile', 'jvm_decompile', 'pyc_decompile', 'c_check', 'java_check', 'python_check', 'sbom_parse', 'sca_scan', 'impact_analysis')
 	 AND NOT EXISTS (SELECT 1 FROM runs execution_newer
 	  WHERE execution_newer.task_id = execution_run.task_id AND execution_newer.kind = execution_run.kind
 	  AND execution_newer.subject_type = execution_run.subject_type AND execution_newer.subject_id = execution_run.subject_id

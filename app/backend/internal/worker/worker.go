@@ -186,7 +186,7 @@ func canRetry(claim job.Claim, delay time.Duration) bool {
 }
 
 func isCheckerKind(kind job.Kind) bool {
-	return kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck
+	return kind == job.KindCCheck || kind == job.KindJavaCheck || kind == job.KindPythonCheck || kind == job.KindImpactAnalysis
 }
 
 // executeWithHeartbeat 在业务执行期间续租；一旦续租失败便取消执行上下文，促使已失去 fence 的

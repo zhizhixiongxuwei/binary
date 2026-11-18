@@ -46,6 +46,7 @@ export function taskExecutionProgressLabel(task: ScanTask): string {
   const status = getTaskExecutionStatus(task).toUpperCase()
   switch (status) {
     case 'UPLOADED': {
+      if (task.analysis_mode==='sbom'||task.analysis_mode==='java_sca') return '待扫描'
       const imageFormats = ['docker-tar', 'docker-archive', 'oci-tar', 'oci-archive', 'ext2', 'ext3', 'ext4', 'mbr-img', 'gpt-img', 'squashfs', 'iso9660', 'udf']
       if (task.analysis_mode === 'container' || (!task.analysis_mode && imageFormats.includes(task.input_type?.toLowerCase()))) return '待检测'
       return task.analysis_mode === 'archive' ? '待解析' : '待反编译'

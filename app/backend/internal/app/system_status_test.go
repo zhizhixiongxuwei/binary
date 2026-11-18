@@ -26,7 +26,7 @@ func TestCapabilitiesRequireFreshReportAndHeartbeatAndNeverInventWorkers(t *test
 	now := time.Now().UTC()
 	cfg := config.Config{}
 	analyzers, bundle := aggregateCapabilities(nil, now, cfg)
-	if bundle != nil || len(analyzers) != 7 || analyzers[0].Status != "unknown" || analyzers[0].ReadyWorkers != 0 || analyzers[0].LastCheckedAt != nil {
+	if bundle != nil || len(analyzers) != len(analyzerRoles) || analyzers[0].Status != "unknown" || analyzers[0].ReadyWorkers != 0 || analyzers[0].LastCheckedAt != nil {
 		t.Fatalf("missing report: %+v bundle=%+v", analyzers, bundle)
 	}
 	record := sampleCapability(now)

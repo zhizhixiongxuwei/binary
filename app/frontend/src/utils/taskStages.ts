@@ -350,6 +350,37 @@ export function deriveTaskStageProgress(
   source: TaskStageSource,
   entries: readonly TaskExecutionLogEntry[] = [],
 ): TaskStageProgress {
+  if (source.analysis_mode === 'sbom' || source.analysis_mode === 'java_sca') {
+    const definitions: StageDefinition[] = [
+      { id: 'queued', label: '等待调度' },
+      { id: 'preparing', label: '清单与组件识别' },
+      { id: 'scanning', label: '组件漏洞匹配' },
+      { id: 'analyzing', label: '目标环境影响分析' },
+      { id: 'completed', label: '保存结果' },
+    ]
+    const latest = [...entries].reverse().find(e => e.analyzer === 'sca')
+    const execution = source.execution_status ?? ''
+    const completed = ['SCAN_COMPLETED', 'SCAN_PARTIAL', 'COMPLETED'].includes(execution)
+      || latest?.phase === 'completed' && !['QUEUED', 'SCANNING', 'PREPARING'].includes(execution)
+    const failed = execution === 'SCAN_FAILED' || execution === 'FAILED' || latest?.phase === 'failed'
+    const cancelled = execution === 'CANCELLED' || source.status.toUpperCase() === 'CANCELLED'
+    let index = latest?.phase === 'component-vulnerabilities' ? 2
+      : ['bytecode-reachability', 'impact-evaluation', 'impact-code'].includes(latest?.phase ?? '') ? 3
+      : latest ? 1 : 0
+    if (completed) index = definitions.length
+    return {
+      stages: buildStages(definitions, index, failed ? 'failed' : cancelled ? 'cancelled' : completed ? null : 'current'),
+      outcome: failed ? 'failed' : cancelled ? 'cancelled' : completed ? 'succeeded' : latest ? 'active' : 'queued',
+      progress: completed ? 100 : Math.round(index * 100 / definitions.length),
+      indeterminate: !completed && !failed && !cancelled && Boolean(latest),
+      summary: failed ? '组件分析失败，请查看执行日志' : cancelled ? '组件分析已取消'
+        : completed ? (execution === 'SCAN_PARTIAL' ? '分析已结束，部分组件或漏洞证据覆盖受限' : '组件分析结果已保存')
+        : latest?.title ?? '等待组件分析任务开始；三维分析可在漏洞工作台发起',
+      workflow: 'source-analysis',
+      workflowLabel: source.analysis_mode === 'sbom' ? 'SBOM 与组件漏洞分析' : 'Java 组件漏洞与影响分析',
+      ...(latest ? { updatedAt: latest.createdAt } : {}),
+    }
+  }
   const workflow = workflowFromTask(source, entries)
   const definitions = workflowDefinitions[workflow]
   const relevant = analyzerEntries(entries, workflow)

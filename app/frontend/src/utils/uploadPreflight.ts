@@ -23,6 +23,7 @@ export const inputCategoryLabels: Record<InputCategory, string> = {
   binary: '01 二进制格式',
   archive: '02 归档导入格式',
   container: '03 容器镜像格式',
+  sbom: '04 软件清单格式',
 }
 
 export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
@@ -33,6 +34,7 @@ export const inputCategoryAccept: Record<InputCategory, string | undefined> = {
   archive:
     '.zip,.7z,.rar,.tar,.tgz,.gz,.xz,.deb,.rpm,.iso,.ext4,.img,application/zip,application/x-7z-compressed,application/x-rar-compressed,application/x-tar,application/gzip,application/x-iso9660-image',
   container: '.tar,application/x-tar,application/octet-stream',
+  sbom: '.json,.xml,.spdx,.swidtag,application/json,application/xml',
 }
 
 export function nativePickerAcceptAttributes(
@@ -85,6 +87,10 @@ function littleEndianUint32(bytes: Uint8Array, offset: number): number | null {
 }
 
 function detectHead(bytes: Uint8Array): MagicMatch | null {
+  const text = new TextDecoder().decode(bytes).replace(/^\uFEFF/, '').trimStart()
+  if (/^SPDXVersion:/.test(text) || /^\{/.test(text) && /"(?:spdxVersion|bomFormat)"\s*:/.test(text) || /^</.test(text) && /(?:cyclonedx\.org\/schema\/bom|standards\.iso\.org\/iso\/19770)/.test(text)) {
+    return { format: 'SBOM', allowedCategories: ['sbom'] }
+  }
   if (asciiAt(bytes, 0, 'MZ')) {
     const peOffset = littleEndianUint32(bytes, 0x3c)
     if (peOffset !== null && asciiAt(bytes, peOffset, 'PE\u0000\u0000')) {

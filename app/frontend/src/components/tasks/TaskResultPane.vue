@@ -88,7 +88,7 @@ const paneDefinitions: Record<TaskResultTab, PaneDefinition> = {
     errorTitle: 'Python 源码检测读取失败',
   },
   vulnerabilities: {
-    title: '容器漏洞',
+    title: '漏洞分析',
     icon: ShieldCheck,
     loadingTitle: '正在读取容器漏洞结果',
     emptyTitle: '暂无容器漏洞结果',

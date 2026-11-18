@@ -217,6 +217,20 @@ function isSourceAnalysisEvent(type: string): boolean {
 
 function sourceAnalysisSummary(eventType: string, payload: JsonRecord): SafeEventSummary | null {
   const analyzer = safePayloadToken(payload, 'analyzer')
+  if (analyzer === 'sca') {
+    const phase = safePayloadToken(payload, 'phase')
+    const phases: Record<string, string> = {
+      queued: '组件分析已排队', preparing: '正在准备组件分析',
+      'sbom-validation': '正在校验软件清单', 'java-inventory': '正在识别 Java 组件',
+      'component-vulnerabilities': '正在匹配组件漏洞',
+      'bytecode-reachability': '正在分析字节码可达性', 'impact-evaluation': '正在分析漏洞触发条件',
+      'impact-code': '正在分析字节码可达性与触发条件',
+      publishing: '正在保存分析结果', completed: '组件分析阶段已完成',
+      failed: '组件分析失败', cancelled: '组件分析已取消',
+    }
+    const title = phase ? phases[phase] : undefined
+    return title ? {title, detailLabel: appendElapsed(countDetail('分析单元', safeCounter(payload, 'current'), safeCounter(payload, 'total')), safeSeconds(payload))} : null
+  }
   if (!analyzer || !['java-checker', 'c-checker', 'python-checker'].includes(analyzer)) return null
   const label = { 'java-checker': 'Java', 'c-checker': 'C', 'python-checker': 'Python' }[analyzer]
   const phase = safePayloadToken(payload, 'phase') ?? eventType.split('.').pop()

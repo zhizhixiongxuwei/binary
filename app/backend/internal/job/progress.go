@@ -128,6 +128,8 @@ func (r *Repository) TrackProgress(ctx context.Context, claim Claim) (context.Co
 
 func progressIdentity(kind Kind) (string, string) {
 	switch kind {
+	case KindSBOMParse, KindSCAScan, KindImpactAnalysis:
+		return "analysis.progress", "sca"
 	case KindNativeDecompile:
 		return "decompile.progress", "ghidra"
 	case KindJVMDecompile:
